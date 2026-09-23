@@ -345,6 +345,11 @@ class SamplingParams:
     enable_spectrum: bool = False
     spectrum_params: Any = None  # SpectrumParams
 
+    # Lossy opt-in: a calibrated DPCache schedule artifact (the parsed JSON
+    # object). Steps outside its full_steps skip every transformer block and
+    # extrapolate the final block feature; see runtime/cache/dpcache.py.
+    dpcache_schedule: dict[str, Any] | None = None
+
     # Profiling
     profile: bool = field(default=False, metadata={"batch_sig_exclude": True})
     num_profiled_timesteps: int = field(default=5, metadata={"batch_sig_exclude": True})
@@ -721,6 +726,11 @@ class SamplingParams:
             raise ValueError(
                 "enable_teacache and enable_spectrum are mutually exclusive; enable only one."
             )
+
+        if self.dpcache_schedule is not None:
+            from sglang.multimodal_gen.runtime.cache.dpcache import validate_schedule
+
+            validate_schedule(self.dpcache_schedule)
 
         RLRolloutArgs.validate_sampling_params(self)
 

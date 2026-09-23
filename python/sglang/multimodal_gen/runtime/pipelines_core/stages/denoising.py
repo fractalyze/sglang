@@ -73,12 +73,20 @@ from sglang.multimodal_gen.runtime.cache.cache_dit_integration import (
     refresh_context_on_transformer,
     resolve_cache_dit_request_overrides,
 )
+from sglang.multimodal_gen.runtime.cache.dpcache import (
+    DPCacheRequestSignature,
+    DPCacheState,
+    check_schedule_matches,
+    checkpoint_identity,
+    config_digest,
+)
 from sglang.multimodal_gen.runtime.disaggregation.roles import RoleType
 from sglang.multimodal_gen.runtime.distributed import (
     get_local_torch_device,
     get_sp_group,
     get_sp_world_size,
     get_tp_group,
+    get_tp_world_size,
     get_world_group,
     get_world_size,
     model_parallel_is_initialized,
@@ -115,6 +123,7 @@ from sglang.multimodal_gen.runtime.layers.attention.STA_configuration import (
     configure_sta,
     save_mask_search_results,
 )
+from sglang.multimodal_gen.runtime.layers.lora.linear import BaseLayerWithLoRA
 from sglang.multimodal_gen.runtime.managers.forward_context import set_forward_context
 from sglang.multimodal_gen.runtime.managers.memory_managers.component_manager import (
     ComponentUse,
@@ -245,6 +254,14 @@ _QUALITY_FUSION_HANDLERS: tuple[
         unmount_sana_video_linear_attention,
     ),
 )
+
+
+def _has_active_lora(module: nn.Module) -> bool:
+    return any(
+        isinstance(layer, BaseLayerWithLoRA)
+        and (layer.merged or not layer.disable_lora)
+        for layer in module.modules()
+    )
 
 
 def _ensure_tensor_model_output(model_output):
@@ -2025,12 +2042,104 @@ class DenoisingStage(PipelineStage, RolloutDenoisingMixin):
         self._offloaded_dit_modules_for_compile.clear()
         yield
 
+    @contextmanager
+    def _dpcache_request(self, batch: Req, server_args: ServerArgs):
+        """Give each CFG branch of a DPCache request fresh state for one denoise."""
+        schedule = batch.dpcache_schedule
+        if schedule is None or batch.is_warmup:
+            # a warmup copy runs fewer steps than any calibrated schedule
+            yield
+            return
+        if self._cache_dit_enabled and not self._cache_dit_requested_for_batch(batch):
+            # a previous request left the wrapper mounted; this one runs without it
+            self._unmount_cache_dit()
+        self._check_dpcache_supported(batch, server_args)
+        full_steps = check_schedule_matches(
+            schedule, self.dpcache_signature(batch, server_args)
+        )
+        branches = (False, True) if batch.do_classifier_free_guidance else (False,)
+        batch.dpcache_states = {
+            negative: DPCacheState(full_steps, len(batch.timesteps))
+            for negative in branches
+        }
+        try:
+            yield
+            for negative, state in batch.dpcache_states.items():
+                logger.info(
+                    "DPCache %s branch: full=%d predicted=%d",
+                    "negative" if negative else "positive",
+                    state.num_full,
+                    state.num_predicted,
+                )
+        finally:
+            batch.dpcache_states = None
+
+    def dpcache_signature(
+        self, batch: Req, server_args: ServerArgs
+    ) -> DPCacheRequestSignature:
+        """The request settings a DPCache schedule is calibrated for."""
+        dtype = self.transformer.dpcache_feature_dtype()
+        return DPCacheRequestSignature(
+            pipeline=type(server_args.pipeline_config).__name__,
+            checkpoint=checkpoint_identity(server_args.model_path),
+            num_inference_steps=len(batch.timesteps),
+            height=batch.height,
+            width=batch.width,
+            guidance_scale=float(batch.guidance_scale),
+            do_classifier_free_guidance=bool(batch.do_classifier_free_guidance),
+            quality=batch.quality,
+            attention_backend=server_args.attention_backend,
+            dtype=str(dtype).removeprefix("torch."),
+            scheduler=type(batch.scheduler).__name__,
+            scheduler_config_sha256=config_digest(batch.scheduler.config),
+            timesteps=tuple(batch.timesteps.float().cpu().tolist()),
+            sigmas=tuple(batch.scheduler.sigmas.float().cpu().tolist()),
+        )
+
+    def _check_dpcache_supported(self, batch: Req, server_args: ServerArgs) -> None:
+        if not getattr(self.transformer, "_supports_dpcache", False):
+            raise ValueError(
+                f"dpcache_schedule is not supported by "
+                f"{type(self.transformer).__name__}"
+            )
+        # validated only for single-image BF16 text-to-image without CFG;
+        # anything else would compose approximations or change what was calibrated
+        prompts = batch.prompt if isinstance(batch.prompt, list) else [batch.prompt]
+        unsupported = {
+            "torch compile": server_args.enable_torch_compile,
+            "breakable CUDA graphs": server_args.enable_breakable_cuda_graph,
+            "Cache-DiT": self._cache_dit_requested_for_batch(batch),
+            "TeaCache": batch.enable_teacache,
+            "Spectrum": batch.enable_spectrum,
+            "skip-softmax attention": batch.skip_softmax_params is not None,
+            "attention backend override": batch.attention_backend_override is not None,
+            "classifier-free guidance": batch.do_classifier_free_guidance,
+            "non-lossless quality": batch.quality != "lossless",
+            "reference images": batch.condition_image is not None
+            or bool(batch.image_path),
+            "more than one image per request": len(prompts) != 1
+            or batch.num_outputs_per_prompt != 1,
+            "LoRA": _has_active_lora(self.transformer),
+            "dual transformers": self._dual_transformer_execution_mode() is not None,
+            "non-BF16 transformer": self.transformer.dpcache_feature_dtype()
+            != torch.bfloat16,
+            "CFG parallel": server_args.enable_cfg_parallel,
+            "sequence/tensor parallel": get_sp_world_size() > 1
+            or get_tp_world_size() > 1,
+        }
+        enabled = [name for name, on in unsupported.items() if on]
+        if enabled:
+            raise ValueError(f"dpcache_schedule cannot be combined with {enabled}")
+
     def forward(
         self,
         batch: Req,
         server_args: ServerArgs,
     ) -> Req:
-        with self._offload_for_torch_compile_warmup(batch):
+        with (
+            self._offload_for_torch_compile_warmup(batch),
+            self._dpcache_request(batch, server_args),
+        ):
             return self._denoise(batch, server_args)
 
     @torch.no_grad()
