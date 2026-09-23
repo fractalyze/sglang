@@ -72,27 +72,22 @@ not a reproduction of the paper's order-2 headline results.
 
 ## Provenance of the measurements
 
-Every number in this report was measured on the **original tested source**,
-commit `a9871012acb768dc94a43a6542cc32626c7b7b0b` plus the working tree that
-became this change. It was not re-measured after the upstream rebase or the
-cleanup, and nothing here is relabelled as a measurement of the current tree.
+The study was first measured on commit `a9871012acb768dc94a43a6542cc32626c7b7b0b`
+plus the working tree that became the runtime change. Both held-out studies were
+then **re-run on the upstream-facing commit `2754e6ecf`** (the generic
+`DPCacheMixin` / `DenoisingStage` integration in
+[sgl-project/sglang#40848](https://github.com/sgl-project/sglang/pull/40848)),
+with the same harnesses, corpora, frozen schedules and Cache-DiT presets:
 
-What was re-checked after the rebase onto upstream `1d59ce7c9` is narrow, and
-should be read narrowly. On **8 validation pairs** -- the validation split of
-`corpus/corpus-v1.json`, arms `native` and `K=20` only -- the rebased tree
-reproduces the original tested source bit-for-bit (`torch.equal` on decoded
-samples and final latents, plus identical PNG bytes). Separately, the rebased
-tree reproduces pristine upstream bit-for-bit with DPCache disabled and with an
-all-full schedule.
+| Re-run on `2754e6ecf` | Outputs vs the original run (`torch.equal` latents and decoded tensors, identical PNG bytes) |
+| --- | --- |
+| comparator held-out, 20 pairs x 7 arms | 140 / 140 identical |
+| DPCache held-out (`corpus-v1`), 20 pairs x native / K12 / K20 | 60 / 60 identical |
+| DPCache disabled and all-full, vs pristine upstream `1d59ce7c9` | 8 / 8 identical |
 
-That is the whole of the re-validation, and **the held-out table below was not
-rerun on this tree**. Its 20 pairs are the fresh comparator held-out corpus,
-which shares no prompt with the validation split; it also covers `K=12`, both
-uniform controls and both Cache-DiT presets, none of which was re-measured on
-any split. So **every LPIPS figure and every timing figure in that table belongs
-to the original study on `a9871012`**, and none of them is restated here as a
-measurement of the current tree. The parity evidence supports exactly one
-thing: on those 8 pairs, for those 2 arms, the rebase changed no output bit.
+So every quality figure below is unchanged by the refactor and applies to
+`2754e6ecf` as measured. **Timing was measured again on `2754e6ecf`**, and the
+timing columns below are the new measurement.
 
 | | |
 | --- | --- |
@@ -153,36 +148,38 @@ precision.
 
 ## Held-out results (comparator corpus, 20 fresh pairs)
 
-These are the 20 fresh comparator held-out pairs, measured once on `a9871012`.
-Neither the quality columns nor the timing columns were revalidated on the
-rebased tree; see "Provenance of the measurements" above. The older study's
-held-out 20 are a different corpus and are not shown here.
+These are the 20 fresh comparator held-out pairs, re-run on `2754e6ecf`; see
+"Provenance of the measurements" above. The older study's held-out 20 are a
+different corpus and are not shown here.
 
-Time is allocated GPU-seconds per image: warm end-to-end client wall time on an
-otherwise idle GPU, in grouped same-config repeats (3 repeats x 4 prompts), which
-is what a steady single-config service sees. "Blocks" counts real transformer
-block invocations per image; native runs 40 x 32 = 1280.
+Time is warm end-to-end client wall time per image on one GPU, from the
+interleaved paired timing (every arm and native alternate over 4 held-out
+prompts); "vs native" is the mean paired speedup. The grouped same-config
+repeats (3 repeats x 4 prompts) agree with it for every accelerated arm to within
+3 ms, but 4 of the 12 grouped native repeats ran 0.6-1.6 s slow on a shared host,
+so grouped native time is not used as the baseline. "Blocks" counts real
+transformer block invocations per image; native runs 40 x 32 = 1280.
 
-| Arm | Blocks | LPIPS mean | LPIPS max | alpha max | provisional / strict | GPU s/image | vs native |
+| Arm | Blocks | LPIPS mean | LPIPS max | alpha max | provisional / strict | s/image | vs native |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| native | 1280 | 0 | 0 | 0 | reference | 13.457 | 1.00x |
-| dp-K12 | 384 | 0.0848 | 0.2200 | 0.071 | pass / fail | 4.197 | 3.21x |
-| uniform-K12 (control) | 384 | 0.1548 | 0.2799 | 0.290 | pass / fail | 4.196 | 3.21x |
-| cachedit-stock | 443 | 0.1023 | 0.1759 | 0.278 | pass / fail | 4.979 | 2.70x |
-| dp-K20 | 640 | 0.0076 | 0.0350 | 0.043 | pass / **pass** | 6.845 | 1.97x |
-| uniform-K20 (control) | 640 | 0.0701 | 0.2079 | 0.059 | pass / fail | 6.844 | 1.97x |
-| cachedit-conservative | 710 | 0.0159 | 0.0425 | 0.094 | pass / **pass** | 7.678 | 1.75x |
+| native | 1280 | 0 | 0 | 0 | reference | 13.464 | 1.00x |
+| dp-K12 | 384 | 0.0848 | 0.2200 | 0.071 | pass / fail | 4.199 | 3.21x |
+| uniform-K12 (control) | 384 | 0.1548 | 0.2799 | 0.290 | pass / fail | 4.197 | 3.21x |
+| cachedit-stock | 443 | 0.1023 | 0.1759 | 0.278 | pass / fail | 4.976 | 2.71x |
+| dp-K20 | 640 | 0.0076 | 0.0350 | 0.043 | pass / **pass** | 6.847 | 1.97x |
+| uniform-K20 (control) | 640 | 0.0701 | 0.2079 | 0.059 | pass / fail | 6.848 | 1.97x |
+| cachedit-conservative | 710 | 0.0159 | 0.0425 | 0.094 | pass / **pass** | 7.682 | 1.75x |
 
-Every arm measured 20/20 planned pairs and 12/12 grouped timings; grouped
-standard deviation was 0.002-0.005 s.
+Every arm measured 20/20 planned pairs, 4/4 interleaved timings and 12/12
+grouped timings.
 
 ### What the numbers say
 
 - **At the strict gate**, `dp-K20` and `cachedit-conservative` both qualify.
-  `dp-K20` used **10.8 % less GPU time** (6.845 vs 7.678 s) and was lower on both
+  `dp-K20` used **10.9 % less time** (6.847 vs 7.682 s) and was lower on both
   mean and max LPIPS. This is the stronger of the two comparisons.
-- **At the provisional gate**, `dp-K12` used **15.7 % less GPU time** than
-  `cachedit-stock` (4.197 vs 4.979 s) and had the lower mean LPIPS, but a
+- **At the provisional gate**, `dp-K12` used **15.6 % less time** than
+  `cachedit-stock` (4.199 vs 4.976 s) and had the lower mean LPIPS, but a
   **worse worst case** (0.220 vs 0.176). Which is preferable depends on whether
   mean or worst-case fidelity matters more for the workload.
 - **Placement, not budget.** The uniform controls share their DP arm's budget,
@@ -192,7 +189,7 @@ standard deviation was 0.002-0.005 s.
   image was generated.
 - **Equal scheduler updates are not equal compute.** The Cache-DiT arms ran
   15.4 % and 10.9 % more transformer blocks than the DP arms they are compared
-  against, which exceeds the +/-5 % tolerance declared in advance. GPU-seconds is
+  against, which exceeds the +/-5 % tolerance declared in advance. Wall time is
   therefore the comparison, and no equal-compute claim is made.
 - **TeaCache is unsupported here.** Qwen-Image 2.1 has no TeaCache adapter:
   `enable_teacache=True` is accepted, runs all 1280 blocks and reproduces native
@@ -224,7 +221,7 @@ equality, and this report does not claim it is.
 The DPCache schedules cost 155.7 GPU-seconds of offline calibration (feature
 capture plus PACT scoring) and 0.04 CPU-seconds of planning; Cache-DiT presets
 need none. Charged against the measured per-image savings, incremental
-break-even is about **199 images** for `K=12` vs stock Cache-DiT and **187
+break-even is about **200 images** for `K=12` vs stock Cache-DiT and **187
 images** for `K=20` vs conservative Cache-DiT. The comparator's own preset tuning
 is a separate search cost and is not amortized into any per-image number.
 
@@ -234,7 +231,7 @@ Small review aids, not data. No tensors and no full-resolution outputs are
 published here.
 
 - [`figures/heldout-quality-vs-gpu-seconds.png`](figures/heldout-quality-vs-gpu-seconds.png)
-  -- mean and max white-composite LPIPS against allocated GPU-seconds per image,
+  -- mean and max white-composite LPIPS against GPU-seconds per image from the original `a9871012` run,
   one point per arm, with both gates drawn.
 - [`figures/heldout-worst-by-dpK12.jpg`](figures/heldout-worst-by-dpK12.jpg) --
   native / `dp-K12` / `uniform-K12` / `cachedit-stock`, rows ordered worst-first
@@ -264,8 +261,8 @@ published here.
   (`results/dpcache-results.json`, `heldout_20_pairs.K12.visual_note`). That is
   a separate corpus, a separate run and a separate arm list; its contact sheets
   are not published here, and it says nothing about the table above.
-- Timing was measured on `a9871012` and is not restated for the rebased tree.
-  Neither is held-out quality: see "Provenance of the measurements".
+- Timing comes from 4 interleaved prompts on a shared host; see the note above
+  the held-out table on the grouped native repeats.
 
 ## Reproducing this
 
