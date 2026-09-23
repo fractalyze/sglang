@@ -1,0 +1,61 @@
+{
+ "checkout": "jooman/sglang-diffusion @ a9871012acb768dc94a43a6542cc32626c7b7b0b + uncommitted working tree (no commit/push/PR)",
+ "corpus_sha256": "0ab65e054c86899030a44d2f6778d7fb0a14de46d9a820bedabd43f01759f6ff",
+ "cost": {
+  "break_even_images": {
+   "K12": 16.8,
+   "K20": 23.5
+  },
+  "break_even_including_validation_sweep": {
+   "K12": 171.1,
+   "K20": 239.8
+  },
+  "calibration_gpu_seconds": 155.7
+ },
+ "exactness": {
+  "accelerated_K_lt_40": "0 bit-exact outputs (approximate by design)",
+  "disabled_and_all_full_vs_pristine": "calib-01 10/10, parity-02 8/8, parity-03 (final tree) 8/8 bit-exact; failing-request recovery ok",
+  "pristine_repeat": "baseline-01 3/3 bit-exact (latents, decoded, PNG)"
+ },
+ "figures": [
+  "figures/validation-02-all-arms-worst-first.jpg",
+  "figures/heldout-01-worst8-by-K12.jpg",
+  "figures/heldout-01-all20-worst-by-K20.jpg"
+ ],
+ "heldout_20_pairs": {
+  "K12": {
+   "alpha_max_abs": 0.227,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "lpips_white_max": 0.15,
+   "lpips_white_mean": 0.0697,
+   "paired_speedup": 3.206,
+   "seconds_per_image": 4.199,
+   "visual_note": "numeric gate passes, but worst cases show layout changes (aerial river) and a semantic change (red cup -> vase-like object)"
+  },
+  "K20": {
+   "alpha_max_abs": 0.11,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "lpips_white_max": 0.0409,
+   "lpips_white_mean": 0.0085,
+   "paired_speedup": 1.965,
+   "seconds_per_image": 6.85
+  },
+  "native": {
+   "sd": 0.004,
+   "seconds_per_image": 13.463
+  },
+  "offload": "0 block-weight layer loads on 960 predicted steps",
+  "timing": "client wall, warm, randomized paired blocks, 3 repeats x 4 pairs; evidence rows excluded"
+ },
+ "predicted_step_note": "predicted steps bypass all transformer blocks but still run img_in, time_text_embed and norm_out(current temb)+proj_out",
+ "report": "sglang-diffusion/dpcache.mdx",
+ "report_only_fixes": "timing_summary now requires every planned timing block to have both native and candidate measurements (paired_count exposed); recomputed selection == frozen selection-v1 and held-out timing unchanged (all arms 8/8 or 12/12 paired). No GPU rerun, no runtime change.",
+ "rgba_policy": "provisional white-composite gate per parent; alpha error reported separately, not gated; user answer still pending",
+ "runtime_files_sha256": "runtime-files.sha256 (unchanged from validation-02 launch through parity-03)",
+ "schedules": "schedules-v2/ (10 calibration pairs, max_gap 8, PACT GPU 15.1 s, planning CPU 0.04 s)",
+ "selection": "selection-v1.json (frozen 18:28 from validation-02 only): provisional(.18/.30)=K12, strict(.05/.10)=K20",
+ "status": "complete (preliminary sample sizes)",
+ "tests": "164 passed (CPU+CUDA suite: 163 on final GPU run + 1 CPU regression added after, all bench/dpcache CPU tests 92 pass); test_request_manifest not collectable in shared env (missing cv2, unrelated)"
+}

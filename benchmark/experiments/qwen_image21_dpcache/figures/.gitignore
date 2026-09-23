@@ -1,0 +1,3 @@
+# The repository ignores *.png; these three review aids are the published
+# figures of this study and are listed in ../MANIFEST.json.
+!*.png

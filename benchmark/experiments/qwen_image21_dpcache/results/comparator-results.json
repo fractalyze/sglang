@@ -1,0 +1,337 @@
+{
+ "arms": {
+  "cachedit-conservative": {
+   "actual_scheduler_steps": [
+    40
+   ],
+   "alpha_max_abs": 0.09411764705882353,
+   "cache_dit_buffer_dtypes": [
+    "torch.bfloat16"
+   ],
+   "exact_vs_native": "0/20",
+   "family": "cache_dit",
+   "full_block_equivalent": 22.1875,
+   "full_steps": 21.0,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "grouped_samples": 12,
+   "grouped_seconds_mean": 7.6776437981364625,
+   "grouped_seconds_median": 7.676850663498044,
+   "grouped_seconds_stdev": 0.002638349955684581,
+   "instrumentation_ok": true,
+   "lpips_alpha_dropped_max": 0.04246746748685837,
+   "lpips_white_max": 0.04247535765171051,
+   "lpips_white_mean": 0.0158712669974193,
+   "mean_paired_speedup": 1.7528095087818698,
+   "mixed_mode_seconds_mean": 7.680375066585839,
+   "partial_steps": 19.0,
+   "quality_n": "20/20",
+   "ratio_of_means": 1.7528093590121172,
+   "total_blocks": 710.0,
+   "zero_block_steps": 0.0
+  },
+  "cachedit-stock": {
+   "actual_scheduler_steps": [
+    40
+   ],
+   "alpha_max_abs": 0.2784313725490196,
+   "cache_dit_buffer_dtypes": [
+    "torch.bfloat16"
+   ],
+   "exact_vs_native": "0/20",
+   "family": "cache_dit",
+   "full_block_equivalent": 13.84375,
+   "full_steps": 13.0,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "grouped_samples": 12,
+   "grouped_seconds_mean": 4.978800620262821,
+   "grouped_seconds_median": 4.976158872246742,
+   "grouped_seconds_stdev": 0.005407455121233581,
+   "instrumentation_ok": true,
+   "lpips_alpha_dropped_max": 0.17593979835510254,
+   "lpips_white_max": 0.17593255639076233,
+   "lpips_white_mean": 0.10227755103260279,
+   "mean_paired_speedup": 2.702952187424485,
+   "mixed_mode_seconds_mean": 4.978668271098286,
+   "partial_steps": 27.0,
+   "quality_n": "20/20",
+   "ratio_of_means": 2.7029493508467786,
+   "total_blocks": 443.0,
+   "zero_block_steps": 0.0
+  },
+  "dp-K12": {
+   "actual_scheduler_steps": [
+    40
+   ],
+   "alpha_max_abs": 0.07058823529411765,
+   "cache_dit_buffer_dtypes": [],
+   "exact_vs_native": "0/20",
+   "family": "dpcache",
+   "full_block_equivalent": 12.0,
+   "full_steps": 12.0,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "grouped_samples": 12,
+   "grouped_seconds_mean": 4.197143640446787,
+   "grouped_seconds_median": 4.196494787465781,
+   "grouped_seconds_stdev": 0.0026642712531549893,
+   "instrumentation_ok": true,
+   "lpips_alpha_dropped_max": 0.22000977396965027,
+   "lpips_white_max": 0.21997462213039398,
+   "lpips_white_mean": 0.08482620362192392,
+   "mean_paired_speedup": 3.2063356241067176,
+   "mixed_mode_seconds_mean": 4.196786827407777,
+   "partial_steps": 0.0,
+   "quality_n": "20/20",
+   "ratio_of_means": 3.206334368652292,
+   "total_blocks": 384.0,
+   "zero_block_steps": 28.0
+  },
+  "dp-K20": {
+   "actual_scheduler_steps": [
+    40
+   ],
+   "alpha_max_abs": 0.043137254901960784,
+   "cache_dit_buffer_dtypes": [],
+   "exact_vs_native": "0/20",
+   "family": "dpcache",
+   "full_block_equivalent": 20.0,
+   "full_steps": 20.0,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "grouped_samples": 12,
+   "grouped_seconds_mean": 6.844785724844162,
+   "grouped_seconds_median": 6.843208957929164,
+   "grouped_seconds_stdev": 0.004422148267231323,
+   "instrumentation_ok": true,
+   "lpips_alpha_dropped_max": 0.034946806728839874,
+   "lpips_white_max": 0.03495510295033455,
+   "lpips_white_mean": 0.0076209352351725105,
+   "mean_paired_speedup": 1.9660881165266646,
+   "mixed_mode_seconds_mean": 6.843480239622295,
+   "partial_steps": 0.0,
+   "quality_n": "20/20",
+   "ratio_of_means": 1.9660872444390975,
+   "total_blocks": 640.0,
+   "zero_block_steps": 20.0
+  },
+  "native": {
+   "actual_scheduler_steps": [
+    40
+   ],
+   "alpha_max_abs": null,
+   "cache_dit_buffer_dtypes": [],
+   "exact_vs_native": "None/None",
+   "family": "native",
+   "full_block_equivalent": 40.0,
+   "full_steps": 40.0,
+   "gate_provisional": null,
+   "gate_strict": null,
+   "grouped_samples": 12,
+   "grouped_seconds_mean": 13.45744590453493,
+   "grouped_seconds_median": 13.457420215476304,
+   "grouped_seconds_stdev": 0.004574811932555862,
+   "instrumentation_ok": true,
+   "lpips_alpha_dropped_max": null,
+   "lpips_white_max": null,
+   "lpips_white_mean": null,
+   "mean_paired_speedup": null,
+   "mixed_mode_seconds_mean": 13.455266601871699,
+   "partial_steps": 0.0,
+   "quality_n": "None/None",
+   "ratio_of_means": null,
+   "total_blocks": 1280.0,
+   "zero_block_steps": 0.0
+  },
+  "uniform-K12": {
+   "actual_scheduler_steps": [
+    40
+   ],
+   "alpha_max_abs": 0.2901960784313726,
+   "cache_dit_buffer_dtypes": [],
+   "exact_vs_native": "0/20",
+   "family": "uniform",
+   "full_block_equivalent": 12.0,
+   "full_steps": 12.0,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "grouped_samples": 12,
+   "grouped_seconds_mean": 4.196302196010947,
+   "grouped_seconds_median": 4.195908093359321,
+   "grouped_seconds_stdev": 0.002312182016526647,
+   "instrumentation_ok": true,
+   "lpips_alpha_dropped_max": 0.2799323797225952,
+   "lpips_white_max": 0.2799302637577057,
+   "lpips_white_mean": 0.1548153657466173,
+   "mean_paired_speedup": 3.2069782194391827,
+   "mixed_mode_seconds_mean": 4.195724030723795,
+   "partial_steps": 0.0,
+   "quality_n": "20/20",
+   "ratio_of_means": 3.206977304286553,
+   "total_blocks": 384.0,
+   "zero_block_steps": 28.0
+  },
+  "uniform-K20": {
+   "actual_scheduler_steps": [
+    40
+   ],
+   "alpha_max_abs": 0.058823529411764705,
+   "cache_dit_buffer_dtypes": [],
+   "exact_vs_native": "0/20",
+   "family": "uniform",
+   "full_block_equivalent": 20.0,
+   "full_steps": 20.0,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "grouped_samples": 12,
+   "grouped_seconds_mean": 6.843657001775379,
+   "grouped_seconds_median": 6.843249037396163,
+   "grouped_seconds_stdev": 0.0036575892211200187,
+   "instrumentation_ok": true,
+   "lpips_alpha_dropped_max": 0.2079436182975769,
+   "lpips_white_max": 0.20793205499649048,
+   "lpips_white_mean": 0.0701045728288591,
+   "mean_paired_speedup": 1.966412095360135,
+   "mixed_mode_seconds_mean": 6.845881152432412,
+   "partial_steps": 0.0,
+   "quality_n": "20/20",
+   "ratio_of_means": 1.9664115108404474,
+   "total_blocks": 640.0,
+   "zero_block_steps": 20.0
+  }
+ },
+ "corpora": {
+  "comparator_corpus_sha256": "488d298e29ce23e622f730157440ab68755f569e761b4be05fa936f87826cf11",
+  "controls": "3 reused calibration prompts, exactness only",
+  "heldout": "20 fresh pairs (10 new prompts x seeds 7001/7002), prompt-disjoint from every earlier DPCache split",
+  "validation": "the 8 pairs of the earlier DPCache study (already seen; used only for Cache-DiT preset choice)"
+ },
+ "costs": {
+  "incremental_break_even_images": {
+   "dp_K12_vs_cachedit_stock": 199.2,
+   "dp_K20_vs_cachedit_conservative": 186.9
+  },
+  "note": "calibration was spent once for the earlier DPCache study; Cache-DiT presets needed no calibration. Comparator validation tuning (4 Cache-DiT configs) is reported separately and not amortized into per-image time",
+  "prior_offline_calibration_gpu_seconds": 155.7
+ },
+ "figures": [
+  "figures/heldout-quality-vs-gpu-seconds.png",
+  "figures/heldout-worst-by-dpK12.jpg",
+  "figures/heldout-worst-by-dpK20.jpg"
+ ],
+ "headline": {
+  "compute_is_not_matched": "same 40 scheduler updates does NOT mean same compute: 384 blocks (dp-K12) vs 443 (stock) = +15.4%; 640 (dp-K20) vs 710 (conservative) = +10.9%; both exceed the +/-5% equal-compute tolerance, so no equal-compute claim is made",
+  "exactness": "no accelerated sample is bit-exact to native; all-full/disabled controls are bit-exact, verified both against the same-run native reference and, by crossrun-exactness-audit.json, against the pristine-source run runs/baseline-01 (28/28 rows: decoded tensors, latents and PNG bytes)",
+  "placement_ablation": {
+   "comparison": "DP vs endpoint-matched uniform at identical budget, prefix, last key and measured speed",
+   "k12": {
+    "dp_max": 0.21997,
+    "dp_mean": 0.08483,
+    "seconds": "4.197 vs 4.196",
+    "uniform_gate_strict": false,
+    "uniform_max": 0.27993,
+    "uniform_mean": 0.15482
+   },
+   "k20": {
+    "dp_max": 0.03496,
+    "dp_mean": 0.00762,
+    "seconds": "6.845 vs 6.844",
+    "uniform_gate_strict": false,
+    "uniform_max": 0.20793,
+    "uniform_mean": 0.0701
+   },
+   "verdict": "calibrated placement, not the budget, produces the quality; uniform K20 fails the strict gate that DP K20 passes"
+  },
+  "provisional_gate_tier": {
+   "comparison": "dp-K12 vs cachedit-stock (both pass mean<=.18/max<=.30)",
+   "dp_max_lpips": 0.21997,
+   "dp_mean_lpips": 0.08483,
+   "gpu_seconds_saved_percent": 15.7,
+   "stock_max_lpips": 0.17593,
+   "stock_mean_lpips": 0.10228,
+   "verdict": "DPCache K12 is 15.7% cheaper per image and lower on MEAN LPIPS, but its WORST case is worse than stock Cache-DiT"
+  },
+  "strict_gate_tier": {
+   "comparison": "dp-K20 vs cachedit-conservative (both pass mean<=.05/max<=.10)",
+   "conservative_max_lpips": 0.04248,
+   "conservative_mean_lpips": 0.01587,
+   "dp_max_lpips": 0.03496,
+   "dp_mean_lpips": 0.00762,
+   "gpu_seconds_saved_percent": 10.85,
+   "verdict": "DPCache K20 is 10.85% cheaper and lower on both mean and max LPIPS; the stronger of the two cases"
+  },
+  "teacache": "unsupported/no-op on Qwen-Image 2.1: enable_teacache=True is accepted, runs all 1280 blocks and reproduces native bit-exactly; excluded from acceleration ranking"
+ },
+ "limitations": [
+  "20 held-out pairs and 4 timing prompts: small-sample, preliminary; not a universal superiority claim",
+  "LPIPS gates are this study's provisional policy (mean<=.18/max<=.30) and a stricter (mean<=.05/max<=.10) reading, not thresholds from any paper",
+  "RGBA policy still provisional: white-composite LPIPS is primary, alpha-dropped LPIPS and alpha error are reported separately and not gated",
+  "uniform-K12 and cachedit-stock show the largest alpha deviation (max 0.290 and 0.278)",
+  "cachedit-aggressive (RDT .40) behaved identically to stock here, so only two distinct Cache-DiT configs reached held-out",
+  "one GPU, one checkpoint, one resolution and step count"
+ ],
+ "question": "Relative allocated GPU-seconds, at matched quality gates, of DPCache (implemented in this work, python/sglang/multimodal_gen/runtime/cache/dpcache.py) against Cache-DiT (the caching integration SGLang already ships for Qwen-Image 2.1), with TeaCache reported as unsupported/no-op and endpoint-matched uniform arms as DPCache's placement ablation",
+ "recipe": {
+  "attention": "torch_sdpa",
+  "cfg": false,
+  "compile": false,
+  "cuda_graphs": false,
+  "dtype": "bfloat16",
+  "generator": "cpu",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "guidance": 1.0,
+  "images_per_request": 1,
+  "model_revision": "790c92633540aa0cb11d9abf19eb46d861714758",
+  "offload": "dit layerwise",
+  "resolution": "1024x1024",
+  "steps": 40
+ },
+ "runs": {
+  "controls": "runs/controls-01 (pre-fix) and runs/controls-02 (final runtime)",
+  "controls_final": {
+   "actual_scheduler_steps": 40,
+   "all_bit_exact_vs_native": true,
+   "blocks_each": 1280,
+   "crossrun_audit_vs_pristine_source": {
+    "artifact": "crossrun-exactness-audit.json",
+    "compared_rows": 28,
+    "digests": {
+     "baseline_01_plan_sha256": "6202ab5cd6cce5706e89567961f99d6013549206ac3c1da719edf130e6603447",
+     "baseline_01_results_sha256": "0b40817d5b78e0b40fea1ee3b4851cd12e2031e97732f13748a64995562c9ab6",
+     "controls_02_plan_sha256": "3fcf421f9a51b167d0f3d28a501659c3bf2f606c817bd4775b1438852e02bdbf",
+     "controls_02_results_sha256": "1e11aa26186da1da490e9b46752fdd9025bcb9c83348ddce15e9c57da24f2054"
+    },
+    "join_key": "prompt text + seed (pair-id split prefixes differ: controls:* vs calibration:*)",
+    "latents_torch_equal": "28/28",
+    "png_bytes_equal": "28/28",
+    "reference_repeats_self_consistent": true,
+    "reference_run": "runs/baseline-01",
+    "reference_source": "read-only export of unmodified commit a9871012acb768dc94a43a6542cc32626c7b7b0b (baseline-src-a9871012, contains no dpcache.py)",
+    "samples_torch_equal": "28/28",
+    "settings_fields_unrecorded_by_the_older_harness": [
+     "requested_scheduler_steps",
+     "actual_scheduler_steps"
+    ],
+    "settings_signature_match": true,
+    "tool": "crossrun_exactness_audit.py (CPU only, reads finished artifacts, runs no inference or scoring)",
+    "verdict": "the working tree reproduces the unmodified source commit bit-exactly on every all-full/disabled control"
+   },
+   "evidence_images": 28,
+   "in_run_reference": "each controls-02 row is scored against the native image of the same run (runs/controls-02/scores.json)",
+   "intentional_failure_refused": true,
+   "native_recheck_images": 13,
+   "note": "re-run after the runtime arm-switch fix; confirms the fix changed nothing about exactness",
+   "run": "runs/controls-02"
+  },
+  "heldout": "runs/heldout-c01",
+  "selection": "selection-comparator-v1.json (read-only, frozen before held-out)",
+  "validation": "runs/validation-c01"
+ },
+ "status": "complete (small-sample, preliminary)",
+ "timing_regimes": {
+  "note": "12 grouped samples are 4 distinct prompts x 3 repeats, not 12 independent prompts; close orderings within a few ms are inconclusive",
+  "primary": "grouped same-config (service): 3 repeats x 4 distinct prompts = 12 samples per arm",
+  "secondary": "randomized mixed-mode: 1 repeat x 4 pairs, descriptive mount-overhead only"
+ }
+}

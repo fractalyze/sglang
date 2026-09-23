@@ -1,0 +1,182 @@
+{
+ "corpus_sha256": "488d298e29ce23e622f730157440ab68755f569e761b4be05fa936f87826cf11",
+ "note": "controls reuse the first three DPCache calibration prompts (already seen, exactness only); held-out prompts are new for this comparison",
+ "schema": "dpcache-comparator-corpus-v1",
+ "settings": {
+  "generator_device": "cpu",
+  "guidance_scale": 1.0,
+  "height": 1024,
+  "model_revision": "790c92633540aa0cb11d9abf19eb46d861714758",
+  "negative_prompt": null,
+  "num_outputs_per_prompt": 1,
+  "steps": 40,
+  "width": 1024
+ },
+ "splits": {
+  "controls": [
+   {
+    "category": "text",
+    "pair_id": "controls:c0cd8e9376bb:31",
+    "prompt": "A vintage travel poster with the words \"VISIT MARS\" in bold letters over a red desert landscape",
+    "seed": 31,
+    "split": "controls"
+   },
+   {
+    "category": "people",
+    "pair_id": "controls:5107c7bcd8c8:31",
+    "prompt": "A young woman with curly hair reading a newspaper on a subway train, candid photo",
+    "seed": 31,
+    "split": "controls"
+   },
+   {
+    "category": "objects-spatial",
+    "pair_id": "controls:a5b6e490463e:31",
+    "prompt": "A stack of three books with a pair of glasses on top, next to a steaming mug, on a desk under a lamp",
+    "seed": 31,
+    "split": "controls"
+   }
+  ],
+  "heldout": [
+   {
+    "category": "typography",
+    "pair_id": "comparator-heldout:e4cb150de298:7001",
+    "prompt": "A vintage enamel shop sign reading \"BLUE WHALE LAUNDRY, EST 1931\" above a narrow doorway",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "counting-spatial",
+    "pair_id": "comparator-heldout:a1d06a90afd0:7001",
+    "prompt": "Six wooden chairs around a round table, three with red cushions and three with blue cushions",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "faces-hands",
+    "pair_id": "comparator-heldout:fa01059a073d:7001",
+    "prompt": "A close-up of a potter's hands shaping a clay bowl on a spinning wheel, studio light",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "faces",
+    "pair_id": "comparator-heldout:358b08ba8b87:7001",
+    "prompt": "A smiling barista with freckles and short dreadlocks handing over a paper cup, shallow depth of field",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "complex-scene",
+    "pair_id": "comparator-heldout:685f0548b27c:7001",
+    "prompt": "A crowded train platform at rush hour with departure boards, luggage and a busker playing violin",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "illustration",
+    "pair_id": "comparator-heldout:277cd8481c1c:7001",
+    "prompt": "A retro travel poster of a lighthouse on a cliff, bold geometric shapes and three flat colors",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "color",
+    "pair_id": "comparator-heldout:bd8d52dd24f0:7001",
+    "prompt": "A macro photograph of oil and water droplets refracting magenta, teal and amber light",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "transparency",
+    "pair_id": "comparator-heldout:96e7a9f01269:7001",
+    "prompt": "A clear glass perfume bottle with a faceted stopper on a mirrored tray, soft window light",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "transparency",
+    "pair_id": "comparator-heldout:3a011b7046f4:7001",
+    "prompt": "A stack of translucent acrylic sheets in mint, rose and amber on a white studio background",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "natural-scene",
+    "pair_id": "comparator-heldout:e3a6ba7db27a:7001",
+    "prompt": "A misty pine forest at dawn with a deer drinking from a shallow stream",
+    "seed": 7001,
+    "split": "heldout"
+   },
+   {
+    "category": "typography",
+    "pair_id": "comparator-heldout:e4cb150de298:7002",
+    "prompt": "A vintage enamel shop sign reading \"BLUE WHALE LAUNDRY, EST 1931\" above a narrow doorway",
+    "seed": 7002,
+    "split": "heldout"
+   },
+   {
+    "category": "counting-spatial",
+    "pair_id": "comparator-heldout:a1d06a90afd0:7002",
+    "prompt": "Six wooden chairs around a round table, three with red cushions and three with blue cushions",
+    "seed": 7002,
+    "split": "heldout"
+   },
+   {
+    "category": "faces-hands",
+    "pair_id": "comparator-heldout:fa01059a073d:7002",
+    "prompt": "A close-up of a potter's hands shaping a clay bowl on a spinning wheel, studio light",
+    "seed": 7002,
+    "split": "heldout"
+   },
+   {
+    "category": "faces",
+    "pair_id": "comparator-heldout:358b08ba8b87:7002",
+    "prompt": "A smiling barista with freckles and short dreadlocks handing over a paper cup, shallow depth of field",
+    "seed": 7002,
+    "split": "heldout"
+   },
+   {
+    "category": "complex-scene",
+    "pair_id": "comparator-heldout:685f0548b27c:7002",
+    "prompt": "A crowded train platform at rush hour with departure boards, luggage and a busker playing violin",
+    "seed": 7002,
+    "split": "heldout"
+   },
+   {
+    "category": "illustration",
+    "pair_id": "comparator-heldout:277cd8481c1c:7002",
+    "prompt": "A retro travel poster of a lighthouse on a cliff, bold geometric shapes and three flat colors",
+    "seed": 7002,
+    "split": "heldout"
+   },
+   {
+    "category": "color",
+    "pair_id": "comparator-heldout:bd8d52dd24f0:7002",
+    "prompt": "A macro photograph of oil and water droplets refracting magenta, teal and amber light",
+    "seed": 7002,
+    "split": "heldout"
+   },
+   {
+    "category": "transparency",
+    "pair_id": "comparator-heldout:96e7a9f01269:7002",
+    "prompt": "A clear glass perfume bottle with a faceted stopper on a mirrored tray, soft window light",
+    "seed": 7002,
+    "split": "heldout"
+   },
+   {
+    "category": "transparency",
+    "pair_id": "comparator-heldout:3a011b7046f4:7002",
+    "prompt": "A stack of translucent acrylic sheets in mint, rose and amber on a white studio background",
+    "seed": 7002,
+    "split": "heldout"
+   },
+   {
+    "category": "natural-scene",
+    "pair_id": "comparator-heldout:e3a6ba7db27a:7002",
+    "prompt": "A misty pine forest at dawn with a deer drinking from a shallow stream",
+    "seed": 7002,
+    "split": "heldout"
+   }
+  ]
+ }
+}

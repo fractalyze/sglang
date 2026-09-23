@@ -1,0 +1,211 @@
+{
+ "arms": {
+  "K12": {
+   "num_full_steps": 12,
+   "schedule": "schedules-v2/K12.json",
+   "schedule_sha256": "8193d1a68abd6c569a9e139c811a11e2c3b9cfd9ead838b49e5f16fd2d6c7768"
+  },
+  "K20": {
+   "num_full_steps": 20,
+   "schedule": "schedules-v2/K20.json",
+   "schedule_sha256": "259016f114db5ec40b3a1609ebcdfa62157ad06df210ae29e263b331ae12248e"
+  }
+ },
+ "corpus_sha256": "0ab65e054c86899030a44d2f6778d7fb0a14de46d9a820bedabd43f01759f6ff",
+ "gates": {
+  "provisional": [
+   0.18,
+   0.3
+  ],
+  "strict": [
+   0.05,
+   0.1
+  ]
+ },
+ "rule": "validation split only: for each gate, the complete arm (every planned capture and timing request measured) passing white-composite LPIPS mean and max with the highest mean paired speedup over native; ties go to larger K",
+ "schema": "dpcache-selection-v1",
+ "scores": "validation-02/scores.json",
+ "scores_sha256": "862fae57aa59f65362420494850d913aa4f116dab4cb3b94837ca28cd022092c",
+ "selected": {
+  "provisional": "K12",
+  "strict": "K20"
+ },
+ "validation_digests": {
+  "plan_sha256": "ccd76f30364bd74da740e427ea94af001eff4ad475feea0f63c88d3cdf98273f",
+  "results_sha256": "cf6c66237bbde97cd05e26207718249378ca0a94fdfe2b0d8a2a6e21663332c3"
+ },
+ "validation_quality": {
+  "K12": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "lpips_white": {
+    "max": 0.2346666306257248,
+    "mean": 0.09583216765895486,
+    "median": 0.08103131502866745,
+    "min": 0.033221807330846786,
+    "n": 8,
+    "stdev": 0.06445648332073708
+   }
+  },
+  "K16": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "lpips_white": {
+    "max": 0.13012558221817017,
+    "mean": 0.039222402730956674,
+    "median": 0.026818054728209972,
+    "min": 0.005785071291029453,
+    "n": 8,
+    "stdev": 0.03985999997035172
+   }
+  },
+  "K20": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "lpips_white": {
+    "max": 0.03217349946498871,
+    "mean": 0.009553325129672885,
+    "median": 0.007619150681421161,
+    "min": 0.001027337508276105,
+    "n": 8,
+    "stdev": 0.00976175669013907
+   }
+  },
+  "K24": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "lpips_white": {
+    "max": 0.01039181649684906,
+    "mean": 0.004349980295955902,
+    "median": 0.004151728004217148,
+    "min": 0.0004385137290228158,
+    "n": 8,
+    "stdev": 0.003202588867815433
+   }
+  },
+  "K28": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "lpips_white": {
+    "max": 0.004552382975816727,
+    "mean": 0.0024787281654425897,
+    "median": 0.0027694326126948,
+    "min": 0.0003278122458141297,
+    "n": 8,
+    "stdev": 0.0014683292274702644
+   }
+  },
+  "K32": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "lpips_white": {
+    "max": 0.0026742874179035425,
+    "mean": 0.0013032082679274026,
+    "median": 0.0014409038703888655,
+    "min": 0.00024080811999738216,
+    "n": 8,
+    "stdev": 0.0008277868422017968
+   }
+  },
+  "K36": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "lpips_white": {
+    "max": 0.0014232886023819447,
+    "mean": 0.0008667339388921391,
+    "median": 0.0010476723546162248,
+    "min": 0.00014549776096828282,
+    "n": 8,
+    "stdev": 0.0004793612920539872
+   }
+  },
+  "K39": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "lpips_white": {
+    "max": 0.0010225543519482017,
+    "mean": 0.0005969280000499566,
+    "median": 0.0006392350769601762,
+    "min": 7.599447417305782e-05,
+    "n": 8,
+    "stdev": 0.000333634625686187
+   }
+  }
+ },
+ "validation_run": "runs/validation-02",
+ "validation_timing": {
+  "K12": {
+   "max": 3.2083579172997463,
+   "mean": 3.2060552756308507,
+   "median": 3.2069129696963814,
+   "min": 3.2030584429619786,
+   "n": 8,
+   "stdev": 0.00210205776079364
+  },
+  "K16": {
+   "max": 2.439213743877887,
+   "mean": 2.4384687718410207,
+   "median": 2.4385649694701637,
+   "min": 2.4374699991084783,
+   "n": 8,
+   "stdev": 0.000493411614407784
+  },
+  "K20": {
+   "max": 1.9671555821146307,
+   "mean": 1.9666015585086087,
+   "median": 1.966710153172027,
+   "min": 1.9656152932719635,
+   "n": 8,
+   "stdev": 0.0005088563382037804
+  },
+  "K24": {
+   "max": 1.648751472810005,
+   "mean": 1.647640078753391,
+   "median": 1.6476512203806255,
+   "min": 1.6465571720765686,
+   "n": 8,
+   "stdev": 0.000659455678349713
+  },
+  "K28": {
+   "max": 1.4186528598835257,
+   "mean": 1.418053785598481,
+   "median": 1.4182306956315418,
+   "min": 1.4164454978576553,
+   "n": 8,
+   "stdev": 0.000705493890512817
+  },
+  "K32": {
+   "max": 1.2451644546261451,
+   "mean": 1.2357650082184992,
+   "median": 1.2444665162342177,
+   "min": 1.1850597661409559,
+   "n": 8,
+   "stdev": 0.020851110814229693
+  },
+  "K36": {
+   "max": 1.1092683506270706,
+   "mean": 1.108899036855556,
+   "median": 1.1090288529301906,
+   "min": 1.1083181473314874,
+   "n": 8,
+   "stdev": 0.00033647601721180587
+  },
+  "K39": {
+   "max": 1.0253899006795222,
+   "mean": 1.0250361091906828,
+   "median": 1.0250531084660315,
+   "min": 1.0243855831056639,
+   "n": 8,
+   "stdev": 0.0003266206607587279
+  },
+  "native": null
+ }
+}

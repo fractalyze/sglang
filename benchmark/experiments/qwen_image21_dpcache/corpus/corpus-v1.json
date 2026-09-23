@@ -1,0 +1,289 @@
+{
+ "corpus_sha256": "0ab65e054c86899030a44d2f6778d7fb0a14de46d9a820bedabd43f01759f6ff",
+ "note": "prompt-disjoint splits; heldout prompts 1-8 reuse the older MANIFEST-pilot-v1 evaluation prompts (no DPCache tuning ever saw them)",
+ "schema": "dpcache-corpus-v1",
+ "settings": {
+  "generator_device": "cpu",
+  "guidance_scale": 1.0,
+  "height": 1024,
+  "model_revision": "790c92633540aa0cb11d9abf19eb46d861714758",
+  "negative_prompt": null,
+  "num_outputs_per_prompt": 1,
+  "steps": 40,
+  "width": 1024
+ },
+ "splits": {
+  "calibration": [
+   {
+    "category": "text",
+    "pair_id": "calibration:c0cd8e9376bb:31",
+    "prompt": "A vintage travel poster with the words \"VISIT MARS\" in bold letters over a red desert landscape",
+    "seed": 31,
+    "split": "calibration"
+   },
+   {
+    "category": "people",
+    "pair_id": "calibration:5107c7bcd8c8:31",
+    "prompt": "A young woman with curly hair reading a newspaper on a subway train, candid photo",
+    "seed": 31,
+    "split": "calibration"
+   },
+   {
+    "category": "objects-spatial",
+    "pair_id": "calibration:a5b6e490463e:31",
+    "prompt": "A stack of three books with a pair of glasses on top, next to a steaming mug, on a desk under a lamp",
+    "seed": 31,
+    "split": "calibration"
+   },
+   {
+    "category": "scene",
+    "pair_id": "calibration:0466b6deb083:31",
+    "prompt": "A futuristic city street at night with flying cars, holographic billboards and wet reflective pavement",
+    "seed": 31,
+    "split": "calibration"
+   },
+   {
+    "category": "illustration",
+    "pair_id": "calibration:49d2700e012e:31",
+    "prompt": "A children's book illustration of a fox and a rabbit sharing an umbrella in the rain, soft watercolor",
+    "seed": 31,
+    "split": "calibration"
+   },
+   {
+    "category": "counting",
+    "pair_id": "calibration:03e87368e45b:31",
+    "prompt": "Five red apples arranged in a row on a white kitchen counter",
+    "seed": 31,
+    "split": "calibration"
+   },
+   {
+    "category": "colors",
+    "pair_id": "calibration:788673202ce4:31",
+    "prompt": "A field of tulips in bright red, yellow, purple and orange under a clear blue sky",
+    "seed": 31,
+    "split": "calibration"
+   },
+   {
+    "category": "text",
+    "pair_id": "calibration:e8909a7fbacc:31",
+    "prompt": "A hand-painted wooden sign that says \"FRESH BREAD\" hanging outside a bakery",
+    "seed": 31,
+    "split": "calibration"
+   },
+   {
+    "category": "people",
+    "pair_id": "calibration:247ad2471ad3:31",
+    "prompt": "An old man playing chess in a park with a young girl, warm afternoon light",
+    "seed": 31,
+    "split": "calibration"
+   },
+   {
+    "category": "complex-scene",
+    "pair_id": "calibration:ddff87aae8cb:31",
+    "prompt": "A busy harbor at dawn with fishing boats, seagulls, stacked crates and workers unloading nets",
+    "seed": 31,
+    "split": "calibration"
+   }
+  ],
+  "heldout": [
+   {
+    "category": "text",
+    "pair_id": "heldout:e8f4847278ea:1001",
+    "prompt": "A storefront with a red neon sign that reads \"OPEN 24 HOURS\" above a glass door on a rainy night street",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "text",
+    "pair_id": "heldout:e248bb05d837:1001",
+    "prompt": "A chalkboard cafe menu with handwritten lines \"Espresso 3.50\", \"Latte 4.25\" and \"Tea 2.75\"",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "people",
+    "pair_id": "heldout:b87f3ed911db:1001",
+    "prompt": "A portrait photograph of an elderly fisherman with a weathered face and gray beard wearing a yellow raincoat",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "people",
+    "pair_id": "heldout:be8b673cbebc:1001",
+    "prompt": "Two children flying a red kite on a grassy hill at sunset, seen from behind",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "objects-counting",
+    "pair_id": "heldout:c6657ae59c03:1001",
+    "prompt": "A still life of a blue ceramic teapot, three green apples and a brass key on a wooden table",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "spatial",
+    "pair_id": "heldout:c9eaa299ec5a:1001",
+    "prompt": "A black cat sitting to the left of a white dog with a red ball between them on a checkered floor",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "complex-scene",
+    "pair_id": "heldout:2855840c4ef4:1001",
+    "prompt": "A bustling medieval market square with stalls of fruit and fabric, stone towers in the background",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "scene",
+    "pair_id": "heldout:75a99254e067:1001",
+    "prompt": "An aerial view of a winding river through an autumn forest with a small wooden bridge and a cabin",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "illustration",
+    "pair_id": "heldout:53815bc853c1:1001",
+    "prompt": "An anime-style illustration of a girl with a red scarf standing on a rooftop under a starry night sky",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "counting-colors",
+    "pair_id": "heldout:e24012951c19:1001",
+    "prompt": "Four coffee cups in different colors, red, blue, green and yellow, lined up on a wooden shelf",
+    "seed": 1001,
+    "split": "heldout"
+   },
+   {
+    "category": "text",
+    "pair_id": "heldout:e8f4847278ea:2002",
+    "prompt": "A storefront with a red neon sign that reads \"OPEN 24 HOURS\" above a glass door on a rainy night street",
+    "seed": 2002,
+    "split": "heldout"
+   },
+   {
+    "category": "text",
+    "pair_id": "heldout:e248bb05d837:2002",
+    "prompt": "A chalkboard cafe menu with handwritten lines \"Espresso 3.50\", \"Latte 4.25\" and \"Tea 2.75\"",
+    "seed": 2002,
+    "split": "heldout"
+   },
+   {
+    "category": "people",
+    "pair_id": "heldout:b87f3ed911db:2002",
+    "prompt": "A portrait photograph of an elderly fisherman with a weathered face and gray beard wearing a yellow raincoat",
+    "seed": 2002,
+    "split": "heldout"
+   },
+   {
+    "category": "people",
+    "pair_id": "heldout:be8b673cbebc:2002",
+    "prompt": "Two children flying a red kite on a grassy hill at sunset, seen from behind",
+    "seed": 2002,
+    "split": "heldout"
+   },
+   {
+    "category": "objects-counting",
+    "pair_id": "heldout:c6657ae59c03:2002",
+    "prompt": "A still life of a blue ceramic teapot, three green apples and a brass key on a wooden table",
+    "seed": 2002,
+    "split": "heldout"
+   },
+   {
+    "category": "spatial",
+    "pair_id": "heldout:c9eaa299ec5a:2002",
+    "prompt": "A black cat sitting to the left of a white dog with a red ball between them on a checkered floor",
+    "seed": 2002,
+    "split": "heldout"
+   },
+   {
+    "category": "complex-scene",
+    "pair_id": "heldout:2855840c4ef4:2002",
+    "prompt": "A bustling medieval market square with stalls of fruit and fabric, stone towers in the background",
+    "seed": 2002,
+    "split": "heldout"
+   },
+   {
+    "category": "scene",
+    "pair_id": "heldout:75a99254e067:2002",
+    "prompt": "An aerial view of a winding river through an autumn forest with a small wooden bridge and a cabin",
+    "seed": 2002,
+    "split": "heldout"
+   },
+   {
+    "category": "illustration",
+    "pair_id": "heldout:53815bc853c1:2002",
+    "prompt": "An anime-style illustration of a girl with a red scarf standing on a rooftop under a starry night sky",
+    "seed": 2002,
+    "split": "heldout"
+   },
+   {
+    "category": "counting-colors",
+    "pair_id": "heldout:e24012951c19:2002",
+    "prompt": "Four coffee cups in different colors, red, blue, green and yellow, lined up on a wooden shelf",
+    "seed": 2002,
+    "split": "heldout"
+   }
+  ],
+  "validation": [
+   {
+    "category": "text",
+    "pair_id": "validation:75970d58f146:505",
+    "prompt": "A bookstore window display with a large banner reading \"SUMMER SALE 50% OFF\"",
+    "seed": 505,
+    "split": "validation"
+   },
+   {
+    "category": "people",
+    "pair_id": "validation:5d901be8cd16:505",
+    "prompt": "A chef in a white uniform carefully plating a dessert in a professional kitchen",
+    "seed": 505,
+    "split": "validation"
+   },
+   {
+    "category": "counting",
+    "pair_id": "validation:d44b25c069d6:505",
+    "prompt": "Three yellow rubber ducks and two blue toy boats floating in a bathtub",
+    "seed": 505,
+    "split": "validation"
+   },
+   {
+    "category": "illustration",
+    "pair_id": "validation:3a20c5e126cd:505",
+    "prompt": "A flat vector illustration of a mountain landscape with a rising sun, minimal pastel colors",
+    "seed": 505,
+    "split": "validation"
+   },
+   {
+    "category": "colors",
+    "pair_id": "validation:55e25b2e1367:505",
+    "prompt": "A stained glass window depicting a peacock with vivid blue, green and gold panes",
+    "seed": 505,
+    "split": "validation"
+   },
+   {
+    "category": "complex-scene",
+    "pair_id": "validation:4994475ebfb6:505",
+    "prompt": "A cozy living room with a fireplace, a sleeping dog on a rug and snow falling outside the window",
+    "seed": 505,
+    "split": "validation"
+   },
+   {
+    "category": "objects",
+    "pair_id": "validation:323a41d247a5:505",
+    "prompt": "A glass jar of colorful marbles on a windowsill with sunlight casting refracted colors",
+    "seed": 505,
+    "split": "validation"
+   },
+   {
+    "category": "spatial",
+    "pair_id": "validation:765a76025695:505",
+    "prompt": "A red bicycle leaning against a green door, with a potted plant to its right",
+    "seed": 505,
+    "split": "validation"
+   }
+  ]
+ }
+}

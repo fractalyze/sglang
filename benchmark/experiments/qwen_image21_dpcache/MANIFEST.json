@@ -1,0 +1,285 @@
+{
+ "schema": "dpcache-publish-manifest-v1",
+ "generated_utc": "2026-09-23T04:26:21Z",
+ "raw_artifact_root": "the producing machine's artifact root (not published; see README)",
+ "policy": "Raw artifacts are immutable and authoritative. Publish copies are byte-identical unless 'rewritten' is true, in which case only the listed fields changed, and both digests are recorded.",
+ "files": [
+  {
+   "raw_source": "comparators/corpus-comparator-v1.json",
+   "published_as": "corpus/corpus-comparator-v1.json",
+   "raw_sha256": "93683762b2bebe7bea54d8c5eab1cef328b58f9cbe221c8a3108fbb08df8bb74",
+   "rewritten": false,
+   "published_sha256": "93683762b2bebe7bea54d8c5eab1cef328b58f9cbe221c8a3108fbb08df8bb74"
+  },
+  {
+   "raw_source": "corpus-v1.json",
+   "published_as": "corpus/corpus-v1.json",
+   "raw_sha256": "56c21bfd75daedc3815c3116a31c9c13a7c87c1b7c33c63fd6e13da0fc2a6cde",
+   "rewritten": false,
+   "published_sha256": "56c21bfd75daedc3815c3116a31c9c13a7c87c1b7c33c63fd6e13da0fc2a6cde"
+  },
+  {
+   "raw_source": "comparators/figures/heldout-quality-vs-gpu-seconds.png",
+   "published_as": "figures/heldout-quality-vs-gpu-seconds.png",
+   "raw_sha256": "db3ad3afb487f4fe5b15328c233b6b47e08cf54087e747c5acd1a54d7ab3170e",
+   "rewritten": false,
+   "published_sha256": "db3ad3afb487f4fe5b15328c233b6b47e08cf54087e747c5acd1a54d7ab3170e"
+  },
+  {
+   "raw_source": "comparators/figures/heldout-worst-by-dpK12.jpg",
+   "published_as": "figures/heldout-worst-by-dpK12.jpg",
+   "raw_sha256": "2a922f651d88059c4b5e2cecf861542dbdeb51f6c6b10ea401c8332a2867a0a4",
+   "rewritten": false,
+   "published_sha256": "2a922f651d88059c4b5e2cecf861542dbdeb51f6c6b10ea401c8332a2867a0a4"
+  },
+  {
+   "raw_source": "comparators/figures/heldout-worst-by-dpK20.jpg",
+   "published_as": "figures/heldout-worst-by-dpK20.jpg",
+   "raw_sha256": "7b019122c14d7ca55d1a13d7fd7dd3f881858dd6096dbce5ca444eecf3dccd48",
+   "rewritten": false,
+   "published_sha256": "7b019122c14d7ca55d1a13d7fd7dd3f881858dd6096dbce5ca444eecf3dccd48"
+  },
+  {
+   "raw_source": "comparators/RESULTS.json",
+   "published_as": "results/comparator-results.json",
+   "raw_sha256": "61b241e9e8eb704fdb555cd8110ffb6367cae4e8442b6b04f566680834df4c5c",
+   "rewritten": true,
+   "rewritten_fields": [
+    "runs.controls_final.crossrun_audit_vs_pristine_source.reference_run"
+   ],
+   "published_sha256": "dc65c8bf106772d9000bfe424e03770ca146e64a998e58224289a5e4443db0ed",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "comparators/crossrun-exactness-audit.json",
+   "published_as": "results/crossrun-exactness-audit.json",
+   "raw_sha256": "4e38ad206b5d6e02902d71ad1ef43121817b9a96aeaf0b86b1c86bbca53e996b",
+   "rewritten": true,
+   "rewritten_fields": [
+    "candidate_run.corpus",
+    "candidate_run.path",
+    "candidate_run.settings.environment.runner_config.model_path",
+    "candidate_run.settings.model_path",
+    "candidate_run.settings.source_path",
+    "reference_run.corpus",
+    "reference_run.path",
+    "reference_run.settings.environment.runner_config.model_path",
+    "reference_run.settings.model_path",
+    "reference_run.settings.source_path"
+   ],
+   "published_sha256": "73a8ad4e9de015e6fa3bc0be8e8e1900d615032576dbd121376e7306df16d492",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "RESULTS.json",
+   "published_as": "results/dpcache-results.json",
+   "raw_sha256": "92cb22ffe4a20f78a134fb4119fe8da97a809afc1bbfbd97174f6213ad38b2bc",
+   "rewritten": true,
+   "rewritten_fields": [
+    "checkout",
+    "report"
+   ],
+   "published_sha256": "e8c51567bc47f6bb2b92f2a70fe7c811bdc4aca84f64c7e46ac21877eaee22e0",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "comparators/selection-comparator-v1.json",
+   "published_as": "results/selection-comparator-v1.json",
+   "raw_sha256": "95e0d1240d29cb83f49c59298b811e075d363b94e456bfda22f76536d5bdbb11",
+   "rewritten": true,
+   "rewritten_fields": [
+    "arms.dp-K12.metadata.schedule",
+    "arms.dp-K20.metadata.schedule",
+    "arms.uniform-K12.metadata.schedule",
+    "arms.uniform-K20.metadata.schedule",
+    "heldout_corpus",
+    "scores",
+    "validation_run"
+   ],
+   "published_sha256": "1f31325fb05b2d8930c4c19a22f7157971321f747a9df28b7375b6ef399a1c02",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "selection-v1.json",
+   "published_as": "results/selection-dpcache-v1.json",
+   "raw_sha256": "1d7ac51939bba3f1921f92ff7c8b1dfff4580afe6944f1e15bdf41263bc5e42b",
+   "rewritten": true,
+   "rewritten_fields": [
+    "arms.K12.schedule",
+    "arms.K20.schedule",
+    "scores",
+    "validation_run"
+   ],
+   "published_sha256": "ad69793cd817da4306e6628c78b41dddcd234ec329c2122a72655f56b3242707",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "comparators/schedules-uniform/K12.json",
+   "published_as": "schedules/comparator/K12.json",
+   "raw_sha256": "8193d1a68abd6c569a9e139c811a11e2c3b9cfd9ead838b49e5f16fd2d6c7768",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "82a3bbffe7278dbd711000fccdd6d5b5061303fd19bb932eeebb5b8bce41303e",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "comparators/schedules-uniform/K20.json",
+   "published_as": "schedules/comparator/K20.json",
+   "raw_sha256": "259016f114db5ec40b3a1609ebcdfa62157ad06df210ae29e263b331ae12248e",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "a8d5aef668f8b7a6a9fd50fdc04d615cdd23da1fd28b8180df457d4438080e2d",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "comparators/schedules-uniform/K40.json",
+   "published_as": "schedules/comparator/K40.json",
+   "raw_sha256": "d4f7e54f99f59fa563a9da91a6c2fb9c762c64c0889566ca29cf19930f913a28",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "f3d940a6353668071725ba2d663e573e4acfdc331ce2fe461b751042590dcea4",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "comparators/schedules-uniform/uniform-K12.json",
+   "published_as": "schedules/comparator/uniform-K12.json",
+   "raw_sha256": "c375e688e13b7200827998929794f9ac625d35724b8805d732298d3599e8fa80",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "cfaf6fd1bcf830b2818e85bd454830755732c9829889963b83c706dd162e568b",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "comparators/schedules-uniform/uniform-K20.json",
+   "published_as": "schedules/comparator/uniform-K20.json",
+   "raw_sha256": "ca6d102ddbeeee65474fa5efed869b2c08ccc5b50b4a2398c08075fc2b4b9f97",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "c69ac2a216a296cceafc63e485afa4978d1f71a35af490df095ecace2ee79400",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "comparators/schedules-uniform/uniform-K40.json",
+   "published_as": "schedules/comparator/uniform-K40.json",
+   "raw_sha256": "6c705c3ca2999d20f517f8cf2d4dd4a0d98147c89425c74a850557f493988acb",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "6a8301289b4df0f3f6c95cf743a2a2f0d2d9fbc212a93fd3ae036e2902184953",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "schedules-v2/K12.json",
+   "published_as": "schedules/dp/K12.json",
+   "raw_sha256": "8193d1a68abd6c569a9e139c811a11e2c3b9cfd9ead838b49e5f16fd2d6c7768",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "82a3bbffe7278dbd711000fccdd6d5b5061303fd19bb932eeebb5b8bce41303e",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "schedules-v2/K16.json",
+   "published_as": "schedules/dp/K16.json",
+   "raw_sha256": "d92ac9f1fe6de8c1c382038671c1d4ab7f091572c10045f724cdcd67ac7c4104",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "1ce3b65d5c789faa9756ff8bdd1d52611cc173ab6382e0c2f02a64434d12eb3c",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "schedules-v2/K20.json",
+   "published_as": "schedules/dp/K20.json",
+   "raw_sha256": "259016f114db5ec40b3a1609ebcdfa62157ad06df210ae29e263b331ae12248e",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "a8d5aef668f8b7a6a9fd50fdc04d615cdd23da1fd28b8180df457d4438080e2d",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "schedules-v2/K24.json",
+   "published_as": "schedules/dp/K24.json",
+   "raw_sha256": "12909ec161274a9968398fd06c950a1a19cb2c4eabf0d9e7672ba8c064668396",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "c5b33624c0774445c00c65b5f3dbcca25ca7051801f181050d88ac664caef6a6",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "schedules-v2/K28.json",
+   "published_as": "schedules/dp/K28.json",
+   "raw_sha256": "27a44605848dafeafd67a4d4049f3bf12f48a6cbced3becc09df050707f276ae",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "8085760ab7c25d37a1eb52a1f8968f9891f6a3042c8692b2d5b215a88d921c99",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "schedules-v2/K32.json",
+   "published_as": "schedules/dp/K32.json",
+   "raw_sha256": "393436bc9ecb20b3d5b2e1cc00a9d7c6ca70d38a23d02ad0ca44a1ca0d4e3f4d",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "f3b6132fce5ba92b0ed0cda13abe7ec5ed2cc4971690e202036ecd727c3597bc",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "schedules-v2/K36.json",
+   "published_as": "schedules/dp/K36.json",
+   "raw_sha256": "0b109adbe694ed788736ce7fe3caf8918eedbcc7ff6f3939663bc5c74c1169a0",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "f133a09fab3bc7969d62615575f9e27e3486fc69bcee833710a13e1518707a9e",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  },
+  {
+   "raw_source": "schedules-v2/K39.json",
+   "published_as": "schedules/dp/K39.json",
+   "raw_sha256": "f86240dd4ec7c4c04fc7bc7c1b2c5f164f321c469110f2fef49007fe0d3ba5fc",
+   "rewritten": true,
+   "rewritten_fields": [
+    "calibration.calibration_run",
+    "calibration.signature_run"
+   ],
+   "published_sha256": "415be94ed00b53ca112e1e502c91bf2791d0e5d59983c5484564769986f9ac80",
+   "note": "machine paths relativised for portability; the digest therefore differs from raw_sha256 by design"
+  }
+ ]
+}

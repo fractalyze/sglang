@@ -1,0 +1,536 @@
+{
+ "arms": {
+  "cachedit-conservative": {
+   "family": "cache_dit",
+   "metadata": {
+    "cache_dit_params": {
+     "Bn_compute_blocks": 1,
+     "Fn_compute_blocks": 1,
+     "enable_dmd": false,
+     "enable_taylorseer": false,
+     "max_continuous_cached_steps": 1,
+     "max_warmup_steps": 10,
+     "residual_diff_threshold": 0.12
+    },
+    "config_sha256": "2335e8efcf8682acbd419be33122cbdd59b2beae820e06ec74c61bde8c1831ce"
+   }
+  },
+  "cachedit-stock": {
+   "family": "cache_dit",
+   "metadata": {
+    "cache_dit_params": {
+     "Bn_compute_blocks": 0,
+     "Fn_compute_blocks": 1,
+     "enable_dmd": false,
+     "enable_taylorseer": false,
+     "max_continuous_cached_steps": 3,
+     "max_warmup_steps": 4,
+     "residual_diff_threshold": 0.24
+    },
+    "config_sha256": "94e5dc9262fb59c48d9126ab66aa44827466e5bd46417c3336f2a809365783e2"
+   }
+  },
+  "dp-K12": {
+   "family": "dpcache",
+   "metadata": {
+    "full_steps": [
+     0,
+     1,
+     2,
+     4,
+     6,
+     9,
+     13,
+     18,
+     23,
+     29,
+     34,
+     38
+    ],
+    "num_full_steps": 12,
+    "schedule": "schedules-uniform/K12.json",
+    "schedule_method": "exact-pair-state-dp",
+    "schedule_sha256": "8193d1a68abd6c569a9e139c811a11e2c3b9cfd9ead838b49e5f16fd2d6c7768"
+   }
+  },
+  "dp-K20": {
+   "family": "dpcache",
+   "metadata": {
+    "full_steps": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     9,
+     11,
+     14,
+     17,
+     20,
+     23,
+     27,
+     31,
+     34,
+     36,
+     38,
+     39
+    ],
+    "num_full_steps": 20,
+    "schedule": "schedules-uniform/K20.json",
+    "schedule_method": "exact-pair-state-dp",
+    "schedule_sha256": "259016f114db5ec40b3a1609ebcdfa62157ad06df210ae29e263b331ae12248e"
+   }
+  },
+  "native": {
+   "family": "native",
+   "metadata": {}
+  },
+  "uniform-K12": {
+   "family": "uniform",
+   "metadata": {
+    "full_steps": [
+     0,
+     1,
+     2,
+     6,
+     10,
+     14,
+     18,
+     22,
+     26,
+     30,
+     34,
+     38
+    ],
+    "num_full_steps": 12,
+    "schedule": "schedules-uniform/uniform-K12.json",
+    "schedule_method": "endpoint-matched-uniform-v1",
+    "schedule_sha256": "c375e688e13b7200827998929794f9ac625d35724b8805d732298d3599e8fa80"
+   }
+  },
+  "uniform-K20": {
+   "family": "uniform",
+   "metadata": {
+    "full_steps": [
+     0,
+     1,
+     2,
+     4,
+     6,
+     9,
+     11,
+     13,
+     15,
+     17,
+     19,
+     22,
+     24,
+     26,
+     28,
+     30,
+     32,
+     35,
+     37,
+     39
+    ],
+    "num_full_steps": 20,
+    "schedule": "schedules-uniform/uniform-K20.json",
+    "schedule_method": "endpoint-matched-uniform-v1",
+    "schedule_sha256": "ca6d102ddbeeee65474fa5efed869b2c08ccc5b50b4a2398c08075fc2b4b9f97"
+   }
+  }
+ },
+ "expected_heldout_corpus_sha256": "488d298e29ce23e622f730157440ab68755f569e761b4be05fa936f87826cf11",
+ "final_arms": [
+  "native",
+  "dp-K12",
+  "dp-K20",
+  "uniform-K12",
+  "uniform-K20",
+  "cachedit-stock",
+  "cachedit-conservative"
+ ],
+ "gates": {
+  "provisional": [
+   0.18,
+   0.3
+  ],
+  "strict": [
+   0.05,
+   0.1
+  ]
+ },
+ "heldout_corpus": "corpus-comparator-v1.json",
+ "rule": "Cache-DiT arms only (forced-full excluded, stock eligible as an alias): arms whose every planned capture and timing block is measured and whose instrumentation audit passed, passing each white-composite LPIPS gate, ranked by mean paired grouped speedup; at most two distinct configs advance. DPCache and uniform arms are frozen from the earlier study and are not tuned here.",
+ "schema": "dpcache-comparator-selection-v2",
+ "scores": "validation-c01/scores.json",
+ "scores_sha256": "813d23da8452f0e3efd9315ef205ce7d6d2eb5d297c05cdbbf29656d3a03f2e5",
+ "selected_tuned": [
+  "cachedit-stock",
+  "cachedit-conservative"
+ ],
+ "timing_regime_for_ranking": "service-timing (grouped same-config repeats)",
+ "tuned_by_gate": {
+  "provisional": "cachedit-stock",
+  "strict": "cachedit-conservative"
+ },
+ "validation_compute": {
+  "cachedit-aggressive": {
+   "full_block_equivalent": {
+    "max": 13.84375,
+    "mean": 13.84375,
+    "median": 13.84375,
+    "min": 13.84375,
+    "n": 8,
+    "stdev": 0.0
+   },
+   "instrumentation_notes": [],
+   "instrumentation_ok": true
+  },
+  "cachedit-conservative": {
+   "full_block_equivalent": {
+    "max": 22.1875,
+    "mean": 22.1875,
+    "median": 22.1875,
+    "min": 22.1875,
+    "n": 8,
+    "stdev": 0.0
+   },
+   "instrumentation_notes": [],
+   "instrumentation_ok": true
+  },
+  "cachedit-short-cache": {
+   "full_block_equivalent": {
+    "max": 17.71875,
+    "mean": 17.71875,
+    "median": 17.71875,
+    "min": 17.71875,
+    "n": 8,
+    "stdev": 0.0
+   },
+   "instrumentation_notes": [],
+   "instrumentation_ok": true
+  },
+  "cachedit-stock": {
+   "full_block_equivalent": {
+    "max": 13.84375,
+    "mean": 13.84375,
+    "median": 13.84375,
+    "min": 13.84375,
+    "n": 8,
+    "stdev": 0.0
+   },
+   "instrumentation_notes": [],
+   "instrumentation_ok": true
+  },
+  "dp-K12": {
+   "full_block_equivalent": {
+    "max": 12.0,
+    "mean": 12.0,
+    "median": 12.0,
+    "min": 12.0,
+    "n": 8,
+    "stdev": 0.0
+   },
+   "instrumentation_notes": [],
+   "instrumentation_ok": true
+  },
+  "dp-K20": {
+   "full_block_equivalent": {
+    "max": 20.0,
+    "mean": 20.0,
+    "median": 20.0,
+    "min": 20.0,
+    "n": 8,
+    "stdev": 0.0
+   },
+   "instrumentation_notes": [],
+   "instrumentation_ok": true
+  },
+  "native": {
+   "full_block_equivalent": {
+    "max": 40.0,
+    "mean": 40.0,
+    "median": 40.0,
+    "min": 40.0,
+    "n": 8,
+    "stdev": 0.0
+   },
+   "instrumentation_notes": [],
+   "instrumentation_ok": true
+  },
+  "uniform-K12": {
+   "full_block_equivalent": {
+    "max": 12.0,
+    "mean": 12.0,
+    "median": 12.0,
+    "min": 12.0,
+    "n": 8,
+    "stdev": 0.0
+   },
+   "instrumentation_notes": [],
+   "instrumentation_ok": true
+  },
+  "uniform-K20": {
+   "full_block_equivalent": {
+    "max": 20.0,
+    "mean": 20.0,
+    "median": 20.0,
+    "min": 20.0,
+    "n": 8,
+    "stdev": 0.0
+   },
+   "instrumentation_notes": [],
+   "instrumentation_ok": true
+  }
+ },
+ "validation_corpus_sha256": "0ab65e054c86899030a44d2f6778d7fb0a14de46d9a820bedabd43f01759f6ff",
+ "validation_digests": {
+  "plan_sha256": "953b79fd6c0fda510644cbc94c652629f4ff26052e645ad13ca23845c569fc6e",
+  "results_sha256": "769577995d9530738d46f685b6b35ea6a30379729325224cd85142bb646bae25"
+ },
+ "validation_quality": {
+  "cachedit-aggressive": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "lpips_white": {
+    "max": 0.2035561054944992,
+    "mean": 0.11598693183623254,
+    "median": 0.12446889653801918,
+    "min": 0.026517493650317192,
+    "n": 8,
+    "stdev": 0.0592076140597163
+   }
+  },
+  "cachedit-conservative": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "lpips_white": {
+    "max": 0.03432679548859596,
+    "mean": 0.015905988693702966,
+    "median": 0.01653736922889948,
+    "min": 0.0027621607296168804,
+    "n": 8,
+    "stdev": 0.009900711005846542
+   }
+  },
+  "cachedit-short-cache": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "lpips_white": {
+    "max": 0.10015358030796051,
+    "mean": 0.05770091468002647,
+    "median": 0.05643192678689957,
+    "min": 0.011426161043345928,
+    "n": 8,
+    "stdev": 0.031995503092934176
+   }
+  },
+  "cachedit-stock": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "lpips_white": {
+    "max": 0.2035561054944992,
+    "mean": 0.11598693183623254,
+    "median": 0.12446889653801918,
+    "min": 0.026517493650317192,
+    "n": 8,
+    "stdev": 0.0592076140597163
+   }
+  },
+  "dp-K12": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "lpips_white": {
+    "max": 0.2346666306257248,
+    "mean": 0.09583216765895486,
+    "median": 0.08103131502866745,
+    "min": 0.033221807330846786,
+    "n": 8,
+    "stdev": 0.06445648332073708
+   }
+  },
+  "dp-K20": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": true,
+   "lpips_white": {
+    "max": 0.03217349946498871,
+    "mean": 0.009553325129672885,
+    "median": 0.007619150681421161,
+    "min": 0.001027337508276105,
+    "n": 8,
+    "stdev": 0.00976175669013907
+   }
+  },
+  "uniform-K12": {
+   "complete": true,
+   "gate_provisional": false,
+   "gate_strict": false,
+   "lpips_white": {
+    "max": 0.40950360894203186,
+    "mean": 0.1749021541327238,
+    "median": 0.16258223354816437,
+    "min": 0.07016977667808533,
+    "n": 8,
+    "stdev": 0.10404471236870039
+   }
+  },
+  "uniform-K20": {
+   "complete": true,
+   "gate_provisional": true,
+   "gate_strict": false,
+   "lpips_white": {
+    "max": 0.22249828279018402,
+    "mean": 0.08746783062815666,
+    "median": 0.07224493473768234,
+    "min": 0.030095204710960388,
+    "n": 8,
+    "stdev": 0.06191890930605243
+   }
+  }
+ },
+ "validation_run": "runs/validation-c01",
+ "validation_timing_mixed_mode": {
+  "cachedit-aggressive": {
+   "max": 2.7064100931138664,
+   "mean": 2.7023093722200215,
+   "median": 2.7031211532468333,
+   "min": 2.6955168709958666,
+   "n": 8,
+   "stdev": 0.0034449274831644524
+  },
+  "cachedit-conservative": {
+   "max": 1.7531633207023913,
+   "mean": 1.751818374017726,
+   "median": 1.7517758747277898,
+   "min": 1.7506412496980581,
+   "n": 8,
+   "stdev": 0.0008206968469896335
+  },
+  "cachedit-short-cache": {
+   "max": 2.162615870399779,
+   "mean": 2.1611082802954877,
+   "median": 2.1611275969028565,
+   "min": 2.1593772102186484,
+   "n": 8,
+   "stdev": 0.0009701308042581303
+  },
+  "cachedit-stock": {
+   "max": 2.7055669867764123,
+   "mean": 2.7030417100796567,
+   "median": 2.7035511030332895,
+   "min": 2.6994543366981496,
+   "n": 8,
+   "stdev": 0.0020532752129378707
+  },
+  "dp-K12": {
+   "max": 3.2078220094432037,
+   "mean": 3.206162579443399,
+   "median": 3.2067654645539356,
+   "min": 3.20248349120354,
+   "n": 8,
+   "stdev": 0.0019045530932397384
+  },
+  "dp-K20": {
+   "max": 1.9679166020964223,
+   "mean": 1.9666691849343658,
+   "median": 1.9667942613123752,
+   "min": 1.9651528136398801,
+   "n": 8,
+   "stdev": 0.0007863205151144362
+  },
+  "native": null,
+  "uniform-K12": {
+   "max": 3.21003751653105,
+   "mean": 3.206031516509851,
+   "median": 3.206615939787274,
+   "min": 3.2002426997548925,
+   "n": 8,
+   "stdev": 0.0029331894456248848
+  },
+  "uniform-K20": {
+   "max": 1.9674545836549016,
+   "mean": 1.966458766821428,
+   "median": 1.9665443189023675,
+   "min": 1.9651605884510186,
+   "n": 8,
+   "stdev": 0.0006801882688759198
+  }
+ },
+ "validation_timing_service": {
+  "cachedit-aggressive": {
+   "max": 2.705294837300103,
+   "mean": 2.702945828333465,
+   "median": 2.703207551351575,
+   "min": 2.7000404868901384,
+   "n": 8,
+   "stdev": 0.002293112349142364
+  },
+  "cachedit-conservative": {
+   "max": 1.7533346586694658,
+   "mean": 1.752605146463262,
+   "median": 1.7527091897627949,
+   "min": 1.7512139962684166,
+   "n": 8,
+   "stdev": 0.0006752840629886118
+  },
+  "cachedit-short-cache": {
+   "max": 2.161619122978921,
+   "mean": 2.160699431279211,
+   "median": 2.161077442815842,
+   "min": 2.1585387962818747,
+   "n": 8,
+   "stdev": 0.0011077922681043122
+  },
+  "cachedit-stock": {
+   "max": 2.705401197107256,
+   "mean": 2.7031766608286687,
+   "median": 2.7046465546354423,
+   "min": 2.6961007897830203,
+   "n": 8,
+   "stdev": 0.0030867329561989833
+  },
+  "dp-K12": {
+   "max": 3.2093245582588743,
+   "mean": 3.20716066002378,
+   "median": 3.208878023068989,
+   "min": 3.2007697640831916,
+   "n": 8,
+   "stdev": 0.003045431052106672
+  },
+  "dp-K20": {
+   "max": 1.9677842544005124,
+   "mean": 1.9668306889333675,
+   "median": 1.9670087044224656,
+   "min": 1.9646837329439601,
+   "n": 8,
+   "stdev": 0.0009414680077840907
+  },
+  "native": null,
+  "uniform-K12": {
+   "max": 3.2090127543624054,
+   "mean": 3.2068406471381263,
+   "median": 3.2076360551818195,
+   "min": 3.2004569635978823,
+   "n": 8,
+   "stdev": 0.0027541491592281697
+  },
+  "uniform-K20": {
+   "max": 1.9676610329430662,
+   "mean": 1.966161255611326,
+   "median": 1.9663421481921546,
+   "min": 1.9638132588828958,
+   "n": 8,
+   "stdev": 0.0012379527923799848
+  }
+ }
+}
