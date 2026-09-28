@@ -6,6 +6,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from sglang.kernels.ops.diffusion import dup_up3d_add
+from sglang.kernels.ops.diffusion.norm.channel_rmsnorm_nhwc import (
+    can_use_channel_rmsnorm_nhwc,
+    channel_rmsnorm_nhwc,
+)
 from sglang.kernels.ops.diffusion.norm.channel_rmsnorm_preserve_reduction import (
     can_use_channel_rmsnorm,
     channel_rmsnorm_preserve_reduction,
@@ -30,6 +34,7 @@ from sglang.multimodal_gen.runtime.models.vaes.common import (
     should_run_spatial_shard_parallel_decode,
 )
 from sglang.multimodal_gen.runtime.utils.logging_utils import init_logger
+from sglang.srt.environ import envs
 
 logger = init_logger(__name__)
 _CHANNEL_RMSNORM_FUSION = BitExactFusionGate("Qwen-Image 2.1 VAE channel RMSNorm")
@@ -173,6 +178,10 @@ class QwenImage21RMS_norm(nn.Module):
 
     def forward(self, x, silu: bool = False):
         """RMSNorm over channels, then SiLU when ``silu`` (one pass on the fused path)."""
+        plain = self.channel_first and isinstance(self.bias, (int, float)) and self.bias == 0
+        if plain and can_use_channel_rmsnorm_nhwc(x, self.gamma):
+            # channels_last decode (SGLANG_ENABLE_QWEN_IMAGE21_VAE_CHANNELS_LAST)
+            return channel_rmsnorm_nhwc(x, self.gamma, self.scale, silu)
         gate = _CHANNEL_RMSNORM_SILU_FUSION if silu else _CHANNEL_RMSNORM_FUSION
         fused = None
         if (
@@ -241,7 +250,10 @@ class QwenImage21Resample(nn.Module):
 
     def forward(self, x, feat_cache=None, feat_idx=None):
         b, c, t, h, w = x.size()
-        t = x.shape[2]
+        if t == 1:
+            # squeeze keeps a channels_last_3d input channels_last; the reshape
+            # below would copy it back to NCHW
+            return self.resample(x.squeeze(2)).unsqueeze(2)
         x = x.permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
         x = self.resample(x)
         x = x.view(b, t, x.size(1), x.size(2), x.size(3)).permute(0, 2, 1, 3, 4)
@@ -741,13 +753,30 @@ class AutoencoderKLQwenImage21(ParallelTiledVAE):
             x = _patchify(x, self.config.patch_size)
         return self.quant_conv(self.encoder(x))
 
+    def _use_channels_last(self) -> bool:
+        """Decoder weights in channels_last, converted on first use (and after any reload)."""
+        if not envs.SGLANG_ENABLE_QWEN_IMAGE21_VAE_CHANNELS_LAST.get():
+            return False
+        convs = [
+            m for m in (self.post_quant_conv, *self.decoder.modules())
+            if isinstance(m, nn.Conv2d)
+        ]
+        if not convs[0].weight.is_contiguous(memory_format=torch.channels_last):
+            for conv in convs:
+                conv.weight.data = conv.weight.data.contiguous(
+                    memory_format=torch.channels_last
+                )
+        return True
+
     def _decode(self, z):
         if z.shape[2] != 1:
             raise ValueError("Qwen-Image 2.1 VAE expects one latent frame")
-        z = self.post_quant_conv(z)
         parallel = self.spatial_parallel and should_run_spatial_shard_parallel_decode(
             self.config, z
         )
+        if not parallel and self._use_channels_last():
+            z = z.contiguous(memory_format=torch.channels_last_3d)
+        z = self.post_quant_conv(z)
         if parallel:
             z, expected_height = split_height_for_parallel_decode(
                 z,

@@ -1035,6 +1035,15 @@ class Envs:
     SGLANG_ENABLE_SM120_FP8_BLOCKSCALED_GEMM = EnvBool(True)
 
     # ===================================================================
+    # Diffusion model fast paths
+    # ===================================================================
+    # Off by default. Runs the Qwen-Image 2.1 VAE decoder in channels_last, so
+    # cuDNN reads and writes NHWC without its layout transposes and the channel
+    # RMSNorm (+ SiLU) runs as one NHWC pass. Reorders the norm reduction: the
+    # decoded frames match the NCHW path to rounding, not bitwise.
+    SGLANG_ENABLE_QWEN_IMAGE21_VAE_CHANNELS_LAST = EnvBool(False)
+
+    # ===================================================================
     # Humming quantization
     # ===================================================================
     SGLANG_HUMMING_ONLINE_QUANT_CONFIG = EnvJSON(None)

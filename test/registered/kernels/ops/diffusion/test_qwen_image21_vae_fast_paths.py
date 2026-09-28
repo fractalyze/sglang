@@ -7,11 +7,17 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from sglang.kernels.ops.diffusion.norm.channel_rmsnorm_nhwc import (
+    can_use_channel_rmsnorm_nhwc,
+    channel_rmsnorm_nhwc,
+)
 from sglang.kernels.ops.diffusion.norm.channel_rmsnorm_preserve_reduction import (
     channel_rmsnorm_preserve_reduction,
 )
 from sglang.multimodal_gen.runtime.models.vaes.autoencoder_kl_qwenimage21 import (
     QwenImage21CausalConv3d,
+    QwenImage21Decoder3d,
+    QwenImage21Resample,
     QwenImage21RMS_norm,
 )
 from sglang.test.ci.ci_register import register_cuda_ci
@@ -68,6 +74,57 @@ def test_rms_norm_module_fused_silu_matches_eager():
     expected = F.silu(eager_norm(x, norm.gamma, norm.scale))
     for _ in range(2):  # first call verifies the fused path, the second trusts it
         torch.testing.assert_close(norm(x, silu=True), expected, atol=0, rtol=0)
+
+
+@pytest.mark.parametrize("shape", DECODER_NORM_SHAPES + [(1, 1152, 1, 64, 64)])
+@pytest.mark.parametrize("silu", [False, True])
+def test_channel_rmsnorm_nhwc_matches_nchw_to_rounding(shape, silu):
+    torch.manual_seed(0)
+    x = (torch.randn(shape, device="cuda") * 3).bfloat16()
+    gamma = (torch.rand(shape[1], 1, 1, 1, device="cuda") + 0.5).bfloat16()
+    scale = shape[1] ** 0.5
+    x_nhwc = x.contiguous(memory_format=torch.channels_last_3d)
+    assert can_use_channel_rmsnorm_nhwc(x_nhwc, gamma)
+    assert not can_use_channel_rmsnorm_nhwc(x, gamma)
+    actual = channel_rmsnorm_nhwc(x_nhwc, gamma, scale, silu)
+    reference = eager_norm(x, gamma, scale)
+    if silu:
+        reference = F.silu(reference)
+    assert actual.stride() == x_nhwc.stride()
+    # Another reduction order: the last bit differs on a few elements.
+    torch.testing.assert_close(actual, reference, atol=1.6e-2, rtol=1.6e-2)
+    rel = (actual.float() - reference.float()).norm() / reference.float().norm()
+    assert rel < 1e-4
+
+
+def test_resample_single_frame_is_unchanged_and_keeps_layout():
+    torch.manual_seed(0)
+    resample = QwenImage21Resample(64, mode="upsample2d", upsample_out_dim=64).cuda().bfloat16()
+    x = torch.randn(1, 64, 1, 32, 32, device="cuda", dtype=torch.bfloat16)
+    reference = resample.resample(x[:, :, 0]).unsqueeze(2)
+    torch.testing.assert_close(resample(x), reference, atol=0, rtol=0)
+    for conv in resample.modules():
+        if isinstance(conv, torch.nn.Conv2d):
+            conv.weight.data = conv.weight.data.contiguous(memory_format=torch.channels_last)
+    out = resample(x.contiguous(memory_format=torch.channels_last_3d))
+    assert out.squeeze(2).is_contiguous(memory_format=torch.channels_last)
+
+
+def test_channels_last_decoder_matches_nchw():
+    torch.manual_seed(0)
+    decoder = QwenImage21Decoder3d(
+        dim=32, z_dim=4, dim_mult=[1, 2, 2], num_res_blocks=1,
+        temperal_upsample=[False, False], is_residual=True,
+    ).cuda().bfloat16().eval()
+    z = torch.randn(1, 4, 1, 32, 32, device="cuda", dtype=torch.bfloat16)
+    with torch.no_grad():
+        reference = decoder(z, first_chunk=True)
+        for conv in decoder.modules():
+            if isinstance(conv, torch.nn.Conv2d):
+                conv.weight.data = conv.weight.data.contiguous(memory_format=torch.channels_last)
+        actual = decoder(z.contiguous(memory_format=torch.channels_last_3d), first_chunk=True)
+    rel = (actual.float() - reference.float()).norm() / reference.float().norm()
+    assert rel < 1e-2, rel
 
 
 if __name__ == "__main__":
