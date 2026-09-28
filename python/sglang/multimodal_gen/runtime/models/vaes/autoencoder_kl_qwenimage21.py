@@ -139,22 +139,19 @@ class QwenImage21CausalConv3d(nn.Conv2d):
             stride=stride,
             padding=padding,
         )
+        # F.pad order (left, right, top, bottom); the spatial-parallel decode reads it
         self._padding = (
             self.padding[1],
             self.padding[1],
             self.padding[0],
             self.padding[0],
         )
-        self.padding = (0, 0)
 
     def forward(self, x, cache_x=None):
-        padding = list(self._padding)
         assert cache_x is None
-        x = x.squeeze(2)
-        x = F.pad(x, padding)
-        x = super().forward(x)
-        x = x.unsqueeze(2)
-        return x
+        # The causal pad is symmetric zero padding, so the conv pads implicitly
+        # instead of materializing a padded copy (a copy and a fill per conv).
+        return super().forward(x.squeeze(2)).unsqueeze(2)
 
 
 class QwenImage21RMS_norm(nn.Module):
