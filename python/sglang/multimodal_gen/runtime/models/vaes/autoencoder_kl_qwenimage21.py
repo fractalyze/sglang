@@ -33,6 +33,7 @@ from sglang.multimodal_gen.runtime.utils.logging_utils import init_logger
 
 logger = init_logger(__name__)
 _CHANNEL_RMSNORM_FUSION = BitExactFusionGate("Qwen-Image 2.1 VAE channel RMSNorm")
+_CHANNEL_RMSNORM_SILU_FUSION = BitExactFusionGate("Qwen-Image 2.1 VAE channel RMSNorm + SiLU")
 
 
 def get_activation(name):
@@ -170,25 +171,29 @@ class QwenImage21RMS_norm(nn.Module):
         self.gamma = nn.Parameter(torch.ones(shape))
         self.bias = nn.Parameter(torch.zeros(shape)) if bias else 0.0
 
-    def forward(self, x):
+    def forward(self, x, silu: bool = False):
+        """RMSNorm over channels, then SiLU when ``silu`` (one pass on the fused path)."""
+        gate = _CHANNEL_RMSNORM_SILU_FUSION if silu else _CHANNEL_RMSNORM_FUSION
         fused = None
         if (
             self.channel_first
             and isinstance(self.bias, (int, float))
             and self.bias == 0
             and can_use_channel_rmsnorm(x, self.gamma)
-            and _CHANNEL_RMSNORM_FUSION.can_attempt_once()
+            and gate.can_attempt_once()
         ):
-            fused = channel_rmsnorm_preserve_reduction(x, self.gamma, self.scale)
-            if _CHANNEL_RMSNORM_FUSION.verified:
+            fused = channel_rmsnorm_preserve_reduction(x, self.gamma, self.scale, silu)
+            if gate.verified:
                 return fused
         normalized = F.normalize(
             x if x.dtype == torch.float64 else x.float(),
             dim=1 if self.channel_first else -1,
         ).to(x.dtype)
         out = normalized * self.scale * self.gamma + self.bias
+        if silu:
+            out = F.silu(out)
         if fused is not None:
-            return _CHANNEL_RMSNORM_FUSION.accept_or_fallback(fused, out, logger=logger)
+            return gate.accept_or_fallback(fused, out, logger=logger)
         return out
 
 
@@ -268,12 +273,8 @@ class QwenImage21ResidualBlock(nn.Module):
 
     def forward(self, x, feat_cache=None, feat_idx=None):
         h = self.conv_shortcut(x)
-        x = self.norm1(x)
-        x = self.nonlinearity(x)
-        x = self.conv1(x)
-        x = self.norm2(x)
-        x = self.nonlinearity(x)
-        x = self.dropout(x)
+        x = self.conv1(self.norm1(x, silu=True))
+        x = self.dropout(self.norm2(x, silu=True))
         x = self.conv2(x)
         return x + h
 
@@ -440,10 +441,7 @@ class QwenImage21Encoder3d(nn.Module):
         for layer in self.down_blocks:
             x = layer(x)
         x = self.mid_block(x, feat_cache=feat_cache, feat_idx=feat_idx)
-        x = self.norm_out(x)
-        x = self.nonlinearity(x)
-        x = self.conv_out(x)
-        return x
+        return self.conv_out(self.norm_out(x, silu=True))
 
 
 class QwenImage21ResidualUpBlock(nn.Module):
@@ -615,10 +613,7 @@ class QwenImage21Decoder3d(nn.Module):
             x = up_block(
                 x, feat_cache=feat_cache, feat_idx=feat_idx, first_chunk=first_chunk
             )
-        x = self.norm_out(x)
-        x = self.nonlinearity(x)
-        x = self.conv_out(x)
-        return x
+        return self.conv_out(self.norm_out(x, silu=True))
 
 
 def _patchify(x, patch_size):

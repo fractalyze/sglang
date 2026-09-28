@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Fuse channel-first RMSNorm pointwise work, preserving native FP32 L2 norm."""
+"""Fuse channel-first RMSNorm pointwise work (and an optional SiLU), preserving native FP32 L2 norm."""
 
 import torch
 import triton
 import triton.language as tl
+from triton.language.extra.cuda import libdevice
 
 from sglang.srt.utils.custom_op import register_custom_op
 
@@ -18,6 +19,7 @@ def _channel_rmsnorm_finish_kernel(
     CHANNELS: tl.constexpr,
     SPATIAL: tl.constexpr,
     SCALE: tl.constexpr,
+    SILU: tl.constexpr,
     BLOCK: tl.constexpr,
 ):
     index = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
@@ -32,6 +34,9 @@ def _channel_rmsnorm_finish_kernel(
     value = tl.div_rn(value, norm).to(x_ptr.dtype.element_ty).to(tl.float32)
     value = (value * SCALE).to(x_ptr.dtype.element_ty).to(tl.float32)
     value = (value * weight).to(x_ptr.dtype.element_ty).to(tl.float32)
+    if SILU:
+        # aten's SiLU on the rounded norm output: fp32 opmath, IEEE exp and divide
+        value = tl.div_rn(value, 1.0 + libdevice.exp(-value))
     tl.store(out_ptr + index, value + 0.0, mask)
 
 
@@ -50,7 +55,7 @@ def can_use_channel_rmsnorm(x, weight):
     )
 
 
-def _fake_channel_rmsnorm(x, weight, scale):
+def _fake_channel_rmsnorm(x, weight, scale, silu=False):
     return torch.empty_like(x)
 
 
@@ -60,11 +65,14 @@ def _fake_channel_rmsnorm(x, weight, scale):
     fake_impl=_fake_channel_rmsnorm,
 )
 def channel_rmsnorm_preserve_reduction(
-    x: torch.Tensor, weight: torch.Tensor, scale: float
+    x: torch.Tensor, weight: torch.Tensor, scale: float, silu: bool = False
 ) -> torch.Tensor:
+    """F.normalize-based channel RMSNorm, followed by SiLU when ``silu``."""
     assert can_use_channel_rmsnorm(x, weight)
-    # Keep F.normalize's input dtype, shape and native reduction dispatch.
-    norm = x.float().norm(p=2, dim=1, keepdim=True)
+    # Native L2-norm reduction with fp32 accumulation, read straight from the
+    # half-precision input; F.normalize runs it on an fp32 copy, and the
+    # caller's BitExactFusionGate checks the two agree before trusting it.
+    norm = torch.linalg.vector_norm(x, ord=2, dim=1, keepdim=True, dtype=torch.float32)
     out = torch.empty_like(x)
     with torch.cuda.device(x.device):
         _channel_rmsnorm_finish_kernel[(triton.cdiv(x.numel(), 512),)](
@@ -76,6 +84,7 @@ def channel_rmsnorm_preserve_reduction(
             x.shape[1],
             x.numel() // (x.shape[0] * x.shape[1]),
             scale,
+            silu,
             512,
             enable_fp_fusion=False,
         )
