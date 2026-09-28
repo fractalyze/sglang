@@ -1042,6 +1042,11 @@ class Envs:
     # RMSNorm (+ SiLU) runs as one NHWC pass. Reorders the norm reduction: the
     # decoded frames match the NCHW path to rounding, not bitwise.
     SGLANG_ENABLE_QWEN_IMAGE21_VAE_CHANNELS_LAST = EnvBool(False)
+    # Off by default. Runs the Qwen3-VL text encoder's RMSNorms (diffusion
+    # runtime, e.g. Qwen-Image 2.1's prompt encoder) through the fused
+    # HF-semantics JIT kernel instead of the eager fp32 chain. Reorders the
+    # variance reduction, so prompt embeddings change at the rounding level.
+    SGLANG_ENABLE_QWEN3VL_TEXT_FUSED_RMSNORM = EnvBool(False)
 
     # ===================================================================
     # Humming quantization

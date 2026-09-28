@@ -41,6 +41,7 @@ from sglang.multimodal_gen.runtime.models.encoders.qwen_vl_rope import (
 )
 from sglang.multimodal_gen.runtime.platforms import AttentionBackendEnum
 from sglang.multimodal_gen.runtime.utils.common import add_prefix
+from sglang.srt.environ import envs
 from sglang.srt.layers.layernorm import RMSNorm
 
 """Inference-only Qwen3-VL model compatible with HuggingFace weights."""
@@ -74,7 +75,9 @@ def _make_text_rms_norm(hidden_size: int, eps: float) -> RMSNorm:
         hidden_size,
         eps=eps,
         cast_x_before_out_mul=True,
-        force_native=True,
+        # The fused HF-semantics kernel reorders the variance reduction, so the
+        # native chain stays the default (SGLANG_ENABLE_QWEN3VL_TEXT_FUSED_RMSNORM).
+        force_native=not envs.SGLANG_ENABLE_QWEN3VL_TEXT_FUSED_RMSNORM.get(),
     )
 
 
