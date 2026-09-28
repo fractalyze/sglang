@@ -1047,6 +1047,12 @@ class Envs:
     # HF-semantics JIT kernel instead of the eager fp32 chain. Reorders the
     # variance reduction, so prompt embeddings change at the rounding level.
     SGLANG_ENABLE_QWEN3VL_TEXT_FUSED_RMSNORM = EnvBool(False)
+    # Off by default. Replays the diffusion runtime's Qwen3-VL text-encoder
+    # layers (the plain text path: no cache, no visual tokens) as one CUDA
+    # graph per prompt length; the output is unchanged. Each new length pays
+    # a capture, and the graphs are recaptured when the encoder's weights move
+    # (CPU offload).
+    SGLANG_ENABLE_QWEN3VL_TEXT_CUDA_GRAPH = EnvBool(False)
 
     # ===================================================================
     # Humming quantization

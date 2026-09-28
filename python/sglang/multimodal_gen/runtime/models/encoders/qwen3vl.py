@@ -41,6 +41,7 @@ from sglang.multimodal_gen.runtime.models.encoders.qwen_vl_rope import (
 )
 from sglang.multimodal_gen.runtime.platforms import AttentionBackendEnum
 from sglang.multimodal_gen.runtime.utils.common import add_prefix
+from sglang.multimodal_gen.runtime.utils.layer_graphs import ShapeKeyedCudaGraphs
 from sglang.srt.environ import envs
 from sglang.srt.layers.layernorm import RMSNorm
 
@@ -540,6 +541,11 @@ class Qwen3VLTextModel(nn.Module):
         )
         self.norm = _make_text_rms_norm(config.hidden_size, config.rms_norm_eps)
         self.gradient_checkpointing = False
+        self.layer_graphs = (
+            ShapeKeyedCudaGraphs(self)
+            if envs.SGLANG_ENABLE_QWEN3VL_TEXT_CUDA_GRAPH.get()
+            else None
+        )
 
         # Initialize weights and apply final processing
 
@@ -620,30 +626,44 @@ class Qwen3VLTextModel(nn.Module):
 
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
-        # decoder layers
-        for layer_idx, decoder_layer in enumerate(self.layers):
-            hidden_states = decoder_layer(
-                hidden_states,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_values=past_key_values,
-                cache_position=cache_position,
-                output_attentions=output_attentions,
-                **kwargs,
+        if self._can_replay_layers(
+            attention_mask=attention_mask,
+            past_key_values=past_key_values,
+            deepstack_visual_embeds=deepstack_visual_embeds,
+            output_attentions=output_attentions,
+            kwargs=kwargs,
+        ):
+            layer_outputs = self.layer_graphs.run(
+                self._layer_outputs, hidden_states, position_ids, cache_position
             )
-            # hidden_states = layer_outputs
-
-            # add visual features to the hidden states of first several layers
-            if deepstack_visual_embeds is not None and layer_idx in range(
-                len(deepstack_visual_embeds)
-            ):
-                hidden_states = self._deepstack_process(
-                    hidden_states,
-                    visual_pos_masks,
-                    deepstack_visual_embeds[layer_idx],
-                )
+            hidden_states = layer_outputs[-1]
             if output_hidden_states:
-                all_hidden_states += (hidden_states,)
+                all_hidden_states = layer_outputs
+        else:
+            # decoder layers
+            for layer_idx, decoder_layer in enumerate(self.layers):
+                hidden_states = decoder_layer(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    past_key_values=past_key_values,
+                    cache_position=cache_position,
+                    output_attentions=output_attentions,
+                    **kwargs,
+                )
+                # hidden_states = layer_outputs
+
+                # add visual features to the hidden states of first several layers
+                if deepstack_visual_embeds is not None and layer_idx in range(
+                    len(deepstack_visual_embeds)
+                ):
+                    hidden_states = self._deepstack_process(
+                        hidden_states,
+                        visual_pos_masks,
+                        deepstack_visual_embeds[layer_idx],
+                    )
+                if output_hidden_states:
+                    all_hidden_states += (hidden_states,)
 
         hidden_states = self.norm(hidden_states)
 
@@ -665,6 +685,33 @@ class Qwen3VLTextModel(nn.Module):
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
         )
+
+    def _can_replay_layers(
+        self, *, attention_mask, past_key_values, deepstack_visual_embeds, output_attentions, kwargs
+    ) -> bool:
+        """The plain text path the layer graphs can replay (SGLANG_ENABLE_QWEN3VL_TEXT_CUDA_GRAPH)."""
+        return (
+            self.layer_graphs is not None
+            and past_key_values is None
+            and deepstack_visual_embeds is None
+            and not output_attentions
+            and not kwargs
+            # a padding mask would be a second graph input; only all-valid prompts replay
+            and (attention_mask is None or bool(attention_mask.all()))
+        )
+
+    def _layer_outputs(self, hidden_states, position_ids, cache_position):
+        outputs = []
+        for decoder_layer in self.layers:
+            hidden_states = decoder_layer(
+                hidden_states,
+                attention_mask=None,
+                position_ids=position_ids,
+                past_key_values=None,
+                cache_position=cache_position,
+            )
+            outputs.append(hidden_states)
+        return tuple(outputs)
 
     def _deepstack_process(
         self,

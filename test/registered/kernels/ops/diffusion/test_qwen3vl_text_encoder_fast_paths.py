@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from sglang.multimodal_gen.runtime.models.encoders.qwen3vl import _make_text_rms_norm
+from sglang.multimodal_gen.runtime.utils.layer_graphs import ShapeKeyedCudaGraphs
 from sglang.srt.environ import envs
 from sglang.test.ci.ci_register import register_cuda_ci
 
@@ -41,6 +42,49 @@ def test_fused_text_rmsnorm_matches_native_to_rounding(hidden, tokens):
     # One bf16 ulp at most: only the variance reduction order differs.
     torch.testing.assert_close(actual, reference, atol=3.2e-2, rtol=8e-3)
     assert (actual != reference).float().mean() < 0.05
+
+
+class ToyLayers(torch.nn.Module):
+    """A stack of pure-GPU layers standing in for the text encoder's decoder layers."""
+
+    def __init__(self, width=256, depth=3):
+        super().__init__()
+        self.layers = torch.nn.ModuleList(torch.nn.Linear(width, width) for _ in range(depth))
+
+    def outputs(self, hidden, scale):
+        out = []
+        for layer in self.layers:
+            hidden = torch.nn.functional.silu(layer(hidden)) * scale
+            out.append(hidden)
+        return tuple(out)
+
+
+def test_layer_graphs_replay_matches_eager_per_shape():
+    torch.manual_seed(0)
+    model = ToyLayers().cuda().bfloat16()
+    graphs = ShapeKeyedCudaGraphs(model)
+    scale = torch.tensor(0.5, device="cuda", dtype=torch.bfloat16)
+    for tokens in (34, 51, 34):
+        x = torch.randn(1, tokens, 256, device="cuda", dtype=torch.bfloat16)
+        replayed = graphs.run(model.outputs, x, scale)
+        eager = model.outputs(x, scale)
+        assert len(replayed) == len(eager)
+        for r, e in zip(replayed, eager):
+            torch.testing.assert_close(r, e, atol=0, rtol=0)
+
+
+def test_layer_graphs_recapture_when_weights_move():
+    torch.manual_seed(0)
+    model = ToyLayers().cuda().bfloat16()
+    graphs = ShapeKeyedCudaGraphs(model)
+    scale = torch.tensor(1.0, device="cuda", dtype=torch.bfloat16)
+    x = torch.randn(1, 34, 256, device="cuda", dtype=torch.bfloat16)
+    graphs.run(model.outputs, x, scale)
+    # new storage with new values, as after an offload round trip plus an update
+    for p in model.parameters():
+        p.data = (p.data * 2).clone()
+    torch.testing.assert_close(graphs.run(model.outputs, x, scale)[-1],
+                               model.outputs(x, scale)[-1], atol=0, rtol=0)
 
 
 if __name__ == "__main__":
