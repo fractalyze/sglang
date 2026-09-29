@@ -202,6 +202,23 @@ class DecodingStage(PipelineStage):
         )
 
     @torch.no_grad()
+    def _decode_batch(self, vae, server_args: ServerArgs, latents: torch.Tensor):
+        """Decode a batch in one VAE call, or one sample at a time when sliced.
+
+        --vae-slicing bounds the decode working set to one sample: a VAE
+        without tiling (Qwen-Image 2.1) otherwise needs the whole batch's
+        activations at once, which caps the batch size before the DiT does.
+        """
+        decode_fn = self._get_vae_decode_fn(vae, server_args)
+        if not server_args.pipeline_config.vae_slicing or latents.shape[0] == 1:
+            return decode_fn(latents)
+        return torch.cat(
+            [
+                _ensure_tensor_decode_output(decode_fn(latents[i : i + 1]))
+                for i in range(latents.shape[0])
+            ]
+        )
+
     def decode(
         self,
         latents: torch.Tensor,
@@ -261,7 +278,7 @@ class DecodingStage(PipelineStage):
                 self.vae, vae_dtype, enabled=should_cast_vae
             ) as vae:
                 try:
-                    decode_output = self._get_vae_decode_fn(vae, server_args)(latents)
+                    decode_output = self._decode_batch(vae, server_args, latents)
                 except Exception as error:
                     if "out of memory" in str(error).lower():
                         # decode runs after denoising, so the DiT and encoders
