@@ -213,20 +213,10 @@ def qknorm_complex_rope_int8(
 
 
 @triton.jit
-def _load_v(
-    prefix_ptr,
-    v_ptr,
-    token,
-    batch,
-    head,
-    PREFIX: tl.constexpr,
-    SEQ: tl.constexpr,
-    HEADS: tl.constexpr,
-    V_TOKEN_STRIDE: tl.constexpr,
-    row_scale_ptr=None,
-    col_scale_ptr=None,
-    HAS_SCALE: tl.constexpr = False,
-):
+def _load_v(prefix_ptr, v_ptr, token, batch, head,
+            PREFIX: tl.constexpr, SEQ: tl.constexpr, HEADS: tl.constexpr,
+            V_TOKEN_STRIDE: tl.constexpr,
+            row_scale_ptr=None, col_scale_ptr=None, HAS_SCALE: tl.constexpr = False):
     """[TOKENS, 128] of [prefix V; target V] for one head, as float; zero past the end.
 
     HAS_SCALE: the target V is an unscaled FP8 GEMM product, scaled here by
@@ -238,21 +228,13 @@ def _load_v(
     in_target = (token >= PREFIX) & (token < PREFIX + SEQ)
     prefix_index = ((batch * PREFIX + token) * HEADS + head) * 128
     target_index = (batch * SEQ + token - PREFIX) * V_TOKEN_STRIDE + head * 128
-    prefix = tl.load(
-        prefix_ptr + prefix_index[:, None] + column[None, :], in_prefix[:, None], 0.0
-    )
-    target = tl.load(
-        v_ptr + target_index[:, None] + column[None, :], in_target[:, None], 0.0
-    )
+    prefix = tl.load(prefix_ptr + prefix_index[:, None] + column[None, :], in_prefix[:, None], 0.0)
+    target = tl.load(v_ptr + target_index[:, None] + column[None, :], in_target[:, None], 0.0)
     if HAS_SCALE:
-        token_scale = tl.load(
-            row_scale_ptr + batch * SEQ + token - PREFIX, in_target, 0.0
-        )
+        token_scale = tl.load(row_scale_ptr + batch * SEQ + token - PREFIX, in_target, 0.0)
         channel_scale = tl.load(col_scale_ptr + head * 128 + column)
         scale = token_scale[:, None] * channel_scale[None, :]
-        target = (
-            (target.to(tl.float32) * scale).to(v_ptr.dtype.element_ty).to(tl.float32)
-        )
+        target = (target.to(tl.float32) * scale).to(v_ptr.dtype.element_ty).to(tl.float32)
         return tl.where(in_prefix[:, None], prefix.to(tl.float32), target)
     return tl.where(in_prefix[:, None], prefix, target).to(tl.float32)
 
@@ -277,20 +259,8 @@ def _sage_v_amax_kernel(
     token = tl.program_id(0) * TOKENS + tl.arange(0, TOKENS)
     head = tl.program_id(1)
     batch = tl.program_id(2)
-    value = _load_v(
-        prefix_ptr,
-        v_ptr,
-        token,
-        batch,
-        head,
-        PREFIX,
-        SEQ,
-        HEADS,
-        V_TOKEN_STRIDE,
-        row_scale_ptr,
-        col_scale_ptr,
-        HAS_SCALE,
-    )
+    value = _load_v(prefix_ptr, v_ptr, token, batch, head, PREFIX, SEQ, HEADS, V_TOKEN_STRIDE,
+                    row_scale_ptr, col_scale_ptr, HAS_SCALE)
     tl.atomic_max(
         amax_ptr + (batch * HEADS + head) * 128 + tl.arange(0, 128),
         tl.max(tl.abs(value), 0),
@@ -326,10 +296,7 @@ def _sage_v_fp8_kernel(
     channel = tl.arange(0, 128)
     amax = tl.load(amax_ptr + (batch * HEADS + head) * 128 + channel)
     if block == 0:
-        tl.store(
-            scale_ptr + (batch * HEADS + head) * 128 + channel,
-            _fdiv(amax, SCALE_MAX, DIV_MODE),
-        )
+        tl.store(scale_ptr + (batch * HEADS + head) * 128 + channel, _fdiv(amax, SCALE_MAX, DIV_MODE))
     inverse = _fdiv(tl.full((128,), SCALE_MAX, tl.float32), amax, DIV_MODE)
     # Within each 16 tokens, token m lands in column
     # (m // 8) * 2 + (m // 2) % 4 * 4 + m % 2 (the FP8 mma operand order): a bit
@@ -338,20 +305,8 @@ def _sage_v_fp8_kernel(
     column = block * TOKENS + tl.arange(0, TOKENS)
     c = column % 16
     token = column - c + (c // 2) % 2 * 8 + c // 8 * 4 + (c // 4) % 2 * 2 + c % 2
-    value = _load_v(
-        prefix_ptr,
-        v_ptr,
-        token,
-        batch,
-        head,
-        PREFIX,
-        SEQ,
-        HEADS,
-        V_TOKEN_STRIDE,
-        row_scale_ptr,
-        col_scale_ptr,
-        HAS_SCALE,
-    )
+    value = _load_v(prefix_ptr, v_ptr, token, batch, head, PREFIX, SEQ, HEADS, V_TOKEN_STRIDE,
+                    row_scale_ptr, col_scale_ptr, HAS_SCALE)
     quantized = tl.trans((value * inverse[None, :]).to(tl.float8e4nv))
     # out is [batch, 128 channels, heads, PADDED]
     index = ((batch * 128 + channel[:, None]) * HEADS + head) * PADDED + column[None, :]
@@ -373,9 +328,7 @@ def can_use_sage_v_fp8(v_prefix, v):
     )
 
 
-def sage_v_fp8(
-    v_prefix, v, div_mode=DIV_MODE, tokens=64, row_scale=None, col_scale=None
-):
+def sage_v_fp8(v_prefix, v, div_mode=DIV_MODE, tokens=64, row_scale=None, col_scale=None):
     """SageAttention2's FP8 V for ``cat([v_prefix, v], 1)`` without the cat.
 
     Returns ``(v_fp8 [B, 128, H, padded], v_scale [B, H, 128])``, what
@@ -392,23 +345,12 @@ def sage_v_fp8(
     prefix = v_prefix.shape[1]
     padded = triton.cdiv(prefix + seq, V_PAD_TOKENS) * V_PAD_TOKENS
     amax = torch.zeros((batch, heads, dim), dtype=torch.float32, device=v.device)
-    out = torch.empty(
-        (batch, dim, heads, padded), dtype=torch.float8_e4m3fn, device=v.device
-    )
+    out = torch.empty((batch, dim, heads, padded), dtype=torch.float8_e4m3fn, device=v.device)
     scale = torch.empty((batch, heads, dim), dtype=torch.float32, device=v.device)
     stride = token_stride(v)
     with torch.cuda.device(v.device):
         _sage_v_amax_kernel[(triton.cdiv(prefix + seq, tokens), heads, batch)](
-            v_prefix,
-            v,
-            amax,
-            prefix,
-            seq,
-            heads,
-            stride,
-            tokens,
-            *scale_args,
-            num_warps=2,
+            v_prefix, v, amax, prefix, seq, heads, stride, tokens, *scale_args, num_warps=2
         )
         _sage_v_fp8_kernel[(padded // tokens, heads, batch)](
             v_prefix,
@@ -430,9 +372,7 @@ def sage_v_fp8(
     return out, scale
 
 
-def can_use_sage_prequant_attention(
-    q, q_weight, k, k_weight, rope, v, k_prefix, v_prefix
-):
+def can_use_sage_prequant_attention(q, q_weight, k, k_weight, rope, v, k_prefix, v_prefix):
     """The shapes and layouts sage_prequant_attention reproduces sageattn for.
 
     Only sm_120, where sageattn dispatches to the per-warp INT8 / FP8
@@ -454,19 +394,8 @@ def can_use_sage_prequant_attention(
 
 
 def sage_prequant_attention(
-    q,
-    q_weight,
-    q_eps,
-    k,
-    k_weight,
-    k_eps,
-    rope,
-    v,
-    k_prefix,
-    v_prefix,
-    sm_scale,
-    row_scale=None,
-    qkv_col_scale=None,
+    q, q_weight, q_eps, k, k_weight, k_eps, rope, v, k_prefix, v_prefix, sm_scale,
+    row_scale=None, qkv_col_scale=None,
 ):
     """``sageattn(qknorm_rope(q), [k_prefix; qknorm_rope(k)], [v_prefix; v])``.
 
@@ -489,9 +418,7 @@ def sage_prequant_attention(
     q_cs = k_cs = v_cs = None
     if row_scale is not None:
         width = q.shape[2] * q.shape[3]
-        q_cs, k_cs, v_cs = (
-            qkv_col_scale[i * width : (i + 1) * width] for i in range(3)
-        )
+        q_cs, k_cs, v_cs = (qkv_col_scale[i * width : (i + 1) * width] for i in range(3))
     q_int8, q_scale = qknorm_complex_rope_int8(
         q, q_weight, rope, q_eps, row_scale=row_scale, col_scale=q_cs
     )
@@ -505,9 +432,7 @@ def sage_prequant_attention(
         dtype=torch.float32,
         device=k.device,
     )
-    _fused.quant_per_block_int8_fuse_sub_mean_cuda(
-        k_full, k_mean, k_int8, k_scale, 64, 0
-    )
+    _fused.quant_per_block_int8_fuse_sub_mean_cuda(k_full, k_mean, k_int8, k_scale, 64, 0)
     v_fp8, v_scale = sage_v_fp8(v_prefix, v, row_scale=row_scale, col_scale=v_cs)
     out = torch.empty(q.shape, dtype=q.dtype, device=q.device)
     # tensor_layout NHD (0), non-causal, per-warp granularity (2), no LSE

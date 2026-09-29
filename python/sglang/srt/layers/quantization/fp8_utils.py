@@ -232,6 +232,9 @@ if _is_cuda:
         maybe_fp8_blockscaled_scaled_mm_sm120,
     )
     from sglang.kernels.ops.gemm.fp8_blockwise_gemm import fp8_blockwise_scaled_mm
+    from sglang.kernels.ops.gemm.fp8_channelwise_gemm import (
+        maybe_fp8_channelwise_streamk_scaled_mm_sm120,
+    )
     from sglang.kernels.ops.gemm.fp8_cublaslt_gemm import (
         MIN_CUBLASLT_M,
         fp8_unit_scale_gemm_cublaslt,
@@ -2182,6 +2185,11 @@ def apply_fp8_linear(
     use_tuned_triton_channelwise = (
         use_cutlass_channelwise_gemm and envs.SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE.get()
     )
+    use_sm120_streamk = (
+        use_cutlass_channelwise_gemm
+        and get_platform().is_sm120
+        and envs.SGLANG_ENABLE_SM120_FP8_STREAMK_GEMM.get()
+    )
     use_sm120_cublaslt = (
         use_cutlass_channelwise_gemm
         and get_platform().is_sm120
@@ -2313,6 +2321,10 @@ def apply_fp8_linear(
                 )
             if output is None and use_sm120_cublaslt and per_token_no_bias:
                 output = maybe_fp8_per_channel_scaled_mm_cublaslt(
+                    qinput, weight, x_scale, weight_scale, out_dtype=output_dtype
+                )
+            if output is None and use_sm120_streamk and per_token_no_bias:
+                output = maybe_fp8_channelwise_streamk_scaled_mm_sm120(
                     qinput, weight, x_scale, weight_scale, out_dtype=output_dtype
                 )
             if output is None:

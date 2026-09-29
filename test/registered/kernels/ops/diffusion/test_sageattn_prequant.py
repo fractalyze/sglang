@@ -36,9 +36,7 @@ EPS = 1e-6
 
 def inputs(batch, seq, heads, prefix, seed=0):
     torch.manual_seed(seed)
-    merged = torch.randn(
-        batch, seq, 3 * heads * 128, device="cuda", dtype=torch.bfloat16
-    )
+    merged = torch.randn(batch, seq, 3 * heads * 128, device="cuda", dtype=torch.bfloat16)
     merged *= (torch.rand(3 * heads * 128, device="cuda") * 4).to(torch.bfloat16)
     q, k, v = merged.unflatten(-1, (3, heads, 128)).unbind(-3)
     weight = (torch.rand(128, device="cuda") + 0.5).to(torch.bfloat16)
@@ -64,17 +62,9 @@ def test_operands_match_sageattention_preprocessing(shape):
     qn = qknorm_complex_rope(q, weight, rope, EPS)
     kf, vf = qknorm_complex_rope_kv(k, weight, rope, v, kp, vp, EPS)
     q_int8, q_scale, _, _ = per_warp_int8(
-        qn,
-        kf,
-        kf.mean(1, keepdim=True),
-        tensor_layout="NHD",
-        BLKQ=128,
-        WARPQ=32,
-        BLKK=64,
+        qn, kf, kf.mean(1, keepdim=True), tensor_layout="NHD", BLKQ=128, WARPQ=32, BLKK=64
     )
-    v_fp8, v_scale, _ = per_channel_fp8(
-        vf, tensor_layout="NHD", scale_max=2.25, smooth_v=False
-    )
+    v_fp8, v_scale, _ = per_channel_fp8(vf, tensor_layout="NHD", scale_max=2.25, smooth_v=False)
 
     actual_q, actual_q_scale = qknorm_complex_rope_int8(q, weight, rope, EPS)
     assert torch.equal(actual_q, q_int8)
@@ -91,9 +81,7 @@ def test_attention_matches_sageattn(shape):
     assert can_use_sage_prequant_attention(q, weight, k, weight, rope, v, kp, vp)
     qn = qknorm_complex_rope(q, weight, rope, EPS)
     kf, vf = qknorm_complex_rope_kv(k, weight, rope, v, kp, vp, EPS)
-    expected = sageattention.sageattn(
-        qn, kf, vf, tensor_layout="NHD", sm_scale=128**-0.5
-    )
+    expected = sageattention.sageattn(qn, kf, vf, tensor_layout="NHD", sm_scale=128**-0.5)
     actual = sage_prequant_attention(
         q, weight, EPS, k, weight, EPS, rope, v, kp, vp, 128**-0.5
     )
@@ -102,22 +90,9 @@ def test_attention_matches_sageattn(shape):
 
 def test_layout_guards():
     q, k, v, weight, rope, kp, vp = inputs(1, 33, 2, 7)
-    assert not can_use_sage_prequant_attention(
-        q.float(), weight, k, weight, rope, v, kp, vp
-    )
-    assert not can_use_sage_prequant_attention(
-        q,
-        weight,
-        k,
-        weight,
-        rope,
-        v,
-        kp.transpose(1, 2).contiguous().transpose(1, 2),
-        vp,
-    )
-    assert not can_use_sage_prequant_attention(
-        q, weight, k, weight, rope, v[..., :64], kp, vp
-    )
+    assert not can_use_sage_prequant_attention(q.float(), weight, k, weight, rope, v, kp, vp)
+    assert not can_use_sage_prequant_attention(q, weight, k, weight, rope, v, kp.transpose(1, 2).contiguous().transpose(1, 2), vp)
+    assert not can_use_sage_prequant_attention(q, weight, k, weight, rope, v[..., :64], kp, vp)
 
 
 if __name__ == "__main__":

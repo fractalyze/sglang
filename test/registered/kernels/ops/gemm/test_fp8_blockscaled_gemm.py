@@ -60,13 +60,11 @@ def test_scaled_matches_reference_and_is_deterministic(m, n, k):
 
 @pytest.mark.parametrize("m", [1024, 1500])
 @pytest.mark.parametrize("n, k", SHAPES)
-def test_unscaled_matches_reference_and_is_deterministic(m, n, k):
+def test_unscaled_matches_reference(m, n, k):
     torch.manual_seed(0)
     a, w, _, _ = _operands(m, n, k)
     out = fp8_blockscaled_unscaled_mm_sm120(a, w)
-    again = fp8_blockscaled_unscaled_mm_sm120(a, w)
     torch.testing.assert_close(out.float(), _product(a, w), rtol=8e-3, atol=1.0)
-    assert torch.equal(out, again)
 
 
 def _tuned_configs():

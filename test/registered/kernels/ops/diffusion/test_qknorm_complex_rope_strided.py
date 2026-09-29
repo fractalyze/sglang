@@ -29,9 +29,7 @@ EPS = 1e-6
 
 def merged_inputs(batch, seq, heads, prefix):
     torch.manual_seed(0)
-    merged = torch.randn(
-        batch, seq, 3 * heads * 128, device="cuda", dtype=torch.bfloat16
-    )
+    merged = torch.randn(batch, seq, 3 * heads * 128, device="cuda", dtype=torch.bfloat16)
     q, k, v = merged.unflatten(-1, (3, heads, 128)).unbind(-3)
     weight = torch.randn(128, device="cuda", dtype=torch.bfloat16)
     angles = torch.randn(seq, 64, device="cuda") * 20
@@ -40,9 +38,7 @@ def merged_inputs(batch, seq, heads, prefix):
     return q, k, v, weight, rope, kp, torch.randn_like(kp)
 
 
-@pytest.mark.parametrize(
-    "shape", [(1, 1, 1, 3), (1, 257, 16, 5), (2, 33, 4, 7), (1, 4096, 32, 237)]
-)
+@pytest.mark.parametrize("shape", [(1, 1, 1, 3), (1, 257, 16, 5), (2, 33, 4, 7), (1, 4096, 32, 237)])
 def test_strided_views_match_contiguous_inputs(shape):
     q, k, v, weight, rope, kp, vp = merged_inputs(*shape)
     assert token_stride(q) == 3 * shape[2] * 128
@@ -51,16 +47,11 @@ def test_strided_views_match_contiguous_inputs(shape):
         actual = qknorm_complex_rope(x, weight, rope, EPS)
         assert actual.is_contiguous()
         torch.testing.assert_close(
-            actual,
-            qknorm_complex_rope(x.contiguous(), weight, rope, EPS),
-            atol=0,
-            rtol=0,
+            actual, qknorm_complex_rope(x.contiguous(), weight, rope, EPS), atol=0, rtol=0
         )
     assert can_use_qknorm_complex_rope_kv(k, weight, rope, v, kp, vp)
     actual = qknorm_complex_rope_kv(k, weight, rope, v, kp, vp, EPS)
-    expected = qknorm_complex_rope_kv(
-        k.contiguous(), weight, rope, v.contiguous(), kp, vp, EPS
-    )
+    expected = qknorm_complex_rope_kv(k.contiguous(), weight, rope, v.contiguous(), kp, vp, EPS)
     for a, b in zip(actual, expected):
         torch.testing.assert_close(a, b, atol=0, rtol=0)
 

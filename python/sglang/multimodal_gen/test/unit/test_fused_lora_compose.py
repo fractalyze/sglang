@@ -100,10 +100,7 @@ def test_partial_group_leaves_unadapted_sections_unchanged():
 
     adapter = {}
     _store_fused_lora_groups(
-        adapter,
-        pending,
-        adapter_alpha=None,
-        device="cpu",
+        adapter, pending, adapter_alpha=None, device="cpu",
         group_sizes={"attn.to_qkv.lora_A": 3},
     )
 
@@ -124,10 +121,7 @@ def test_partial_group_with_unequal_sections_is_dropped():
         pending["attn.qkv.lora_B"][index] = b_list[index]
     adapter = {}
     _store_fused_lora_groups(
-        adapter,
-        pending,
-        adapter_alpha=None,
-        device="cpu",
+        adapter, pending, adapter_alpha=None, device="cpu",
         group_sizes={"attn.qkv.lora_A": 3},
     )
     assert adapter == {}

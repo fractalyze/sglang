@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import statistics
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 import torch
 import triton
@@ -18,16 +17,8 @@ if TYPE_CHECKING:
 MIN_CUBLASLT_M = 1024
 # cuBLASLt's fastest FP8 algos on SM120 need a large workspace; 32 MiB was measured.
 _WORKSPACE_BYTES = 32 << 20
-# Arbitrary: GPU time on the first heuristic algo before timing starts, so an idle GPU
-# leaves its idle clock (the ramp took under 1 ms on an RTX 5090).
-_TUNE_WARMUP_MS = 50.0
-# Arbitrary: every algo is timed once per round, rounds interleaved, and ranked by its
-# median; a clock change or a co-tenant burst then skews one sample, not one algo.
-_TUNE_ROUNDS = 7
-_TUNE_REPS = 3
-# Arbitrary: an algo within this fraction of the fastest median counts as a tie, and
-# ties go to cuBLASLt's heuristic order, so the pick does not follow timing noise.
-_TUNE_TIE_FRACTION = 0.03
+# Arbitrary: enough repetitions to rank algos that differ by >= 5% at M >= 1024.
+_TUNE_REPS = 5
 
 _algo_cache: Dict[Tuple[int, int, int, int], int] = {}
 
@@ -47,29 +38,7 @@ def _jit_module() -> Module:
 
 @cache_once
 def _workspace(device_index: int) -> torch.Tensor:
-    return torch.empty(
-        _WORKSPACE_BYTES, dtype=torch.uint8, device=f"cuda:{device_index}"
-    )
-
-
-def _time_ms(run: Callable[[], None], reps: int) -> float:
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    start.record()
-    for _ in range(reps):
-        run()
-    end.record()
-    end.synchronize()
-    return start.elapsed_time(end)
-
-
-def _pick_algo(median_ms: List[float]) -> int:
-    fastest = min(median_ms)
-    return next(
-        idx
-        for idx, t in enumerate(median_ms)
-        if t <= fastest * (1 + _TUNE_TIE_FRACTION)
-    )
+    return torch.empty(_WORKSPACE_BYTES, dtype=torch.uint8, device=f"cuda:{device_index}")
 
 
 def _select_algo(module: Module, out, mat_a, w_nk, workspace) -> int:
@@ -85,26 +54,24 @@ def _select_algo(module: Module, out, mat_a, w_nk, workspace) -> int:
     num_algos = module.num_algos(mat_a, w_nk, workspace)
     if num_algos == 1 or torch.cuda.is_current_stream_capturing():
         return 0
-
-    def run(idx: int) -> Callable[[], None]:
-        return lambda: module.gemm(out, mat_a, w_nk, workspace, idx)
-
-    warmed_ms = 0.0
-    while warmed_ms < _TUNE_WARMUP_MS:
-        warmed_ms += _time_ms(run(0), reps=_TUNE_REPS)
-    samples: List[List[float]] = [[] for _ in range(num_algos)]
-    for _ in range(_TUNE_ROUNDS):
-        for idx in range(num_algos):
-            samples[idx].append(_time_ms(run(idx), reps=_TUNE_REPS))
-    algo = _pick_algo([statistics.median(times) for times in samples])
+    times = []
+    for idx in range(num_algos):
+        module.gemm(out, mat_a, w_nk, workspace, idx)
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        for _ in range(_TUNE_REPS):
+            module.gemm(out, mat_a, w_nk, workspace, idx)
+        end.record()
+        end.synchronize()
+        times.append(start.elapsed_time(end))
+    algo = min(range(num_algos), key=times.__getitem__)
     _algo_cache[key] = algo
     return algo
 
 
 @triton.jit
-def _scale_rows_cols_kernel(
-    out_ptr, sa_ptr, sb_ptr, N, stride_m, BLOCK_N: tl.constexpr
-):
+def _scale_rows_cols_kernel(out_ptr, sa_ptr, sb_ptr, N, stride_m, BLOCK_N: tl.constexpr):
     m = tl.program_id(0)
     offs = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
     mask = offs < N
@@ -124,15 +91,11 @@ def _fp8_unit_scale_gemm_cublaslt_op(
 ) -> None:
     module = _jit_module()
     workspace = _workspace(mat_a.device.index or 0)
-    module.gemm(
-        out, mat_a, w_nk, workspace, _select_algo(module, out, mat_a, w_nk, workspace)
-    )
+    module.gemm(out, mat_a, w_nk, workspace, _select_algo(module, out, mat_a, w_nk, workspace))
 
 
 @debug_kernel_api
-def fp8_unit_scale_gemm_cublaslt(
-    mat_a: torch.Tensor, w_nk: torch.Tensor
-) -> torch.Tensor:
+def fp8_unit_scale_gemm_cublaslt(mat_a: torch.Tensor, w_nk: torch.Tensor) -> torch.Tensor:
     """bf16 out[M, N] = mat_a[M, K] @ w_nk[N, K]^T (e4m3, fp32 accumulation, unit scales).
 
     The caller owns the per-token and per-channel scales; see

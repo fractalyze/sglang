@@ -35,7 +35,9 @@ def _qknorm_complex_rope_rows(
     column = tl.arange(0, 128)
     mask = row[:, None] < ROWS
     offset = row // HEADS * TOKEN_STRIDE + row % HEADS * 128
-    value = tl.load(x_ptr + offset[:, None] + column[None, :], mask, 0).to(tl.float32)
+    value = tl.load(x_ptr + offset[:, None] + column[None, :], mask, 0).to(
+        tl.float32
+    )
     if HAS_SCALE:
         # x holds an unscaled FP8 GEMM product: apply the per-token (row_scale,
         # indexed by batch * SEQ + token) and per-channel (col_scale, indexed by

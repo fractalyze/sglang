@@ -21,9 +21,10 @@ limitations under the License.
 
 #include <sgl_kernel/utils.cuh>
 
-#include <cstdint>
 #include <cublasLt.h>
 #include <cuda_runtime.h>
+
+#include <cstdint>
 #include <map>
 #include <mutex>
 #include <tuple>
@@ -109,8 +110,8 @@ inline const Problem& problem(int32_t device, int64_t m, int64_t n, int64_t k, s
  * \param w [N, K] e4m3, row major.
  * \param workspace uint8 buffer the GEMM may use; its size is part of the heuristic query.
  */
-inline int64_t
-fp8_unit_scale_gemm_num_algos(tvm::ffi::TensorView a, tvm::ffi::TensorView w, tvm::ffi::TensorView workspace) {
+inline int64_t fp8_unit_scale_gemm_num_algos(
+    tvm::ffi::TensorView a, tvm::ffi::TensorView w, tvm::ffi::TensorView workspace) {
   return fp8_cublaslt_impl::problem(
              a.device().device_id, a.size(0), w.size(0), a.size(1), static_cast<size_t>(workspace.numel()))
       .num_algos;
