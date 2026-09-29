@@ -182,6 +182,11 @@ def _token_cat_fp8_per_token_kernel(
     )
 
 
+def _warp_kernel_min_tokens(device: torch.device) -> int:
+    # per_token_quant_fp8.cu: use_warp_kernel = num_tokens >= sm_count * 2 * 8
+    return torch.cuda.get_device_properties(device).multi_processor_count * 2 * 8
+
+
 def try_flux2_token_cat_fp8_per_token(
     attention: torch.Tensor,
     mlp: torch.Tensor,
@@ -191,7 +196,9 @@ def try_flux2_token_cat_fp8_per_token(
     Returns ``(q [M, A + B] e4m3, scale [M, 1] fp32)``, bitwise what
     ``sglang_per_token_quant_fp8(torch.cat([attention, mlp], -1))`` returns
     (its warp kernel), without the bf16 concatenation; None when the inputs do
-    not fit (the caller then concatenates).
+    not fit (the caller then concatenates). Below the token count at which
+    sglang_per_token_quant_fp8 dispatches its warp kernel it uses a per-token
+    CTA kernel whose all-zero rows quantize to NaN, so those sizes return None.
     """
     if torch.compiler.is_compiling():
         return None
@@ -213,6 +220,8 @@ def try_flux2_token_cat_fp8_per_token(
     attention_hidden = attention.shape[-1]
     mlp_hidden = mlp.shape[-1]
     rows = attention.numel() // attention_hidden
+    if rows < _warp_kernel_min_tokens(attention.device):
+        return None
     output = torch.empty(
         (rows, attention_hidden + mlp_hidden), dtype=fp8_dtype, device=attention.device
     )

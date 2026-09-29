@@ -8,7 +8,7 @@ import torch
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 
 
-@pytest.mark.parametrize("rows", [4608, 4096, 512, 3])
+@pytest.mark.parametrize("rows", [4608, 4096])
 def test_fused_cat_quant_matches_cat_then_quant(rows):
     from sglang.kernels.kda_kernels.flux2_token_cat_fp8_triton import (
         try_flux2_token_cat_fp8_per_token,
@@ -44,3 +44,7 @@ def test_unsupported_inputs_fall_back():
     assert try_flux2_token_cat_fp8_per_token(attention, attention.float()) is None
     wide = torch.zeros(1, 8, 16384, device="cuda", dtype=torch.bfloat16)
     assert try_flux2_token_cat_fp8_per_token(attention, wide) is None
+    # below the quantization's warp-kernel dispatch (its CTA kernel differs on
+    # all-zero rows), the caller concatenates
+    few = torch.randn(1, 512, 9216, device="cuda").bfloat16()
+    assert try_flux2_token_cat_fp8_per_token(attention[:, :1].expand(1, 512, 3072).contiguous(), few) is None
