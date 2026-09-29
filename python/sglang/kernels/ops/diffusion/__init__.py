@@ -239,6 +239,13 @@ _SPECS: tuple[tuple[str, KernelBackend, str, frozenset, str], ...] = (
         "KDA-generated FLUX.2 token concatenation + static FP8 quantization.",
     ),
     (
+        "diffusion.flux2_token_cat_fp8_per_token",
+        KernelBackend.KDA,
+        "sglang.kernels.kda_kernels.flux2_token_cat_fp8_triton:try_flux2_token_cat_fp8_per_token",
+        _CUDA,
+        "FLUX.2 token concatenation + dynamic per-token FP8 quantization.",
+    ),
+    (
         "diffusion.qwen_qkv_epilogue",
         KernelBackend.JIT,
         "rope.qwen_qkv_epilogue_jit:try_fused_qwen_qkv_epilogue",
@@ -609,6 +616,7 @@ _EXPORTS: dict[str, str] = {
     "fused_complex_rope": "rope.complex_rope_triton",
     # Tensor layout transformations fused with downstream quantization
     "try_flux2_token_cat_fp8": "sglang.kernels.kda_kernels.flux2_token_cat_fp8_triton",
+    "try_flux2_token_cat_fp8_per_token": "sglang.kernels.kda_kernels.flux2_token_cat_fp8_triton",
     # Activation-function fusions
     "can_use_fused_bias_glu": "activation.sana_conv_post_triton",
     "can_use_fused_bias_silu": "activation.sana_conv_post_triton",

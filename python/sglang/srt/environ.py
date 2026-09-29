@@ -1059,6 +1059,11 @@ class Envs:
     # a capture, and the graphs are recaptured when the encoder's weights move
     # (CPU offload).
     SGLANG_ENABLE_QWEN3VL_TEXT_CUDA_GRAPH = EnvBool(False)
+    # Off by default. FLUX.2 single-stream blocks with dynamic per-token FP8
+    # linears write the attention and MLP branches straight into the out
+    # projection's FP8 input (one kernel: no bf16 concatenation, no separate
+    # quantization pass). The quantized input is bitwise the unfused one.
+    SGLANG_ENABLE_FLUX2_FUSED_CAT_FP8_QUANT = EnvBool(False)
 
     # ===================================================================
     # Humming quantization

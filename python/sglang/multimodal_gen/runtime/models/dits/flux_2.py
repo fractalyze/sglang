@@ -35,6 +35,7 @@ from sglang.kernels.ops.diffusion import (
     mark_flux2_nvfp4_swiglu_quant_site,
     residual_gate_add,
     try_flux2_token_cat_fp8,
+    try_flux2_token_cat_fp8_per_token,
     try_flux2_token_cat_nvfp4,
     try_fused_flux2_qkv_epilogue,
 )
@@ -87,6 +88,7 @@ from sglang.multimodal_gen.runtime.platforms import (
     current_platform,
 )
 from sglang.multimodal_gen.runtime.utils.logging_utils import init_logger
+from sglang.srt.environ import envs
 
 logger = init_logger(__name__)  # pylint: disable=invalid-name
 
@@ -990,6 +992,10 @@ class Flux2ParallelSelfAttention(torch.nn.Module, AttentionModuleMixin):
             packed = try_flux2_token_cat_nvfp4(
                 hidden_states, mlp_hidden_states, self.to_out.input_scale_inv
             )
+        elif envs.SGLANG_ENABLE_FLUX2_FUSED_CAT_FP8_QUANT.get():
+            fused = self._fused_cat_fp8_out(hidden_states, mlp_hidden_states)
+            if fused is not None:
+                return fused.view(*output_shape)
         if quantized is not None:
             hidden_states = quantized
             hidden_states, _ = self.to_out(hidden_states)
@@ -1005,6 +1011,23 @@ class Flux2ParallelSelfAttention(torch.nn.Module, AttentionModuleMixin):
             hidden_states, _ = self.to_out(hidden_states)
 
         return hidden_states
+
+
+    def _fused_cat_fp8_out(
+        self, attention: torch.Tensor, mlp: torch.Tensor
+    ) -> Optional[torch.Tensor]:
+        """to_out(cat(attention, mlp)) with the cat fused into the FP8 quantization.
+
+        Only for dynamic per-token FP8 linears whose SM120 route takes a
+        pre-quantized input; None otherwise (the caller concatenates).
+        """
+        apply = getattr(self.to_out.quant_method, "apply_per_token_quantized", None)
+        if apply is None or self.to_out.bias is not None:
+            return None
+        packed = try_flux2_token_cat_fp8_per_token(attention, mlp)
+        if packed is None:
+            return None
+        return apply(self.to_out, *packed)
 
 
 class Flux2SingleTransformerBlock(nn.Module):
