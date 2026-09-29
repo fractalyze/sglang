@@ -188,6 +188,35 @@ def test_stage_applies_the_scope_checks_to_calibration(monkeypatch, tmp_path):
         stage.forward(batch, server_args)
 
 
+def test_cfg_calibration_scores_both_branches(monkeypatch, tmp_path):
+    """A model that opts in to CFG writes the sum of the branches' errors."""
+    stage, server_args = make_stage()
+    stage.transformer._dpcache_supports_cfg = True
+    output = tmp_path / "00000.pt"
+    batch = make_batch(
+        None, dpcache_calibration={"output": str(output)}, do_classifier_free_guidance=True
+    )
+
+    def fill_both_branches(self, batch, server_args):
+        for step in range(len(batch.timesteps)):
+            for negative, power in ((False, 2), (True, 3)):
+                batch.dpcache_states[negative].record(
+                    step, torch.full((2,), float(step**power), dtype=torch.bfloat16)
+                )
+        return batch
+
+    monkeypatch.setattr(DenoisingStage, "_denoise", fill_both_branches)
+    stage.forward(batch, server_args)
+    errors = load_calibration_capture(str(output))["errors"]
+    single, cubic = (
+        calibrated_state([torch.full((2,), float(t**p), dtype=torch.bfloat16)
+                          for t in range(NUM_STEPS)], None).errors
+        for p in (2, 3)
+    )
+    torch.testing.assert_close(errors, single + cubic, rtol=0, atol=0, equal_nan=True)
+    assert cubic.nan_to_num().abs().sum() > 0
+
+
 def test_calibration_request_ignores_the_server_default_budget(monkeypatch, tmp_path):
     """A calibration run must see every step, whatever the server serves."""
     stage, server_args = make_stage(dpcache_default_budget=4)
@@ -215,11 +244,24 @@ def write_captures(directory, seeds, max_gap=3):
     for index, seed in enumerate(seeds):
         save_calibration_capture(
             str(directory / f"{index:05d}.pt"),
-            state=calibrated_state(random_features(NUM_STEPS, seed), max_gap),
+            states=[calibrated_state(random_features(NUM_STEPS, seed), max_gap)],
             signature=SIGNATURE,
             prompt=f"prompt {seed}",
             seed=seed,
         )
+
+
+def test_cfg_capture_adds_the_branch_errors(tmp_path):
+    positive = calibrated_state(random_features(NUM_STEPS, 0), 3)
+    negative = calibrated_state(random_features(NUM_STEPS, 1), 3)
+    path = str(tmp_path / "cfg.pt")
+    save_calibration_capture(
+        path, states=[positive, negative], signature=SIGNATURE, prompt="p", seed=0
+    )
+    errors = load_calibration_capture(path)["errors"]
+    torch.testing.assert_close(
+        errors, positive.errors + negative.errors, rtol=0, atol=0, equal_nan=True
+    )
 
 
 def test_planner_averages_captures_like_the_single_sample_planner(tmp_path):

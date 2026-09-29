@@ -2128,10 +2128,10 @@ class DenoisingStage(PipelineStage, RolloutDenoisingMixin):
         try:
             yield
             if calibration is not None:
-                # the scope check rejects CFG, so the positive branch is the request
+                # both CFG branches follow one schedule, so their errors add
                 save_calibration_capture(
                     calibration["output"],
-                    state=states[False],
+                    states=list(states.values()),
                     signature=signature,
                     prompt=batch.prompt,
                     seed=batch.seed,
@@ -2185,7 +2185,8 @@ class DenoisingStage(PipelineStage, RolloutDenoisingMixin):
             "Spectrum": batch.enable_spectrum,
             "skip-softmax attention": batch.skip_softmax_params is not None,
             "attention backend override": batch.attention_backend_override is not None,
-            "classifier-free guidance": batch.do_classifier_free_guidance,
+            "classifier-free guidance": batch.do_classifier_free_guidance
+            and not getattr(self.transformer, "_dpcache_supports_cfg", False),
             "non-lossless quality": batch.quality != "lossless",
             "reference images": batch.condition_image is not None
             or bool(batch.image_path),

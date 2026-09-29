@@ -748,26 +748,34 @@ def validate_calibration_request(calibration: Mapping[str, Any]) -> None:
 def save_calibration_capture(
     path: str,
     *,
-    state: DPCacheCalibrationState,
+    states: Sequence[DPCacheCalibrationState],
     signature: DPCacheRequestSignature,
     prompt: str,
     seed: int,
 ) -> None:
-    """Write one calibration request's PACT errors and request signature."""
-    if not state.complete:
-        raise RuntimeError(
-            f"DPCache calibration scored {state.num_full} of {state.num_steps} steps"
-        )
+    """Write one calibration request's PACT errors and request signature.
+
+    With CFG the request has one state per branch; both branches run the same
+    schedule, so a prediction's cost is the sum of the branches' errors.
+    """
+    for state in states:
+        if not state.complete:
+            raise RuntimeError(
+                f"DPCache calibration scored {state.num_full} of {state.num_steps} steps"
+            )
+    errors = states[0].errors
+    for state in states[1:]:
+        errors = errors + state.errors
     parent = os.path.dirname(os.path.abspath(path))
     os.makedirs(parent, exist_ok=True)
     torch.save(
         {
             "schema": CAPTURE_SCHEMA,
             "signature": _signature_dict(signature),
-            "max_gap": state.max_gap,
+            "max_gap": states[0].max_gap,
             "prompt": prompt,
             "seed": seed,
-            "errors": state.errors,
+            "errors": errors,
         },
         path,
     )

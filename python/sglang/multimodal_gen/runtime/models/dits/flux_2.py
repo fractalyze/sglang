@@ -1462,6 +1462,9 @@ class Flux2Transformer2DModel(CachableDiT, LayerwiseOffloadableModuleMixin):
         "to_added_qkv": ["add_q_proj", "add_k_proj", "add_v_proj"],
     }
     scale_shift_swap_params = ("norm_out.linear.weight", "norm_out.linear.bias")
+    _supports_dpcache = True
+    # DPCache keeps one state per CFG branch; calibration adds their errors.
+    _dpcache_supports_cfg = True
     # FLUX.2 stays closer to the official diffusers output with Torch SDPA.
     # The generic FA path still produces a measurable image-level drift here.
     _supported_attention_backends = {
@@ -1627,6 +1630,11 @@ class Flux2Transformer2DModel(CachableDiT, LayerwiseOffloadableModuleMixin):
 
         self.layer_names = ["transformer_blocks", "single_transformer_blocks"]
 
+    def dpcache_feature_dtype(self) -> torch.dtype:
+        # proj_out takes the quant config (FP8 weights under quantization=fp8);
+        # the block-stack output keeps the dtype of norm_out's modulation.
+        return self.norm_out.linear.weight.dtype
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -1720,45 +1728,53 @@ class Flux2Transformer2DModel(CachableDiT, LayerwiseOffloadableModuleMixin):
             singles_freqs_cis
         )
 
-        # 4. Double Stream Transformer Blocks
-        for index_block, block in enumerate(self.transformer_blocks):
-            encoder_hidden_states, hidden_states = block(
-                hidden_states=hidden_states,
-                encoder_hidden_states=encoder_hidden_states,
-                temb_mod_params_img=double_stream_mod_img,
-                temb_mod_params_txt=double_stream_mod_txt,
-                cos_sin_cache=cos_sin_cache,
-                complex_freqs=complex_freqs,
-                joint_attention_kwargs=joint_attention_kwargs,
-                num_replicated_prefix=num_replicated_prefix,
-            )
-        if isinstance(encoder_hidden_states, tuple):
-            encoder_hidden_states = _materialize_gated_residual(encoder_hidden_states)
-        if isinstance(hidden_states, tuple):
-            hidden_states = _materialize_gated_residual(hidden_states)
-        # Concatenate text and image streams for single-block inference;
-        # join_seqs relocates any SP text tail-pad behind the image once for
-        # the whole trunk (see sp_shard.join_seqs for why).
-        txt_real = num_txt_tokens - sp_txt_pad
-        hidden_states = join_seqs(encoder_hidden_states, hidden_states, sp_txt_pad)
+        def run_blocks():
+            nonlocal encoder_hidden_states, hidden_states
+            # 4. Double Stream Transformer Blocks
+            for index_block, block in enumerate(self.transformer_blocks):
+                encoder_hidden_states, hidden_states = block(
+                    hidden_states=hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,
+                    temb_mod_params_img=double_stream_mod_img,
+                    temb_mod_params_txt=double_stream_mod_txt,
+                    cos_sin_cache=cos_sin_cache,
+                    complex_freqs=complex_freqs,
+                    joint_attention_kwargs=joint_attention_kwargs,
+                    num_replicated_prefix=num_replicated_prefix,
+                )
+            if isinstance(encoder_hidden_states, tuple):
+                encoder_hidden_states = _materialize_gated_residual(encoder_hidden_states)
+            if isinstance(hidden_states, tuple):
+                hidden_states = _materialize_gated_residual(hidden_states)
+            # Concatenate text and image streams for single-block inference;
+            # join_seqs relocates any SP text tail-pad behind the image once for
+            # the whole trunk (see sp_shard.join_seqs for why).
+            txt_real = num_txt_tokens - sp_txt_pad
+            hidden_states = join_seqs(encoder_hidden_states, hidden_states, sp_txt_pad)
 
-        # 5. Single Stream Transformer Blocks
-        for index_block, block in enumerate(self.single_transformer_blocks):
-            hidden_states = block(
-                hidden_states=hidden_states,
-                encoder_hidden_states=None,
-                temb_mod_params=single_stream_mod,
-                cos_sin_cache=singles_cos_sin_cache,
-                complex_freqs=singles_complex_freqs,
-                joint_attention_kwargs=joint_attention_kwargs,
-                text_seq_len=txt_real,
-                num_replicated_prefix=num_replicated_prefix,
-            )
-        if isinstance(hidden_states, tuple):
-            hidden_states = _materialize_gated_residual(hidden_states)
-        # Remove text (and any tail pad) from the concatenated stream
-        img_end = hidden_states.shape[1] - sp_txt_pad
-        hidden_states = hidden_states[:, txt_real:img_end, ...]
+            # 5. Single Stream Transformer Blocks
+            for index_block, block in enumerate(self.single_transformer_blocks):
+                hidden_states = block(
+                    hidden_states=hidden_states,
+                    encoder_hidden_states=None,
+                    temb_mod_params=single_stream_mod,
+                    cos_sin_cache=singles_cos_sin_cache,
+                    complex_freqs=singles_complex_freqs,
+                    joint_attention_kwargs=joint_attention_kwargs,
+                    text_seq_len=txt_real,
+                    num_replicated_prefix=num_replicated_prefix,
+                )
+            if isinstance(hidden_states, tuple):
+                hidden_states = _materialize_gated_residual(hidden_states)
+            # Remove text (and any tail pad) from the concatenated stream
+            img_end = hidden_states.shape[1] - sp_txt_pad
+            hidden_states = hidden_states[:, txt_real:img_end, ...]
+
+            return hidden_states
+
+        # DPCache runs the block stack on full steps and predicts its output
+        # (the input of norm_out) otherwise; the output head always runs.
+        hidden_states = self.dpcache_blocks(run_blocks)
 
         # 6. Output layers
         hidden_states = self.norm_out(hidden_states, temb)
