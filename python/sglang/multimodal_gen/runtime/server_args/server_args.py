@@ -35,6 +35,7 @@ from sglang.multimodal_gen.runtime.layers.quantization.configs.nunchaku_config i
 from sglang.multimodal_gen.runtime.loader.utils import BYTES_PER_GB
 from sglang.multimodal_gen.runtime.managers.memory_managers.component_residency import (
     COMPONENT_OFFLOAD,
+    FIT_OFFLOAD,
     LAYERWISE_OFFLOAD,
     RESIDENT,
     SNAPSHOT_OFFLOAD,
@@ -994,7 +995,7 @@ class ServerArgs(DisaggServerArgsMixin):
             component_name: residency_mode
             for component_name in ("transformer", "transformer_2")
             if (residency_mode := self.explicit_residency_mode(component_name))
-            in (COMPONENT_OFFLOAD, SNAPSHOT_OFFLOAD, LAYERWISE_OFFLOAD)
+            in (COMPONENT_OFFLOAD, FIT_OFFLOAD, SNAPSHOT_OFFLOAD, LAYERWISE_OFFLOAD)
         }
         if mode == "resident" and explicit_nonresident_dits:
             configured = ", ".join(
@@ -1802,7 +1803,7 @@ class ServerArgs(DisaggServerArgsMixin):
 
         has_explicit_dit_offload = bool(
             self.canonical_residency_mode("transformer")
-            in (COMPONENT_OFFLOAD, SNAPSHOT_OFFLOAD, LAYERWISE_OFFLOAD)
+            in (COMPONENT_OFFLOAD, FIT_OFFLOAD, SNAPSHOT_OFFLOAD, LAYERWISE_OFFLOAD)
             or self.is_explicit_layerwise_offload_component("transformer")
             or (
                 self.is_arg_explicitly_set("cpu_offload_components")
@@ -2477,8 +2478,10 @@ class ServerArgs(DisaggServerArgsMixin):
             default=ServerArgs.component_residency,
             metavar="COMPONENT=MODE",
             help=(
-                "Select resident, component-offload, snapshot-offload, or layerwise-offload for "
-                "pipeline components. Exact model_index.json component keys override "
+                "Select resident, component-offload, fit-offload, snapshot-offload, or "
+                "layerwise-offload for pipeline components. fit-offload moves a "
+                "component like component-offload but keeps it on the device after a "
+                "use while the rest of the request still fits next to it. Exact model_index.json component keys override "
                 "the dit, text_encoder, image_encoder, vae, and all groups. "
                 "Components without an assignment keep their automatic placement."
             ),

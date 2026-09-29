@@ -11,6 +11,7 @@ from sglang.multimodal_gen.runtime.managers.memory_managers.component_manager im
     ComponentUse,
     ResidencyState,
     WarmupPhasePeak,
+    _output_pixels,
     build_component_residency_strategy,
 )
 from sglang.multimodal_gen.runtime.managers.memory_managers.component_residency import (
@@ -18,6 +19,7 @@ from sglang.multimodal_gen.runtime.managers.memory_managers.component_residency 
 )
 from sglang.multimodal_gen.runtime.managers.memory_managers.component_residency_strategies import (
     ComponentOffloadStrategy,
+    FitOffloadStrategy,
     ResidentStrategy,
     SnapshotOffloadStrategy,
 )
@@ -877,3 +879,87 @@ def test_component_is_not_kept_across_another_component_use():
     manager.end_use(text_use)
 
     strategy.finish_use.assert_called_once_with(module, text_use, manager.state)
+
+
+_TEXT_ENCODER_USE = ComponentUse(
+    stage_name="TextEncodingStage", component_name="text_encoder"
+)
+
+
+def _fit_offload(monkeypatch, available_bytes):
+    from sglang.multimodal_gen.runtime.managers.memory_managers import (
+        component_residency_strategies as strategies,
+    )
+
+    monkeypatch.setattr(strategies.current_platform, "is_cuda", lambda: True)
+    monkeypatch.setattr(strategies, "available_device_bytes", lambda: available_bytes)
+    strategy = FitOffloadStrategy()
+    strategy.wait_for_use = Mock()
+    return strategy
+
+
+@pytest.mark.parametrize(
+    "available_gib, pixels, offloaded",
+    [
+        # four 1024x1024 images need ~18 GiB after the encode: 14 GiB free does not fit
+        (14, 4 * 1024 * 1024, True),
+        # one 1024x1024 image needs ~4.5 GiB: 14 GiB free fits
+        (14, 1024 * 1024, False),
+        # the margin alone must be free
+        (0.5, 0, True),
+    ],
+)
+def test_fit_offload_keeps_component_only_while_the_request_fits(
+    monkeypatch, available_gib, pixels, offloaded
+):
+    strategy = _fit_offload(monkeypatch, int(available_gib * 1024**3))
+    module = Mock()
+    module.parameters.return_value = iter([torch.empty(1, device="meta")])
+    strategy.finish_use(
+        module, _TEXT_ENCODER_USE, ResidencyState(output_pixels=pixels)
+    )
+    assert module.to.called is offloaded
+
+
+def test_fit_offload_keeps_component_after_request_when_margin_is_free(monkeypatch):
+    strategy = _fit_offload(monkeypatch, 2 * 1024**3)
+    strategy.finish_use = Mock()
+    strategy.finish_request(
+        torch.nn.Linear(2, 2),
+        _TEXT_ENCODER_USE,
+        ResidencyState(output_pixels=4 * 1024 * 1024),
+        preferred=False,
+    )
+    strategy.finish_use.assert_not_called()
+
+
+def test_fit_offload_releases_after_request_without_margin(monkeypatch):
+    strategy = _fit_offload(monkeypatch, 0)
+    strategy.finish_use = Mock()
+    strategy.finish_request(
+        torch.nn.Linear(2, 2), _TEXT_ENCODER_USE, ResidencyState(), preferred=False
+    )
+    strategy.finish_use.assert_called_once()
+
+
+def test_output_pixels_sums_samples_over_merged_requests():
+    merged = SimpleNamespace(height=512, width=512, batch_size=4)
+    single = SimpleNamespace(height=1024, width=1024, batch_size=1)
+    assert _output_pixels(merged) == 4 * 512 * 512
+    assert _output_pixels([merged, single]) == 4 * 512 * 512 + 1024 * 1024
+    assert _output_pixels(SimpleNamespace(height=None, width=None)) == 0
+
+
+def test_fit_offload_mode_builds_fit_offload_strategy():
+    from sglang.multimodal_gen.runtime.managers.memory_managers.component_residency import (
+        normalize_component_residency,
+    )
+
+    assert normalize_component_residency(["text_encoder=fit-offload"]) == {
+        "text_encoder": "fit-offload"
+    }
+    server_args = SimpleNamespace(residency_mode=lambda name: "fit-offload")
+    strategy = build_component_residency_strategy(
+        "text_encoder", torch.nn.Linear(2, 2), server_args
+    )
+    assert isinstance(strategy, FitOffloadStrategy)

@@ -219,6 +219,65 @@ class ComponentOffloadStrategy(ComponentResidencyStrategy):
         self.finish_use(module, use, state)
 
 
+class FitOffloadStrategy(ComponentOffloadStrategy):
+    """Component offload that keeps the component on the device while it fits.
+
+    After a use, the component stays where it is when the device's free memory
+    (driver free plus the caching allocator's unused reserve, so another
+    process's allocations count against it) covers the rest of the request's
+    working set; otherwise it goes to the host as under component offload. At
+    the end of a request nothing of that request remains to run, so the
+    component stays whenever the margin is free, and the next request's first
+    use of it needs no load. It never moves the component more often than
+    component offload does.
+
+    The working set after the use is predicted from the request's output
+    pixels: for Qwen-Image 2.1 the denoise and VAE-decode peak above the idle
+    pipeline is about 4.5 KB per output pixel (18.1 GB for four 1024x1024
+    images, 4.35 GB for four 512x512 ones, RTX 5090).
+    """
+
+    WORKING_SET_BYTES_PER_OUTPUT_PIXEL = 4608
+    MARGIN_BYTES = 1024**3
+
+    def finish_use(
+        self,
+        module: nn.Module,
+        use: ComponentUse,
+        state: ResidencyState,
+    ) -> None:
+        needed = state.output_pixels * self.WORKING_SET_BYTES_PER_OUTPUT_PIXEL
+        if self._fits(needed):
+            self.wait_for_use(module, use, state)
+            self._ready_events.pop(use.component_name, None)
+            return
+        super().finish_use(module, use, state)
+
+    def finish_request(
+        self,
+        module: nn.Module,
+        use: ComponentUse,
+        state: ResidencyState,
+        *,
+        preferred: bool,
+    ) -> None:
+        if self._fits(0):
+            return
+        super().finish_request(module, use, state, preferred=preferred)
+
+    def _fits(self, needed_bytes: int) -> bool:
+        if not current_platform.is_cuda():
+            return False
+        return available_device_bytes() >= needed_bytes + self.MARGIN_BYTES
+
+
+def available_device_bytes() -> int:
+    """Bytes a new allocation on the local device can still get."""
+    device_module = torch.get_device_module()
+    free, _ = device_module.mem_get_info()
+    return free + device_module.memory_reserved() - device_module.memory_allocated()
+
+
 class SnapshotOffloadStrategy(ComponentOffloadStrategy):
     """Keep CPU weights during device use; restore them without weight D2H."""
 

@@ -9,12 +9,14 @@ import torch.nn as nn
 from sglang.multimodal_gen import envs
 from sglang.multimodal_gen.runtime.managers.memory_managers.component_residency import (
     COMPONENT_OFFLOAD,
+    FIT_OFFLOAD,
     LAYERWISE_OFFLOAD,
     SNAPSHOT_OFFLOAD,
     ComponentResidencyError,
 )
 from sglang.multimodal_gen.runtime.managers.memory_managers.component_residency_strategies import (
     ComponentOffloadStrategy,
+    FitOffloadStrategy,
     ComponentResidencyStrategy,
     LayerwiseOffloadStrategy,
     ResidentStrategy,
@@ -62,6 +64,24 @@ class ResidencyState:
     current_use: ComponentUse | None = None
     future_uses: tuple[ComponentUse, ...] = ()
     batch_is_warmup: bool = False
+    # Output pixels of the request (samples x height x width), the size a
+    # fit-offload component's keep decision is made against.
+    output_pixels: int = 0
+
+
+def _output_pixels(batch: "ResidencyBatch | list[ResidencyBatch]") -> int:
+    """Samples x height x width over the request's batches (0 when unknown)."""
+    total = 0
+    for item in batch if isinstance(batch, list) else [batch]:
+        height, width = getattr(item, "height", None), getattr(item, "width", None)
+        if not height or not width:
+            continue
+        try:
+            samples = item.batch_size
+        except (AttributeError, TypeError, IndexError):
+            samples = 1
+        total += samples * height * width
+    return total
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +125,7 @@ def build_component_residency_strategy(
         )
     if residency_mode in (
         COMPONENT_OFFLOAD,
+        FIT_OFFLOAD,
         SNAPSHOT_OFFLOAD,
     ) and is_fsdp_managed_module(module):
         raise ComponentResidencyError(
@@ -113,6 +134,12 @@ def build_component_residency_strategy(
         )
     if residency_mode == SNAPSHOT_OFFLOAD:
         return SnapshotOffloadStrategy(pin_budget=pin_budget)
+    if (
+        not current_platform.is_mps()
+        and not is_fsdp_managed_module(module)
+        and residency_mode == FIT_OFFLOAD
+    ):
+        return FitOffloadStrategy()
     if (
         not current_platform.is_mps()
         and not is_fsdp_managed_module(module)
@@ -200,6 +227,7 @@ class ComponentResidencyManager:
         self.state = ResidencyState(
             stages=stages,
             batch_is_warmup=self._is_warmup_batch(batch),
+            output_pixels=_output_pixels(batch),
         )
         self._active_use = None
         self._active_use_module = None
@@ -252,7 +280,7 @@ class ComponentResidencyManager:
             for component_name, module in self.pipeline.modules.items()
             if isinstance(module, nn.Module)
             and self.server_args.explicit_residency_mode(component_name)
-            in (COMPONENT_OFFLOAD, SNAPSHOT_OFFLOAD, LAYERWISE_OFFLOAD)
+            in (COMPONENT_OFFLOAD, FIT_OFFLOAD, SNAPSHOT_OFFLOAD, LAYERWISE_OFFLOAD)
             and component_name not in declared_components
         )
         if unmanaged_components:

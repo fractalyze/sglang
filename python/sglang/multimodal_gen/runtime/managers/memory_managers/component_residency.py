@@ -18,12 +18,16 @@ from sglang.multimodal_gen.runtime.managers.memory_managers.layerwise_offload_co
 
 RESIDENT = "resident"
 COMPONENT_OFFLOAD = "component-offload"
+# component-offload that keeps the component on the device after a use while
+# the rest of the request's working set still fits next to it.
+FIT_OFFLOAD = "fit-offload"
 SNAPSHOT_OFFLOAD = "snapshot-offload"
 LAYERWISE_OFFLOAD = "layerwise-offload"
 COMPONENT_RESIDENCY_MODES = frozenset(
     (
         RESIDENT,
         COMPONENT_OFFLOAD,
+        FIT_OFFLOAD,
         SNAPSHOT_OFFLOAD,
         LAYERWISE_OFFLOAD,
     )
