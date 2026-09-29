@@ -64,14 +64,16 @@ class ResidencyState:
     current_use: ComponentUse | None = None
     future_uses: tuple[ComponentUse, ...] = ()
     batch_is_warmup: bool = False
-    # Output pixels of the request (samples x height x width), the size a
-    # fit-offload component's keep decision is made against.
+    # Output pixels of the request (samples x height x width) and of its
+    # largest single VAE decode call (one sample under --vae-slicing), the
+    # sizes a fit-offload component's keep decision is made against.
     output_pixels: int = 0
+    decode_pixels: int = 0
 
 
-def _output_pixels(batch: "ResidencyBatch | list[ResidencyBatch]") -> int:
-    """Samples x height x width over the request's batches (0 when unknown)."""
-    total = 0
+def _image_sizes(batch: "ResidencyBatch | list[ResidencyBatch]") -> list[tuple[int, int]]:
+    """(samples, height x width) of each of the request's batches with a size."""
+    sizes = []
     for item in batch if isinstance(batch, list) else [batch]:
         height, width = getattr(item, "height", None), getattr(item, "width", None)
         if not height or not width:
@@ -80,8 +82,23 @@ def _output_pixels(batch: "ResidencyBatch | list[ResidencyBatch]") -> int:
             samples = item.batch_size
         except (AttributeError, TypeError, IndexError):
             samples = 1
-        total += samples * height * width
-    return total
+        sizes.append((samples, height * width))
+    return sizes
+
+
+def _output_pixels(batch: "ResidencyBatch | list[ResidencyBatch]") -> int:
+    """Samples x height x width over the request's batches (0 when unknown)."""
+    return sum(samples * pixels for samples, pixels in _image_sizes(batch))
+
+
+def _decode_pixels(
+    batch: "ResidencyBatch | list[ResidencyBatch]", vae_slicing: bool
+) -> int:
+    """Pixels of the request's largest single VAE decode call."""
+    return max(
+        (pixels if vae_slicing else samples * pixels for samples, pixels in _image_sizes(batch)),
+        default=0,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +245,16 @@ class ComponentResidencyManager:
             stages=stages,
             batch_is_warmup=self._is_warmup_batch(batch),
             output_pixels=_output_pixels(batch),
+            decode_pixels=_decode_pixels(
+                batch,
+                bool(
+                    getattr(
+                        getattr(server_args, "pipeline_config", None),
+                        "vae_slicing",
+                        False,
+                    )
+                ),
+            ),
         )
         self._active_use = None
         self._active_use_module = None

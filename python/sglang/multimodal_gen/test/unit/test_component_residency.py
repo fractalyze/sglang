@@ -11,6 +11,7 @@ from sglang.multimodal_gen.runtime.managers.memory_managers.component_manager im
     ComponentUse,
     ResidencyState,
     WarmupPhasePeak,
+    _decode_pixels,
     _output_pixels,
     build_component_residency_strategy,
 )
@@ -898,25 +899,32 @@ def _fit_offload(monkeypatch, available_bytes):
     return strategy
 
 
+_MPX = 1024 * 1024
+
+
 @pytest.mark.parametrize(
-    "available_gib, pixels, offloaded",
+    "available_gib, output_pixels, decode_pixels, offloaded",
     [
-        # four 1024x1024 images need ~18 GiB after the encode: 14 GiB free does not fit
-        (14, 4 * 1024 * 1024, True),
-        # one 1024x1024 image needs ~4.5 GiB: 14 GiB free fits
-        (14, 1024 * 1024, False),
+        # four 1024x1024 images decoded together need ~19 GiB: 14 GiB free does not fit
+        (14, 4 * _MPX, 4 * _MPX, True),
+        # the same four decoded one at a time need ~5.5 GiB: 14 GiB free fits
+        (14, 4 * _MPX, _MPX, False),
+        # one 1024x1024 image needs ~4.8 GiB: 14 GiB free fits
+        (14, _MPX, _MPX, False),
         # the margin alone must be free
-        (0.5, 0, True),
+        (0.5, 0, 0, True),
     ],
 )
 def test_fit_offload_keeps_component_only_while_the_request_fits(
-    monkeypatch, available_gib, pixels, offloaded
+    monkeypatch, available_gib, output_pixels, decode_pixels, offloaded
 ):
     strategy = _fit_offload(monkeypatch, int(available_gib * 1024**3))
     module = Mock()
     module.parameters.return_value = iter([torch.empty(1, device="meta")])
     strategy.finish_use(
-        module, _TEXT_ENCODER_USE, ResidencyState(output_pixels=pixels)
+        module,
+        _TEXT_ENCODER_USE,
+        ResidencyState(output_pixels=output_pixels, decode_pixels=decode_pixels),
     )
     assert module.to.called is offloaded
 
@@ -948,6 +956,13 @@ def test_output_pixels_sums_samples_over_merged_requests():
     assert _output_pixels(merged) == 4 * 512 * 512
     assert _output_pixels([merged, single]) == 4 * 512 * 512 + 1024 * 1024
     assert _output_pixels(SimpleNamespace(height=None, width=None)) == 0
+
+
+def test_decode_pixels_is_one_image_when_sliced():
+    merged = SimpleNamespace(height=1024, width=1024, batch_size=4)
+    assert _decode_pixels(merged, vae_slicing=False) == 4 * 1024 * 1024
+    assert _decode_pixels(merged, vae_slicing=True) == 1024 * 1024
+    assert _decode_pixels(SimpleNamespace(height=None, width=None), True) == 0
 
 
 def test_fit_offload_mode_builds_fit_offload_strategy():

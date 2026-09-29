@@ -231,13 +231,16 @@ class FitOffloadStrategy(ComponentOffloadStrategy):
     use of it needs no load. It never moves the component more often than
     component offload does.
 
-    The working set after the use is predicted from the request's output
-    pixels: for Qwen-Image 2.1 the denoise and VAE-decode peak above the idle
-    pipeline is about 4.5 KB per output pixel (18.1 GB for four 1024x1024
-    images, 4.35 GB for four 512x512 ones, RTX 5090).
+    The working set after the use is predicted from the request's pixels.
+    For Qwen-Image 2.1 on an RTX 5090 the VAE decode dominates: about 4.5 KB
+    per pixel of its largest single decode call (18.1 GB for four 1024x1024
+    images decoded together, ~5 GB for one); the DiT's activations add
+    little (about 0.1 GB from one to four 1024x1024 images), bounded here by
+    256 B per output pixel.
     """
 
-    WORKING_SET_BYTES_PER_OUTPUT_PIXEL = 4608
+    DECODE_BYTES_PER_PIXEL = 4608
+    DIT_BYTES_PER_OUTPUT_PIXEL = 256
     MARGIN_BYTES = 1024**3
 
     def finish_use(
@@ -246,7 +249,10 @@ class FitOffloadStrategy(ComponentOffloadStrategy):
         use: ComponentUse,
         state: ResidencyState,
     ) -> None:
-        needed = state.output_pixels * self.WORKING_SET_BYTES_PER_OUTPUT_PIXEL
+        needed = (
+            state.decode_pixels * self.DECODE_BYTES_PER_PIXEL
+            + state.output_pixels * self.DIT_BYTES_PER_OUTPUT_PIXEL
+        )
         if self._fits(needed):
             self.wait_for_use(module, use, state)
             self._ready_events.pop(use.component_name, None)
