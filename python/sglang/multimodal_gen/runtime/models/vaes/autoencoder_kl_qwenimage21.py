@@ -6,6 +6,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from sglang.kernels.ops.diffusion import dup_up3d_add
+from sglang.kernels.ops.diffusion.conv import fp8_conv_cudnn
+from sglang.kernels.ops.diffusion.norm.channel_rmsnorm_nhwc import (
+    MAX_CHANNELS as NHWC_NORM_MAX_CHANNELS,
+)
 from sglang.kernels.ops.diffusion.norm.channel_rmsnorm_nhwc import (
     can_use_channel_rmsnorm_nhwc,
     channel_rmsnorm_nhwc,
@@ -38,7 +42,9 @@ from sglang.srt.environ import envs
 
 logger = init_logger(__name__)
 _CHANNEL_RMSNORM_FUSION = BitExactFusionGate("Qwen-Image 2.1 VAE channel RMSNorm")
-_CHANNEL_RMSNORM_SILU_FUSION = BitExactFusionGate("Qwen-Image 2.1 VAE channel RMSNorm + SiLU")
+_CHANNEL_RMSNORM_SILU_FUSION = BitExactFusionGate(
+    "Qwen-Image 2.1 VAE channel RMSNorm + SiLU"
+)
 
 
 def get_activation(name):
@@ -178,7 +184,11 @@ class QwenImage21RMS_norm(nn.Module):
 
     def forward(self, x, silu: bool = False):
         """RMSNorm over channels, then SiLU when ``silu`` (one pass on the fused path)."""
-        plain = self.channel_first and isinstance(self.bias, (int, float)) and self.bias == 0
+        plain = (
+            self.channel_first
+            and isinstance(self.bias, (int, float))
+            and self.bias == 0
+        )
         if plain and can_use_channel_rmsnorm_nhwc(x, self.gamma):
             # channels_last decode (SGLANG_ENABLE_QWEN_IMAGE21_VAE_CHANNELS_LAST)
             return channel_rmsnorm_nhwc(x, self.gamma, self.scale, silu)
@@ -247,9 +257,16 @@ class QwenImage21Resample(nn.Module):
             )
         else:
             self.resample = nn.Identity()
+        # The upsample conv as an FP8 cuDNN graph (SGLANG_ENABLE_QWEN_IMAGE21_VAE_FP8_CONV).
+        self.fp8_conv = None
 
     def forward(self, x, feat_cache=None, feat_idx=None):
         b, c, t, h, w = x.size()
+        if t == 1 and self.fp8_conv is not None:
+            x8, act_scale = fp8_conv_cudnn.upsample2x_fp8(
+                x.squeeze(2).contiguous(memory_format=torch.channels_last)
+            )
+            return self.fp8_conv(x8, act_scale=act_scale)
         if t == 1:
             # squeeze keeps a channels_last_3d input channels_last; the reshape
             # below would copy it back to NCHW
@@ -282,13 +299,42 @@ class QwenImage21ResidualBlock(nn.Module):
             if in_dim != out_dim
             else nn.Identity()
         )
+        # (scale1, conv1, scale2, conv2) of the FP8 path, set by prepare_fp8_convs.
+        self.fp8_convs = None
 
     def forward(self, x, feat_cache=None, feat_idx=None):
+        if self.fp8_convs is not None and x.shape[2] == 1:
+            return self._fp8_forward(x)
         h = self.conv_shortcut(x)
         x = self.conv1(self.norm1(x, silu=True))
         x = self.dropout(self.norm2(x, silu=True))
         x = self.conv2(x)
         return x + h
+
+    def _fp8_forward(self, x):
+        """norm + SiLU write e4m3, conv1 and conv2 run FP8; conv2 adds the shortcut in fp32."""
+        # The mid block's attention hands over an NCHW tensor; the FP8 path is channels_last.
+        x = x.contiguous(memory_format=torch.channels_last_3d)
+        h = self.conv_shortcut(x).contiguous(memory_format=torch.channels_last_3d)
+        scale1, conv1, scale2, conv2 = self.fp8_convs
+        y = conv1(
+            fp8_conv_cudnn.norm_silu_fp8(x, self.norm1.gamma, self.norm1.scale, scale1)
+        )
+        y = fp8_conv_cudnn.norm_silu_fp8(
+            self.dropout(y), self.norm2.gamma, self.norm2.scale, scale2
+        )
+        return conv2(y, residual=h)
+
+    def prepare_fp8_convs(self):
+        """Quantize conv1 / conv2 for _fp8_forward (static activation scales from the norms)."""
+        scale1 = fp8_conv_cudnn.norm_act_scale(self.norm1.gamma)
+        scale2 = fp8_conv_cudnn.norm_act_scale(self.norm2.gamma)
+        self.fp8_convs = (
+            scale1,
+            fp8_conv_cudnn.Fp8Conv3x3(self.conv1, scale1),
+            scale2,
+            fp8_conv_cudnn.Fp8Conv3x3(self.conv2, scale2),
+        )
 
 
 class QwenImage21AttentionBlock(nn.Module):
@@ -704,6 +750,36 @@ def enable_qwen21_spatial_decode(module):
             enable_qwen21_spatial_decode(child)
 
 
+def _is_fp8_conv3x3(conv) -> bool:
+    return (
+        isinstance(conv, nn.Conv2d)
+        and conv.kernel_size == (3, 3)
+        and conv.stride == (1, 1)
+        and conv.padding == (1, 1)
+        and conv.bias is not None
+    )
+
+
+def _fp8_residual_eligible(block: QwenImage21ResidualBlock) -> bool:
+    norms = (block.norm1, block.norm2)
+    return (
+        _is_fp8_conv3x3(block.conv1)
+        and _is_fp8_conv3x3(block.conv2)
+        and all(
+            n.channel_first and isinstance(n.bias, (int, float)) and n.bias == 0
+            for n in norms
+        )
+        # the norm kernel holds a whole channel row in registers
+        and max(block.in_dim, block.out_dim) <= NHWC_NORM_MAX_CHANNELS
+    )
+
+
+def _fp8_upsample_eligible(resample: QwenImage21Resample) -> bool:
+    return resample.mode in ("upsample2d", "upsample3d") and _is_fp8_conv3x3(
+        resample.resample[1]
+    )
+
+
 class AutoencoderKLQwenImage21(ParallelTiledVAE):
     layer_names = [
         *ParallelTiledVAE.layer_names,
@@ -745,6 +821,8 @@ class AutoencoderKLQwenImage21(ParallelTiledVAE):
         )
         if self.spatial_parallel:
             enable_qwen21_spatial_decode(self.decoder)
+        self._fp8_convs_prepared = False
+        self._fp8_convs_warned = False
 
     def _encode(self, x):
         if x.shape[2] != 1:
@@ -755,10 +833,14 @@ class AutoencoderKLQwenImage21(ParallelTiledVAE):
 
     def _use_channels_last(self) -> bool:
         """Decoder weights in channels_last, converted on first use (and after any reload)."""
-        if not envs.SGLANG_ENABLE_QWEN_IMAGE21_VAE_CHANNELS_LAST.get():
+        if not (
+            envs.SGLANG_ENABLE_QWEN_IMAGE21_VAE_CHANNELS_LAST.get()
+            or self._use_fp8_convs()
+        ):
             return False
         convs = [
-            m for m in (self.post_quant_conv, *self.decoder.modules())
+            m
+            for m in (self.post_quant_conv, *self.decoder.modules())
             if isinstance(m, nn.Conv2d)
         ]
         if not convs[0].weight.is_contiguous(memory_format=torch.channels_last):
@@ -768,6 +850,32 @@ class AutoencoderKLQwenImage21(ParallelTiledVAE):
                 )
         return True
 
+    def _use_fp8_convs(self) -> bool:
+        if not envs.SGLANG_ENABLE_QWEN_IMAGE21_VAE_FP8_CONV.get():
+            return False
+        if not fp8_conv_cudnn.is_available():
+            if not self._fp8_convs_warned:
+                logger.warning(
+                    "SGLANG_ENABLE_QWEN_IMAGE21_VAE_FP8_CONV needs the cuDNN frontend "
+                    "Python package (cudnn); decoding with bf16 convs"
+                )
+                self._fp8_convs_warned = True
+            return False
+        return True
+
+    def _prepare_fp8_convs(self):
+        """FP8 copies of the decoder's 3x3 residual and upsample convs (weights stay bf16 too)."""
+        for module in self.decoder.modules():
+            if isinstance(module, QwenImage21ResidualBlock) and _fp8_residual_eligible(
+                module
+            ):
+                module.prepare_fp8_convs()
+            elif isinstance(module, QwenImage21Resample) and _fp8_upsample_eligible(
+                module
+            ):
+                module.fp8_conv = fp8_conv_cudnn.Fp8Conv3x3(module.resample[1])
+        self._fp8_convs_prepared = True
+
     def _decode(self, z):
         if z.shape[2] != 1:
             raise ValueError("Qwen-Image 2.1 VAE expects one latent frame")
@@ -776,6 +884,8 @@ class AutoencoderKLQwenImage21(ParallelTiledVAE):
         )
         if not parallel and self._use_channels_last():
             z = z.contiguous(memory_format=torch.channels_last_3d)
+            if self._use_fp8_convs() and not self._fp8_convs_prepared:
+                self._prepare_fp8_convs()
         z = self.post_quant_conv(z)
         if parallel:
             z, expected_height = split_height_for_parallel_decode(
