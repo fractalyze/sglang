@@ -88,11 +88,10 @@ def test_prompt_conditioning_uses_training_template_and_pre_norm(prompt, image_c
     processor.apply_chat_template.return_value = [[1]]
     encoder = Mock(return_value=SimpleNamespace(hidden_states=(hidden,)))
     stage = QwenImage21EncodingStage(encoder, processor, None, None)
-    stage.use_declared_component = Mock(return_value=nullcontext(encoder))
     images = [Image.new("RGBA", (2, 1), (12, 34, 56, 0)) for _ in range(image_count)]
     for image in images:
         image.putpixel((1, 0), (12, 34, 56, 255))
-    actual, slots = stage.encode_prompt(prompt, images, "cpu")
+    actual, slots = stage.encode_prompt(prompt, images, "cpu", encoder)
     torch.testing.assert_close(actual, hidden[0, [1, 2, 4]])
     assert slots.tolist() == [False, True, False]
     encoder.model.language_model.norm.assert_not_called()
@@ -380,6 +379,46 @@ def test_condition_pixels_match_reference_preprocessing(monkeypatch, tiling):
     actual = vae.encode.call_args.args[0]
     torch.testing.assert_close(actual, expected.bfloat16(), atol=0, rtol=0)
     assert actual.stride() == expected.stride()
+
+
+def test_text_encoder_is_entered_once_per_batch(monkeypatch):
+    # under component offload each use interval moves the whole encoder
+    module = "sglang.multimodal_gen.runtime.pipelines_core.stages.model_specific_stages.qwen_image21"
+    monkeypatch.setattr(f"{module}.get_local_torch_device", lambda: torch.device("cpu"))
+    monkeypatch.setattr(f"{module}.set_forward_context", lambda **kwargs: nullcontext())
+    encoder = Mock()
+    processor = Mock()
+    processor.apply_chat_template.return_value = [[1]]
+    stage = QwenImage21EncodingStage(
+        encoder, processor, None, SimpleNamespace(config={})
+    )
+    stage.use_declared_component = Mock(return_value=nullcontext(encoder))
+    stage.encode_prompt = Mock(return_value=(torch.zeros(3, 8), torch.zeros(3).bool()))
+    batch = SimpleNamespace(
+        height=32,
+        width=32,
+        condition_image=None,
+        prompt=["a", "b", "c"],
+        negative_prompt="neg",
+        num_outputs_per_prompt=1,
+        do_classifier_free_guidance=True,
+        extra={},
+    )
+    stage.forward(batch, SimpleNamespace(pipeline_config=QwenImage21PipelineConfig()))
+    stage.use_declared_component.assert_called_once_with(
+        component_name="text_encoder", module=encoder
+    )
+    assert [c.args[0] for c in stage.encode_prompt.call_args_list] == [
+        "a",
+        "b",
+        "c",
+        "neg",
+        "neg",
+        "neg",
+    ]
+    assert all(c.args[3] is encoder for c in stage.encode_prompt.call_args_list)
+    assert batch.prompt_embeds[0].shape[0] == 3
+    assert batch.negative_prompt_embeds[0].shape[0] == 3
 
 
 def test_condition_image_loading_preserves_alpha(tmp_path):

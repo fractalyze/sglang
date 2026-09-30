@@ -82,7 +82,7 @@ class QwenImage21EncodingStage(PipelineStage):
             ComponentUse(name, "vae", target_dtype=torch.bfloat16),
         ]
 
-    def encode_prompt(self, prompt, images, device):
+    def encode_prompt(self, prompt, images, device, encoder):
         prefix = " ".join(
             f"<image{i + 1}><|vision_start|><|image_pad|><|vision_end|>"
             for i in range(len(images))
@@ -105,18 +105,36 @@ class QwenImage21EncodingStage(PipelineStage):
                 vision_images.append(image)
             kwargs["images"] = vision_images
         inputs = self.processor(**kwargs).to(device)
-        with self.use_declared_component(
-            component_name="text_encoder", module=self.text_encoder
-        ) as encoder:
-            outputs = encoder(
-                **inputs, output_hidden_states=True, use_cache=False, logits_to_keep=1
-            )
-            # the checkpoint expects Transformers 4.57's pre-final-norm hidden state
-            final_hidden = outputs.hidden_states[-1]
+        outputs = encoder(
+            **inputs, output_hidden_states=True, use_cache=False, logits_to_keep=1
+        )
+        # the checkpoint expects Transformers 4.57's pre-final-norm hidden state
+        final_hidden = outputs.hidden_states[-1]
         valid = inputs.attention_mask[0].bool()
         hidden = final_hidden[0, valid][self.drop_idx :]
         ids = inputs.input_ids[0, valid][self.drop_idx :]
         return collapse_image_slots(hidden, ids, self.image_token_id)
+
+    def _encode_passes(self, passes, images, device, batch):
+        """Encode every prompt of every CFG pass in one text-encoder use interval.
+
+        Under component offload each interval moves the whole encoder to the GPU
+        and back, so one interval per prompt would cost a round trip per prompt.
+        """
+        with self.use_declared_component(
+            component_name="text_encoder", module=self.text_encoder
+        ) as encoder:
+            encoded = {}
+            for negative, prompts in passes.items():
+                encoded[negative] = []
+                for prompt in prompts:
+                    with set_forward_context(
+                        current_timestep=None, attn_metadata=None, forward_batch=batch
+                    ):
+                        encoded[negative].append(
+                            self.encode_prompt(prompt, images, device, encoder)
+                        )
+            return encoded
 
     def forward(self, batch, server_args):
         config = server_args.pipeline_config
@@ -179,13 +197,16 @@ class QwenImage21EncodingStage(PipelineStage):
             if conditions
             else None
         )
-        for negative in [False, True] if batch.do_classifier_free_guidance else [False]:
+        passes = [False, True] if batch.do_classifier_free_guidance else [False]
+        encoded = self._encode_passes(
+            {negative: negatives if negative else prompts for negative in passes},
+            resized,
+            device,
+            batch,
+        )
+        for negative in passes:
             embeds, masks, layouts = [], [], []
-            for prompt in negatives if negative else prompts:
-                with set_forward_context(
-                    current_timestep=None, attn_metadata=None, forward_batch=batch
-                ):
-                    hidden, slots = self.encode_prompt(prompt, resized, device)
+            for hidden, slots in encoded[negative]:
                 layout = build_layout(
                     slots.tolist(), shapes, config.dit_config.axes_dims_rope, device
                 )
