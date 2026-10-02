@@ -1,0 +1,7 @@
+#!/bin/bash
+# Entry point on a gemma4nv host: sources the env and runs the gate package.
+set -euo pipefail
+here="$(cd "$(dirname "$0")/.." && pwd)"
+source "$here/env/env.sh"
+cd "$here"
+exec python -m gate "$@"

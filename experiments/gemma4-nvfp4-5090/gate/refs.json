@@ -1,0 +1,8 @@
+{
+  "base": {
+    "description": "Pinned baseline: SGLang at the study branch point, NVFP4 MoE on FlashInfer CUTLASS (the tree's auto choice, flashinfer_trtllm, is SM100-only and crashes on SM120), attention/KV/dense GEMM on the tree's defaults.",
+    "commit": "a9871012acb768dc94a43a6542cc32626c7b7b0b",
+    "server_args": ["--moe-runner-backend", "flashinfer_cutlass"],
+    "env": {}
+  }
+}
