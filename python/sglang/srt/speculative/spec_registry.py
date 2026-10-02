@@ -115,6 +115,29 @@ class CustomSpecAlgo:
         # Conservative default: the larger KV reserve.
         return True
 
+    def carries_draft_hidden_states(self) -> bool:
+        return False
+
+    def need_topk(self) -> bool:
+        return False
+
+    def create_future_map(
+        self,
+        device: torch.device,
+        req_to_token_pool,
+        needs_cpu_seq_lens: bool = True,
+        needs_confidence_relay: bool = False,
+    ) -> FutureMap:
+        from sglang.srt.managers.overlap_utils import FutureMap
+
+        return FutureMap(
+            device,
+            self,
+            req_to_token_pool,
+            needs_cpu_seq_lens,
+            needs_confidence_relay,
+        )
+
     def handle_server_args(self, server_args: ServerArgs) -> None:
         pass
 
@@ -196,6 +219,10 @@ def _reserved_names() -> frozenset:
     return frozenset(algo.name for algo in SpeculativeAlgorithm) | _RESERVED_ALIASES
 
 
+# The SpeculativeAlgorithm methods the scheduler calls on any algorithm.
+_DUCK_TYPED_PREFIXES = ("is_", "supports_", "has_", "carries_", "need_", "create_")
+
+
 def _assert_custom_spec_algo_conforms(spec_class: Type[CustomSpecAlgo]) -> None:
     """Fail fast if ``spec_class`` drifts from the ``SpeculativeAlgorithm``
     duck-typing contract.
@@ -220,7 +247,7 @@ def _assert_custom_spec_algo_conforms(spec_class: Type[CustomSpecAlgo]) -> None:
     interface = {
         name
         for name in vars(SpeculativeAlgorithm)
-        if name.startswith(("is_", "supports_"))
+        if name.startswith(_DUCK_TYPED_PREFIXES)
     }
     missing = sorted(interface - set(dir(spec_class)))
     if missing:

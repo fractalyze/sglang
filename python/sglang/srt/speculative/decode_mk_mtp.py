@@ -21,31 +21,9 @@ MAX_DRAFTS = 3
 
 
 class DecodeMkMtpAlgo(CustomSpecAlgo):
-    # The scheduler asks every algorithm these, and CustomSpecAlgo does not
-    # answer them; the answers are SpeculativeAlgorithm's for an algorithm
-    # without a draft model.
-    def carries_draft_hidden_states(self) -> bool:
-        return False
-
-    def need_topk(self) -> bool:
-        return False
-
-    def create_future_map(
-        self,
-        device,
-        req_to_token_pool,
-        needs_cpu_seq_lens=True,
-        needs_confidence_relay=False,
-    ):
-        from sglang.srt.managers.overlap_utils import FutureMap
-
-        return FutureMap(
-            device, self, req_to_token_pool, needs_cpu_seq_lens, needs_confidence_relay
-        )
-
     def handle_server_args(self, server_args: Any) -> None:
-        """K = --speculative-num-steps drafts a cycle (default 1, the fastest
-        at batch 1), a chain: topk 1, K + 1 tokens verified."""
+        """K = --speculative-num-steps drafts a cycle (default 1), a chain:
+        topk 1, K + 1 tokens verified."""
         steps = server_args.speculative_num_steps or 1
         if not 1 <= steps <= MAX_DRAFTS:
             raise ValueError(

@@ -8,6 +8,7 @@ from sglang.srt.arg_groups.overrides import resolution_result
 from sglang.srt.arg_groups.speculative_hook import handle_speculative_decoding
 from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
 from sglang.srt.speculative.spec_registry import (
+    _DUCK_TYPED_PREFIXES,
     _REGISTRY,
     CustomSpecAlgo,
     _assert_custom_spec_algo_conforms,
@@ -306,7 +307,7 @@ class TestConformanceGuard(_RegistryIsolated):
         interface = {
             name
             for name in vars(SpeculativeAlgorithm)
-            if name.startswith(("is_", "supports_"))
+            if name.startswith(_DUCK_TYPED_PREFIXES)
         }
         body = {m: (lambda self: False) for m in interface if m != method}
         return type("Broken", (), body)
@@ -315,6 +316,17 @@ class TestConformanceGuard(_RegistryIsolated):
         Broken = self._spec_class_missing("is_some")
         with self.assertRaisesRegex(TypeError, "is_some"):
             _assert_custom_spec_algo_conforms(Broken)
+
+    def test_missing_scheduler_hook_raises(self):
+        # The scheduler calls these on every algorithm at startup.
+        for method in ("carries_draft_hidden_states", "create_future_map", "need_topk"):
+            with self.assertRaisesRegex(TypeError, method):
+                _assert_custom_spec_algo_conforms(self._spec_class_missing(method))
+
+    def test_base_answers_as_an_algorithm_without_a_draft_model(self):
+        algo = CustomSpecAlgo("MY_FOO", factory=lambda server_args: MagicMock)
+        self.assertFalse(algo.carries_draft_hidden_states())
+        self.assertFalse(algo.need_topk())
 
     def test_register_rejects_nonconforming_spec_class(self):
         Broken = self._spec_class_missing("is_some")
