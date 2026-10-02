@@ -173,17 +173,16 @@ class DecodeMkRunner:
         steps += [(pos0 + i, hidden[i]) for i in range(ids.numel() - 1)]
         following = ids if self._pending is not None else ids[1:]
         for (pos, state), token in zip(steps, following):
-            self._head(token.view(1), state, pos, with_logits=False)
+            self._head(token.view(1), state, pos)
         self._pending = hidden[-1].clone()
 
-    def _head(
-        self, token: torch.Tensor, hidden: torch.Tensor, pos: int, with_logits: bool
-    ) -> None:
+    def _head(self, token: torch.Tensor, hidden: torch.Tensor, pos: int) -> None:
+        """The head's step at prompt position `pos`, writing its cache there."""
         m = self.generator.mtp
         m.token.copy_(token)
         m.hidden_in.copy_(hidden)
         m.pos.fill_(pos)
-        m.launch(with_logits=with_logits)
+        m.launch(with_logits=False)
 
     def decode(self, token: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
         """The logits (fp32 [vocab]) after `token` (int [1]) at position
@@ -193,31 +192,16 @@ class DecodeMkRunner:
         self.decoder.launch(token.int(), self._pos, self._positions)
         return self.decoder.logits
 
-    def speculate(self, token: torch.Tensor, pos: int) -> list[int]:
-        """The greedy tokens after `token` (int [1], on the device) at
-        position `pos` from one cycle of speculative decoding: the accepted
-        drafts and the model's own choice after them.
-
-        The request's first cycle drafts from the prompt's last position;
-        every later one continues where the cycle before left the head, the
-        states and the next token (decode-mk's Qwen38Generator.generate)."""
-        g = self.generator
+    def speculate(self, token: int, pos: int) -> list[int]:
+        """The greedy tokens after `token` at position `pos` from one cycle of
+        speculative decoding: the accepted drafts and the model's own choice
+        after them. A request's first cycle starts decode-mk's loop from the
+        prompt's last position; every later one continues where the cycle
+        before left it."""
         if self._pending is not None:
-            self._head(token, self._pending, pos - 1, with_logits=True)
-            g._tokens[0:1].copy_(token)
-            g._tokens[1:2].copy_(g.mtp.logits.argmax(dim=-1, keepdim=True))
-            g._pos.fill_(pos)
-            g._slot.zero_()
+            self.generator.start(self._pending, token, pos)
             self._pending = None
-        k = g.drafts
-        g._draft_graph.replay()
-        read = torch.cat([g._tokens[1 : k + 1].long(), g._answers[: k + 1]]).tolist()
-        drafts, answers = read[:k], read[k:]
-        n = 0
-        while n < k and drafts[n] == answers[n]:
-            n += 1
-        g._extend_graphs[n].replay()
-        return drafts[:n] + [answers[n]]
+        return self.generator.cycle()
 
 
 class Qwen3_5DecodeMkForConditionalGeneration(nn.Module):

@@ -19,6 +19,12 @@ decoding's.
 
 Each cycle replays two CUDA graphs: the drafts with the verify step, then the
 extend for the n accepted; the host reads the 2K + 1 tokens between them.
+
+Qwen38Generator.start and Qwen38Generator.cycle are the cycle's public API,
+which generate() runs on and which fractalyze/sglang's decode_mk adapter
+(python/sglang/srt/models/qwen3_5_decode_mk.py) drives after its own prefill.
+A change to the cycle keeps their signatures and meaning, or changes that
+adapter with them.
 """
 
 from __future__ import annotations
@@ -117,6 +123,8 @@ class Qwen38Generator:
         self._tokens = torch.zeros(MAX_TOKENS, dtype=torch.int32, device=device)
         self._answers = torch.zeros(MAX_TOKENS, dtype=torch.int64, device=device)
         self._prompt_pos, self._prompt_slot = scalar(), scalar()
+        # _pos on the host, for cycle() to check; None until start().
+        self._next_pos: int | None = None
 
         if mtp is None:
             self.mtp = None
@@ -132,6 +140,50 @@ class Qwen38Generator:
         self._extend_graphs = [_capture(lambda n=n: self._extend(n)) for n in range(drafts + 1)]
 
     # ------------------------------------------------------------ the cycle
+
+    def start(self, hidden: torch.Tensor, token: int, pos: int, slot: int = 0) -> None:
+        """Starts the loop at `token`, the next token, at position `pos`,
+        after a prompt whose linear layers' states are in `slot`. With the
+        head, whose cache already holds positions 0 … pos - 2, the head runs
+        position pos - 1 from `hidden`, the model's final-normed hidden state
+        there (bf16 [DIM]), with `token` after it, drafting the first cycle's
+        d₀."""
+        if not 0 < pos < self.max_positions:
+            raise ValueError(f"position {pos} does not follow a prompt in "
+                             f"{self.max_positions} positions")
+        self._next_pos = pos
+        self._pos.fill_(pos)
+        self._slot.fill_(slot)
+        self._tokens[0] = token
+        if self.mtp is None:
+            return
+        self.mtp.token.fill_(token)
+        self.mtp.pos.fill_(pos - 1)
+        self.mtp.hidden_in.copy_(hidden)
+        self.mtp.launch(with_logits=True)
+        self._tokens[1] = self.mtp.logits.argmax()
+
+    def cycle(self) -> list[int]:
+        """One cycle from where start() or the last cycle left the loop: the
+        accepted drafts and the model's own choice after them, 1 to
+        `drafts` + 1 tokens. Leaves the loop at the last of them."""
+        if self.mtp is None:
+            raise ValueError("speculative decoding needs the MTP head's weights")
+        if self._next_pos is None:
+            raise ValueError("cycle() continues from start()")
+        k = self.drafts
+        if self._next_pos + k + 1 > self.max_positions:
+            raise ValueError(f"a cycle at position {self._next_pos} verifies past "
+                             f"{self.max_positions} positions")
+        self._draft_graph.replay()
+        read = torch.cat([self._tokens[1:k + 1].long(), self._answers[:k + 1]]).tolist()
+        drafts, answers = read[:k], read[k:]
+        n = 0
+        while n < k and drafts[n] == answers[n]:
+            n += 1
+        self._extend_graphs[n].replay()
+        self._next_pos += n + 1
+        return drafts[:n] + [answers[n]]
 
     def _draft_and_verify(self) -> None:
         m, k = self.mtp, self.drafts
@@ -182,17 +234,13 @@ class Qwen38Generator:
             hidden[begin:begin + n] = self.verifier.final_hidden[:n]
             slot = (slot + n) % self.state.slots
         first = int(self.verifier.logits[n - 1].argmax())
-        self._pos.fill_(len(prompt))
-        self._slot.fill_(slot)
-        self._tokens[0] = first
         if self.mtp is not None:
-            following = prompt[1:] + [first]
-            for i, token in enumerate(following):
+            for i, token in enumerate(prompt[1:]):
                 self.mtp.token.fill_(token)
                 self.mtp.pos.fill_(i)
                 self.mtp.hidden_in.copy_(hidden[i])
-                self.mtp.launch(with_logits=i == len(prompt) - 1)
-            self._tokens[1] = self.mtp.logits.argmax()
+                self.mtp.launch(with_logits=False)
+        self.start(hidden[-1], first, len(prompt), slot)
         torch.cuda.synchronize()
         return first
 
@@ -208,19 +256,12 @@ class Qwen38Generator:
         tokens = [self._prefill(prompt)]
         if self.mtp is None:
             return self._plain(tokens, max_tokens, eos)
-        k = self.drafts
         emitted = []
         start = time.perf_counter()
         while len(tokens) < max_tokens and tokens[-1] not in eos:
-            self._draft_graph.replay()
-            read = torch.cat([self._tokens[1:k + 1].long(), self._answers[:k + 1]]).tolist()
-            drafts, answers = read[:k], read[k:]
-            n = 0
-            while n < k and drafts[n] == answers[n]:
-                n += 1
-            self._extend_graphs[n].replay()
-            emitted.append(n + 1)
-            tokens.extend(drafts[:n] + [answers[n]])
+            accepted = self.cycle()
+            emitted.append(len(accepted))
+            tokens.extend(accepted)
         torch.cuda.synchronize()
         seconds = time.perf_counter() - start
         return Generation(_cut(tokens, max_tokens, eos), seconds, len(tokens), emitted)

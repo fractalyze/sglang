@@ -67,14 +67,14 @@ class DecodeMkMtpWorker(BaseSpecWorker):
         if batch.forward_mode.is_decode():
             # The step decodes the request's last token, at the first position
             # the scheduler has not committed.
-            req = batch.reqs[0]
-            token = torch.tensor([req.output_ids[-1]], device=self.device)
+            token = batch.reqs[0].output_ids[-1]
             pos = int(batch.seq_lens_cpu[0])
             if self._speculates(batch):
                 emitted = self.runner.speculate(token, pos)
             else:
                 logits = self.runner.decode(
-                    token, torch.tensor([pos], device=self.device)
+                    torch.tensor([token], device=self.device),
+                    torch.tensor([pos], device=self.device),
                 )
                 logits_output = LogitsProcessorOutput(
                     next_token_logits=logits.unsqueeze(0)

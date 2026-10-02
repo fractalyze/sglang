@@ -78,7 +78,7 @@ def _speculative(runner: DecodeMkRunner, prompt: list[int], chunks=None) -> list
     reply = [int(logits.argmax())]
     while len(reply) < REPLY:
         pos = len(prompt) + len(reply) - 1
-        reply += runner.speculate(_ids(reply[-1:]), pos)
+        reply += runner.speculate(reply[-1], pos)
     return reply[:REPLY]
 
 
