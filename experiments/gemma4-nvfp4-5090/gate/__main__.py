@@ -139,7 +139,8 @@ def sol_fractions(report: dict, legs_dir: str, sol_res: dict) -> dict:
     for wl in ("W8", "W1", "W32"):
         w = sol_res["workloads"][wl]
         reps = [r for leg in legs for r in leg["workloads"][wl]]
-        decode_steps = w["decode"] - 1
+        wl_cfg = next(c for c in config.WORKLOADS if c.name == wl)
+        decode_steps = wl_cfg.decode_tokens - 1
         step_s = [sum(s["e2e_s"] - s["ttft_s"] for s in r["streams"]) / len(r["streams"]) / decode_steps for r in reps]
         prefill_s = [max(s["ttft_s"] for s in r["streams"]) for r in reps]
         achieved_step = sum(step_s) / len(step_s)
@@ -156,9 +157,14 @@ def sol_fractions(report: dict, legs_dir: str, sol_res: dict) -> dict:
             "prefill_sol_fraction_as_served": w["prefill"]["sol_s_as_served"] / achieved_prefill,
             "audit_below_sol": achieved_step < sol_step or achieved_prefill < w["prefill"]["sol_s_nvfp4_fp8"],
         }
-        if wl == "W32":
-            toks = sum(s["output_tokens"] for r in reps for s in r["streams"])
-            out[wl]["achieved_tok_s"] = toks / sum(r["wall_s"] for r in reps)
+        out[wl]["n_reps"] = len(reps)
+        out[wl]["prefill_s_sum_per_rep"] = sum(s["ttft_s"] for r in reps for s in r["streams"]) / len(reps)
+        out[wl]["decode_s_sum_per_rep"] = sum(s["e2e_s"] - s["ttft_s"] for r in reps for s in r["streams"]) / len(reps)
+        out[wl]["tpot_ms"] = 1e3 * sum(s["e2e_s"] - s["ttft_s"] for r in reps for s in r["streams"]) / sum(
+            s["output_tokens"] - 1 for r in reps for s in r["streams"])
+        toks = sum(s["output_tokens"] for r in reps for s in r["streams"])
+        out[wl]["achieved_tok_s"] = toks / sum(r["wall_s"] for r in reps)
+        out[wl]["implied_decode_gb_s"] = w["decode"]["mean_step_bytes"]["total"] / achieved_step / 1e9
     return out
 
 

@@ -84,7 +84,7 @@ def tables(distinct: Dict[str, Dict[int, float]], kv_elem_bytes: float, peaks: D
         dec = sol.decode_sol(b, p, d, distinct[router_key], kv_elem_bytes, weights)
         flops = sol.prefill_flops(b, p, tensors)
         pre = sol.prefill_sol(flops, peak_tflops, text_weight_bytes)
-        out["workloads"][wl] = {"batch": b, "prompt": p, "decode": d, "router_source": router_key,
+        out["workloads"][wl] = {"batch": b, "prompt": p, "decode_tokens": d, "router_source": router_key,
                                 "distinct_experts_mean": sum(distinct[router_key].values()) / len(distinct[router_key]),
                                 "decode": dec, "prefill_flops": flops, "prefill": pre}
     out["distinct_experts_by_source"] = {k: {"mean": sum(v.values()) / len(v), "by_layer": v} for k, v in distinct.items()}
