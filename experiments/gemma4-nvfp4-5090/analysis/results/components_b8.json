@@ -1,0 +1,45 @@
+{
+ "trace": "/private/tmp/claude-501/-Users-jooman-orca-workspaces-sglang-diffusion-gemma4nv-analysis/5503f32f-8068-460a-86f6-114dc9cc3c60/scratchpad/traces/trace_b8/1790927884.412986-TP-0-DECODE.trace.json.gz",
+ "steps": 7,
+ "layers_per_step": [
+  30
+ ],
+ "kernels_per_step": 951,
+ "step_span_us": 9193.713282993862,
+ "component_us": {
+  "qkv_proj": 975.3225714285715,
+  "o_proj": 831.5374285714286,
+  "dense_mlp": 1028.854285714286,
+  "router_gemm": 135.37242857142863,
+  "router_topk": 51.89042857142858,
+  "moe_gemm": 2536.811857142857,
+  "moe_glue": 528.3024285714287,
+  "attn_swa": 697.3477142857143,
+  "attn_full": 119.89014285714285,
+  "rope_kvwrite": 357.60614285714286,
+  "norms": 482.68085714285706,
+  "lm_head": 883.14,
+  "sampling": 17.52242857142857,
+  "step_setup": 50.32199999999998,
+  "other": 24.498285714285714,
+  "idle": 472.6142829938617
+ },
+ "component_launches": {
+  "qkv_proj": 30,
+  "o_proj": 30,
+  "dense_mlp": 90,
+  "router_gemm": 60,
+  "router_topk": 30,
+  "moe_gemm": 60,
+  "moe_glue": 150,
+  "attn_swa": 50,
+  "attn_full": 10,
+  "rope_kvwrite": 180.57142857142858,
+  "norms": 211,
+  "lm_head": 1,
+  "sampling": 0,
+  "step_setup": 43,
+  "other": 5.428571428571429,
+  "idle": 0
+ }
+}

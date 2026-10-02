@@ -1,0 +1,43 @@
+{
+ "batch": 1,
+ "groups": 3,
+ "decode_steps": 189,
+ "distinct_experts_mean": 8.0,
+ "distinct_experts_by_layer": [
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0,
+  8.0
+ ],
+ "uniform_routing_expectation": 8.0,
+ "mean_run_length": 1.0,
+ "run_length_hist": {
+  "1": 45360
+ }
+}

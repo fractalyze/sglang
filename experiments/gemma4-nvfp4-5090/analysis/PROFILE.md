@@ -3,12 +3,11 @@
 Model `nvidia/Gemma-4-26B-A4B-NVFP4` (HF snapshot `a19cfe00be84`) on 1x RTX 5090 (SM120,
 32 GB). SGLang tree `a9871012a` (this branch's base). Host build-server-2.
 
-> **Status: analytic only. The measured columns are UNMEASURED.** bs2 went down mid-bring-up.
-> It flapped on the network, rebooted at ~15:36 into kernel 7.0.0-34, and that kernel has no
-> NVIDIA module, so `nvidia-smi` fails. bs3 was offline as well. Every number below comes
-> from `config.json` / `hf_quant_config.json`, the code, and the server log of the one launch
-> that reached KV allocation. The scripts in `scripts/` fill in the measured columns. See
-> "How to finish" at the end.
+> **Status: measured on bs2 (2026-10-02 16:57-17:09 KST, driver 595.91.07, unlocked clocks,
+> host load1 < 1.5 during every timed leg).** §3 has the measured component tables and §4 the
+> knob screen. §2 is the analytic byte model the tables are built on. Single unpaired runs are
+> labelled "screen, unpaired": nothing here is a gated gain. bs2 numbers are bs2 numbers;
+> compare them to bs3 only by delta.
 
 ## 1. Serving configuration and what runs per op
 
@@ -54,7 +53,7 @@ That is about 22-25 launches per layer, or about 700 per decode step including t
 Visible glue waste: the duplicate norm (rows 10 and 11), the two-launch norm in row 8, unfused
 RoPE and KV write, and the dense MLP serialized before the MoE.
 
-## 2. Byte / FLOP model and SOL per component
+## 2. Byte / FLOP model and SOL per component (analytic; §3 re-bases it on measurements)
 
 `scripts/sol_model.py`. SOL = max(FLOPs/peak, bytes/BW) per component (SOL-ExecBench
 SOLAR style). The table uses `sol_fraction` = SOL / achieved, never a SOL "score".
@@ -116,33 +115,3 @@ Prefill weighs 0.25 in the composite, and good GEMMs already run within 1.5-2x o
 this shape (crawler feed #1), so prefill headroom is mostly the chunk count, the norm glue,
 and the BF16-vs-FP8 GEMM rate.
 
-## 3. Measured profile (UNMEASURED: to fill)
-
-The plan is staged in `scripts/run_config.sh` / `scripts/run_all.sh`:
-- `base profile`: B=8 and B=1 timing, 3 reps each, diverse prompts. Then a torch-profiler
-  trace with `profile_by_stage`, 8 steps, at B=8 and at B=1.
-  `scripts/classify_trace.py` gives per-kernel time, and per-layer position labels give
-  per-component time. The skill script `llm-torch-profiler-analysis` gives the
-  kernel/overlap/fuse tables.
-- `experts`: `--expert-distribution-recorder-mode per_token`, B=1/8/32 x 64 decode steps over
-  64 diverse prompts (wikitext-103, SGLang Python source, Markdown; `scripts/make_prompts.py`).
-  Output is distinct experts per layer and the run-length histogram.
-- `microbench.py`: copy and read GB/s, BF16 and FP8 TFLOP/s at 8192³, and lm_head GEMV at M=1
-  and M=8. These are the measured ceilings for the SOL column.
-
-## How to finish (when the coordinator gives a GPU slot)
-
-The job is staged on both hosts at `/data/jooman/gemma4nv/src-analysis/analysis-scripts/`
-with the prompts at `/data/jooman/gemma4nv/results/prompts_1024.json`. It is host-agnostic:
-it sources W1's `env/env.sh`, so bs3 reuses W1b's venv, model dir and JIT cache.
-1. `bash run_all.sh` runs the steps in order: microbench, `prebuild` (JIT/autotune warm-up with
-   the baseline flags, one request), base profile, experts, then the knob screen.
-   - Every step goes through `job.sh`, which runs it under W1's `gate.hostwatch`: host.lock +
-     gpu.lock, a 24G no-swap systemd scope, preflight refusal, and a 2 s watchdog writing
-     `<run>/hostmem.csv` with per-phase peaks in `hostmem.summary.json`.
-   - The lock is released between steps.
-   - bs2 needs its `src-gate` checkout updated to W1's hostwatch commit (`61b5056`) first.
-2. Fill the "Achieved / sol_fraction / Gap" columns from `results/base/`. SOL uses
-   the measured copy BW and the measured CUDA-graph per-launch floor (`microbench.json`), not
-   the datasheet. Any achieved time below its bound triggers an audit, never a claim.
-3. Re-rank `HYPOTHESES.md` by time_share x (1 - sol_fraction), then by confidence.
