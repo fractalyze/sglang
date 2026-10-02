@@ -9,5 +9,23 @@
       "32"
     ],
     "env": {}
+  },
+  "chunk8k": {
+    "extends": "base",
+    "description": "T1 (W3): one-chunk W8 prefill. --chunked-prefill-size 8192 so 8x1024 is one chunk; --mem-fraction-static pinned to base's resolved 0.718 so the KV pool does not change with the chunk size.",
+    "server_args": [
+      "--chunked-prefill-size",
+      "8192",
+      "--mem-fraction-static",
+      "0.718"
+    ]
+  },
+  "splits16": {
+    "extends": "base",
+    "description": "T2 (W3): Triton decode attention split-KV count 16 (tree default 8).",
+    "server_args": [
+      "--triton-attention-num-kv-splits",
+      "16"
+    ]
   }
 }
