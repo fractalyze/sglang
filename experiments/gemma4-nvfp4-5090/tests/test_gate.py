@@ -192,29 +192,13 @@ class SolTest(absltest.TestCase):
         long = sol.decode_step_bytes([4096], {}, 1.0, weights)["kv_read"]
         self.assertEqual(long - short, 3072 * 2 * 512)
 
-    def test_distinct_experts_skips_other_batch_sizes(self):
-        class Count:
-            def __init__(self, rows):
-                self.rows = rows
-                self.shape = (len(rows),)
+    def test_distinct_experts_unions_streams_per_step(self):
+        import numpy as np
 
-            def __getitem__(self, i):
-                return _Row(self.rows[i])
-
-        recs = [{"input_ids": [0] * 2, "extend_seq_lens": None, "global_physical_count": Count([[1, 0, 3]])},
-                {"input_ids": [0] * 3, "extend_seq_lens": None, "global_physical_count": Count([[1, 1, 1]])}]
-        self.assertEqual(sol.distinct_experts_from_records(recs, batch=2), {0: 2.0})
-
-
-class _Row:
-    def __init__(self, vals):
-        self.vals = vals
-
-    def __gt__(self, x):
-        return _Row([v > x for v in self.vals])
-
-    def sum(self):
-        return sum(self.vals)
+        a = np.array([[[0, 1]], [[0, 1]], [[2, 3]]])  # 3 tokens, 1 layer, top-2
+        b = np.array([[[9, 9]], [[1, 5]], [[2, 3]]])
+        # step 1: {0,1,5} -> 3; step 2: {2,3} -> 2; step 0 (prefill-produced) is skipped.
+        self.assertEqual(sol.distinct_experts_from_routes([a, b], decode_steps=3), {0: 2.5})
 
 
 if __name__ == "__main__":

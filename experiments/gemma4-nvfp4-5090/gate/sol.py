@@ -193,20 +193,19 @@ def prefill_sol(flops: Dict[str, float], peaks_tflops: Dict[str, float], weight_
     }
 
 
-def distinct_experts_from_records(records: List[Dict], batch: int) -> Dict[int, float]:
-    """Mean distinct experts per layer over decode passes of exactly `batch` sequences.
+def distinct_experts_from_routes(routes: List, decode_steps: int) -> Dict[int, float]:
+    """Mean distinct experts per layer per decode step of a batch.
 
-    `records` are per-pass dumps of SGLang's expert distribution recorder
-    (per_pass mode): global_physical_count is [layers, experts].
+    `routes[r]` is request r's routed experts, int array [tokens, layers, top_k]
+    starting at its first generated token. Step k is the union over the batch of
+    each request's token k; requests of unequal prompt length can be one prefill
+    chunk out of step, so this is the lockstep approximation of a forward pass.
     """
-    sums, n = defaultdict(float), 0
-    for r in records:
-        if len(r["input_ids"]) != batch or r.get("extend_seq_lens") not in (None, [], [1] * batch):
-            continue
-        count = r["global_physical_count"]
-        for layer in range(count.shape[0]):
-            sums[layer] += int((count[layer] > 0).sum())
-        n += 1
-    if n == 0:
-        raise ValueError(f"no decode pass with batch {batch} in the recording")
-    return {layer: s / n for layer, s in sums.items()}
+    import numpy as np
+
+    n_layers = routes[0].shape[1]
+    sums = np.zeros(n_layers)
+    for k in range(1, decode_steps):
+        stacked = np.concatenate([r[k] for r in routes], axis=1)
+        sums += [len(np.unique(stacked[layer])) for layer in range(n_layers)]
+    return {layer: float(sums[layer] / (decode_steps - 1)) for layer in range(n_layers)}

@@ -1,35 +1,40 @@
 """`gate sol`: record router choices on the baseline, then build the SOL byte and FLOP tables.
 
-The recording server runs with SGLang's expert distribution recorder in
-per_pass mode and without CUDA graphs; it is never a timed leg.
+Routing comes from the server's --enable-return-routed-experts (the expert
+distribution recorder needs a model hook Gemma4 lacks). The recording server
+runs without CUDA graphs and is never a timed leg.
 """
 
 import asyncio
-import glob
 import json
 import os
 from typing import Dict, List
-
-import requests
 
 from gate import client, config, fidelity, prompts, server, sol
 
 _DECODE = 128
 
 
-def _record(srv: server.Server, dump_dir: str, name: str, batch_prompts: List[List[int]]) -> List[Dict]:
-    import torch
+async def _routed(url: str, ps: List[List[int]], max_new: int) -> List:
+    import aiohttp
+    import numpy as np
+    import pybase64
 
-    before = set(glob.glob(os.path.join(dump_dir, "*.pt")))
-    requests.post(f"{srv.url}/start_expert_distribution_record", timeout=60).raise_for_status()
-    asyncio.run(client.run_batch(srv.url, batch_prompts, _DECODE))
-    requests.post(f"{srv.url}/stop_expert_distribution_record", timeout=60).raise_for_status()
-    requests.post(f"{srv.url}/dump_expert_distribution_record", timeout=600).raise_for_status()
-    new = sorted(set(glob.glob(os.path.join(dump_dir, "*.pt"))) - before)
-    if len(new) != 1:
-        raise RuntimeError(f"{name}: expected one new dump in {dump_dir}, got {new}")
-    os.rename(new[0], os.path.join(dump_dir, f"{name}.pt"))
-    return torch.load(os.path.join(dump_dir, f"{name}.pt"), weights_only=False)["records"]
+    async def one(session, p):
+        payload = {"input_ids": p, "sampling_params": {"temperature": 0.0, "max_new_tokens": max_new,
+                                                       "ignore_eos": True},
+                   "return_routed_experts": True, "routed_experts_start_len": len(p)}
+        async with session.post(f"{url}/generate", json=payload) as resp:
+            resp.raise_for_status()
+            body = await resp.json()
+        flat = np.frombuffer(pybase64.b64decode(body["meta_info"]["routed_experts"].encode()), dtype=np.int32)
+        return flat.reshape(-1, _N_LAYERS, _TOP_K)
+
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=1800)) as session:
+        return list(await asyncio.gather(*(one(session, p) for p in ps)))
+
+
+_N_LAYERS, _TOP_K = 30, 8
 
 
 def _groups(tok, corpus) -> Dict[str, List[List[List[int]]]]:
@@ -45,18 +50,16 @@ def _groups(tok, corpus) -> Dict[str, List[List[List[int]]]]:
 
 def measure_router(ref_name: str, out_dir: str) -> Dict[str, Dict[int, float]]:
     ref = server.load_ref(ref_name)
-    dump_dir = os.path.join(out_dir, "expert_records")
-    ref = dict(ref, env={**ref["env"], "SGLANG_EXPERT_DISTRIBUTION_RECORDER_DIR": dump_dir})
     tok = prompts.load_tokenizer()
     corpus = prompts.load_corpus(tok)
-    extra = ["--expert-distribution-recorder-mode", "per_pass", "--disable-cuda-graph"]
+    extra = ["--enable-return-routed-experts", "--disable-cuda-graph"]
     distinct: Dict[str, Dict[int, float]] = {}
     with server.Server(ref, os.path.join(out_dir, "sol_server.log"), extra_args=extra) as srv:
         for name, groups in _groups(tok, corpus).items():
             per_group = []
-            for i, g in enumerate(groups):
-                recs = _record(srv, dump_dir, f"{name}_{i}", g)
-                per_group.append(sol.distinct_experts_from_records(recs, batch=len(g)))
+            for g in groups:
+                routes = asyncio.run(_routed(srv.url, g, _DECODE))
+                per_group.append(sol.distinct_experts_from_routes(routes, decode_steps=_DECODE))
             layers = per_group[0].keys()
             distinct[name] = {l: sum(d[l] for d in per_group) / len(per_group) for l in layers}
     return distinct
