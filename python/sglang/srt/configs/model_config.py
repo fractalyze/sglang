@@ -526,6 +526,11 @@ class ModelConfig:
             **kwargs,
         )
 
+        # The decode-mk megakernels run the text model only; a model that is
+        # not multimodal has media requests refused at the API.
+        if envs.SGLANG_DECODE_MK_DECODE.get():
+            enable_multimodal = False
+
         # Set enable_multimodal
         if enable_multimodal is None:
             mm_disabled_models = [

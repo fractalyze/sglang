@@ -15,6 +15,7 @@ from torch import nn
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
 from sglang.srt.configs.model_config import ModelConfig, ModelImpl
+from sglang.srt.environ import envs
 from sglang.srt.layers import deep_gemm_wrapper
 from sglang.srt.utils import get_device_sm
 
@@ -220,6 +221,11 @@ def get_model_architecture(model_config: ModelConfig) -> Tuple[Type[nn.Module], 
         and "MixtralForCausalLM" in architectures
     ):
         architectures = ["QuantMixtralForCausalLM"]
+
+    if envs.SGLANG_DECODE_MK_DECODE.get():
+        from sglang.srt.models.qwen3_5_decode_mk import decode_mk_architectures
+
+        architectures = decode_mk_architectures(architectures)
 
     supported_archs = ModelRegistry.get_supported_archs()
     is_native_supported = any(arch in supported_archs for arch in architectures)

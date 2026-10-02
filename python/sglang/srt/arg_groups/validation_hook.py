@@ -111,6 +111,7 @@ def check_pipeline_parallel_compat(
 
 
 def check_server_args(server_args: Any):
+    from sglang.srt.arg_groups.decode_mk_hook import check_decode_mk_server_args
     from sglang.srt.arg_groups.lora_hook import check_lora_server_args
 
     cfg = resolving_view(server_args)
@@ -163,6 +164,8 @@ def check_server_args(server_args: Any):
 
     # Check LoRA
     check_lora_server_args(server_args)
+
+    check_decode_mk_server_args(server_args)
 
     # Check speculative decoding
     if cfg.speculative_algorithm is not None:
