@@ -20,6 +20,9 @@ import requests
 from gate import config, hostwatch, prompts
 
 VLLM_VERSION = "0.20.0"
+# vLLM 0.20.0's resolver pins transformers 4.57, which predates gemma4; the venv
+# carries transformers 5.12.1, the version the SGLang baseline serves this model with.
+TRANSFORMERS_VERSION = "5.12.1"
 VLLM_PYTHON = os.path.join(config.ROOT, "vllm-venv", "bin", "python")
 PORT = config.PORT + 1
 
@@ -81,7 +84,8 @@ def run(out_dir: str, timeout_s: int = 3600) -> Dict:
     tok = prompts.load_tokenizer()
     corpus = prompts.load_corpus(tok)
     log_path = os.path.join(out_dir, "vllm.log")
-    res: Dict = {"vllm_version": VLLM_VERSION, "command": command(), "workloads": {}}
+    res: Dict = {"vllm_version": VLLM_VERSION, "transformers_version": TRANSFORMERS_VERSION, "command": command(),
+                 "workloads": {}}
     with hostwatch.host_lock():
         res["preflight"] = hostwatch.wait_preflight()
         with open(log_path, "w") as log:
@@ -106,11 +110,12 @@ def run(out_dir: str, timeout_s: int = 3600) -> Dict:
                         reps.append(asyncio.run(_batch(ps, wl.decode_tokens)))
                     res["workloads"][wl.name] = reps
             finally:
-                os.killpg(proc.pid, signal.SIGTERM)
-                try:
-                    proc.wait(timeout=60)
-                except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)
+                if proc.poll() is None:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                    try:
+                        proc.wait(timeout=60)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(proc.pid, signal.SIGKILL)
                 res["host"] = dog.stop()
     res["summary"] = summarize(res["workloads"])
     with open(os.path.join(out_dir, "vllm_ref.json"), "w") as f:
