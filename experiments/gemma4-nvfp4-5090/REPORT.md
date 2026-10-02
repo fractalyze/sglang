@@ -1,52 +1,63 @@
-# W1 report: verify gate + pinned baseline (gemma4nv)
+# W1 / W1b report: verify gate + pinned baseline (gemma4nv)
 
-**Outcome: partial.** The harness, the pinned configuration and the vault entities are done. No
-baseline number exists: build-server-3 and then build-server-2 went offline within minutes of a
-server launch, and neither had come back after about an hour.
+**Outcome: done.** The full numbers are in `BASELINE.md`.
 
-## Done
+## Pinned baseline
 
-- **Branch** `jumanzii/gemma4nv-gate`, pushed to `fractalyze`:
-  - cb9bf3ddb: the harness
-  - 2778e4245: server memory cap and low-RAM refusal
-  - a2b022b51: BASELINE.md
-  - `python/sglang` is unmodified.
-- **Gate harness** (`gate/`, run as `bin/gate run --control base --candidate <ref>`):
-  - ABBA legs with one server lifetime per leg, ratio of sums, per-pair skew and an A/A noise bar of max(3 sigma, 1%).
-  - W8 composite, W1 TPOT, and W32 throughput (ungated).
-  - Quiescence gate and in-window telemetry.
-  - Leg refusals: eager decode steps in the window, foreign GPU processes, weight-checksum change, undeclared server-arg diffs, and timed-output disagreement.
-  - Fidelity: token match plus top-20 KL with calibrated thresholds.
-  - `gate quality`: GSM8K 200 plus 40 tool-call JSON requests.
-  - `gate peaks`: measured bandwidth, GEMM peaks and launch floor.
-  - `gate sol`: the SOL model from the safetensors bytes, distinct routed experts and KV, reported as sol_fraction.
-  - 25 unit tests pass.
-- **Hidden fidelity set** on bs2 at `/data/jooman/gemma4nv/hidden/` (never committed):
-  - 22 prompts, 5 of them long (8k to 15.5k tokens); sha256 `424d7d5f...`.
-  - The timing corpus cache is also built.
-- **Baseline config** (BASELINE.md):
-  - SGLang a9871012a with model rev a19cfe00 and FP8 KV.
-  - Triton attention and BF16 dense GEMMs.
-  - `--moe-runner-backend flashinfer_cutlass`. The tree's `auto` picks `flashinfer_trtllm` on SM120, and that crashes with `g1_scale_c`.
-- **Vault** (`wm doctor` OK), committed:
-  - Model page `gemma-4-26b-a4b-nvfp4`.
-  - Workload pages `wl-gemma4nv-b8-p1024-d128`, `-b1-p1024-d256` and `-c32-p1024-d128`.
-  - Study page `study-gemma4-nvfp4-5090`.
-- **vLLM 0.20.0 reference venv** installed on bs2 at `/home/jooman/gemma4nv/vllm-venv`.
+The baseline is pinned and measured on build-server-3 with a 6-pair A/A gate run (`AA-20261003-020310-build-server-3-cb509e`):
 
-## Not done (needs a GPU host)
+- **Verdict:** integrity OK, fidelity pass, no promotion.
+- **W8:** prefill 1.740 s and decode 9.442 s per rep (summed per stream). Decode is 9.29 ms per stream-token, sol_fraction 0.60.
+- **W1:** TPOT 6.075 ms, sol_fraction 0.52.
+- **W32:** 1020.6 tok/s (ungated).
+- **Noise:** per-pair sigma 0.056% for the W8 composite, so the promotion bar is the 1% floor.
+- **Quality:** GSM8K 96.0%, tool JSON 100%.
+- **vLLM 0.20 reference** (ungated): within about 2% on W8 and W1, and 1.50x on W32.
 
-1. Confirm that `flashinfer_cutlass` serves on SM120. It was the launch config when each host went down.
-2. `gate calibrate`, `gate quality --ref base --set-baseline`, `gate peaks`, `gate sol --ref base`.
-3. `gate run --control base --candidate base --pairs 6`, then `gate set-noise` and `gate sol-report`. Fill BASELINE.md.
-4. Run the vLLM reference on W8 and W1.
-5. Vault follow-ups:
-   - The baseline stack state (`wm intake state --ref a9871012a`) needs the measured profile.
-   - The raw-import entry for `/data/jooman/gemma4nv/{ledger/evaluations.jsonl,runs/*/report.json}` needs the schema owner. The ledger and run json are written in the moemem-style evaluations-index shape.
+## Root cause of the host crashes
 
-## Risk
+The 2026-10-02 host crashes came from FlashInfer's launch-time autotune JIT-compiling its 97-unit SM120 CUTLASS MoE module at nproc + 2 = 34 parallel nvcc jobs. Measured:
 
-The two outages came right after launches on both hosts, so they are probably caused by the launch: host OOM during load, or a driver fault on 610.43. Before any relaunch:
+- A single cicc process reaches 9.6 GB.
+- 4 jobs hold 19.5 GB.
+- 34 jobs would need about 166 GB, against a 60 GB host.
 
-- Get kern.log or dmesg from a rebooted host.
-- Launch only inside the harness's capped scope (MemoryMax=28G, no swap, MemAvailable of at least 30 GB).
+The fix is the harness protocol:
+
+- host.lock, a 24 GB scope without swap, a 2 s watchdog with kill limits, and a start-only-on-a-quiet-host preflight.
+- A standalone `gate prebuild` at MAX_JOBS=2.
+- Every launch path is covered: gate legs, calibrate, quality, sol, peaks, and the vLLM reference.
+
+Minimum MemAvailable across all 36 runs since then is 28.3 GB, and swap was never used.
+
+## Gate changes found while running it
+
+These are all committed on `jumanzii/gemma4nv-gate`.
+
+- **Teacher-forced fidelity.**
+  - The baseline is not run-to-run deterministic: greedy near-ties flip within one server and across launches.
+  - So the per-prompt 10% token budget is now teacher-forced top-1 agreement.
+  - KL is gated on both the forced path and the free-running decode path. Free-running match is reported only.
+- **Weight hash.** SGLang has no load-time weight hash for NVFP4 MoE or Gemma4. The gate instead pins the on-disk safetensors sha256 against the HF revision, and stating that gap is part of the record.
+- **Router measurement.** The expert-distribution recorder needs a Gemma4 model hook that doesn't exist. The SOL routing comes from `--enable-return-routed-experts`, with a `num_experts_per_tok` alias override on the untimed recording server only.
+- **Harness bug fixes:**
+  - `/flush_cache` returned 400 while the scheduler still held a request; flush now waits for an idle scheduler.
+  - `startup_time` is now treated as volatile in the server-arg diff.
+  - Disturbed legs are retried.
+- **vLLM 0.20.0** needs transformers 5.12.1 (its resolver picks 4.57, which rejects gemma4), plus text-only mode at 4096 batched tokens.
+
+## Vault
+
+Committed in `$WORLD_MODEL_PATH` (my paths only, no push):
+
+- Model, three workload and study pages (W1).
+- Source root `gemma4nv-bs3` and its snapshot entry in `meta/raw-imports.yaml`.
+- The import `raw/gemma4nv-bs3/20261002T2329Z-norev` (49 files).
+- Baseline stack `stack-a9871012a-gemma4nv`.
+- Study page update.
+
+## Left for later
+
+- **Trials.** W32 shows SGLang's sliding KV pool retracting at 32 x 1152 tokens; vLLM is 1.5x there.
+- **Ledger.** Registering a gemma4nv adapter in `meta/ledgers.yaml` waits for the first trial (schema owner).
+- **Fidelity noise from autotune.** Launch-dependent outputs, most likely from FlashInfer autotune tactic choice, mean KL of about 0.03 against the reference comes from the launch alone. Pinning autotune tactics would tighten fidelity thresholds.
