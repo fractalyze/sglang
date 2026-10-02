@@ -1,0 +1,199 @@
+/data/jooman/gemma4nv/src-analysis/python/sglang/launch_server.py:71: UserWarning: 'python -m sglang.launch_server' is still supported, but 'sglang serve' is the recommended entrypoint.
+  Example: sglang serve --model-path <model> [options]
+  warnings.warn(
+[2026-10-02 15:18:00] Registered linear attn model: config=GigaChat35Config, backend=GDNAttnBackend, archs=['GigaChat35ForCausalLM', 'GigaChat35ForCausalLMNextN']
+[2026-10-02 15:18:02] Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[2026-10-02 15:18:03] Hybrid SWA model detected. architectures=['Gemma4ForConditionalGeneration']
+[2026-10-02 15:18:03] Breakable CUDA graph is incompatible with multimodal model; disabling prefill CUDA graph.
+[2026-10-02 15:18:03] Use triton as default attention backend for Gemma4
+[2026-10-02 15:18:04] server_args={'model_path': 'nvidia/Gemma-4-26B-A4B-NVFP4', 'tokenizer_path': 'nvidia/Gemma-4-26B-A4B-NVFP4', 'tokenizer_mode': 'auto', 'tokenizer_backend': 'huggingface', 'tokenizer_worker_num': 1, 'detokenizer_worker_num': 1, 'skip_tokenizer_init': False, 'load_format': 'auto', 'model_loader_extra_config': '{}', 'trust_remote_code': False, 'context_length': 8192, 'is_embedding': False, 'enable_multimodal': None, 'revision': None, 'model_impl': 'auto', 'model_config_parser': 'auto', 'json_model_override_args': '{}', 'dtype': 'auto', 'quantization': None, 'quantization_par
+          1. FFmpeg is not properly installed in your environment. We support
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.13.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+          3. Another runtime dependency; see exceptions below.
+        
+FFmpeg version 8:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 7:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 6:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 5:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 4:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+          1. FFmpeg is not properly installed in your environment. We support
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.13.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+          3. Another runtime dependency; see exceptions below.
+        
+FFmpeg version 8:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 7:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 6:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 5:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 4:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+          1. FFmpeg is not properly installed in your environment. We support
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.13.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+          3. Another runtime dependency; see exceptions below.
+        
+FFmpeg version 8:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 7:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 6:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 5:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 4:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+[2026-10-02 15:18:10] Restoring add_bos_token=True for nvidia/Gemma-4-26B-A4B-NVFP4 (was False after v5 loading)
+[2026-10-02 15:18:12] Using default HuggingFace chat template with detected content format: openai
+[2026-10-02 15:18:12] Auto-detected template features: reasoning_config=ReasoningToggleConfig(toggle_param='enable_thinking', default_enabled=False, special_case=None, effort_kwarg=None), reasoning_parser=gemma4, tool_call_parser=gemma4
+          1. FFmpeg is not properly installed in your environment. We support
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.13.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+          3. Another runtime dependency; see exceptions below.
+        
+FFmpeg version 8:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 7:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 6:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 5:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 4:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+          1. FFmpeg is not properly installed in your environment. We support
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.13.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+          3. Another runtime dependency; see exceptions below.
+        
+FFmpeg version 8:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 7:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 6:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 5:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 4:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+          1. FFmpeg is not properly installed in your environment. We support
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.13.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+          3. Another runtime dependency; see exceptions below.
+        
+FFmpeg version 8:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 7:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 6:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 5:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+FFmpeg version 4:
+    ctypes.CDLL(path)
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+[2026-10-02 15:18:17] Init torch distributed begin.
+[2026-10-02 15:18:17] Init torch distributed ends. elapsed=0.01 s, mem usage=0.11 GB
+[2026-10-02 15:18:17] Load weight begin. avail mem=30.68 GB
+[2026-10-02 15:18:17] Using ModelOptModelLoader due to ModelOpt quantization config.
+[2026-10-02 15:18:17] ModelOptModelLoader: Loading base model...
+[2026-10-02 15:18:17] Model is already quantized, loading directly...
+[2026-10-02 15:18:17] Detected nvfp4 checkpoint.
+[2026-10-02 15:18:17] Found local HF snapshot for nvidia/Gemma-4-26B-A4B-NVFP4 at /data/jooman/gemma4nv/hf/hub/models--nvidia--Gemma-4-26B-A4B-NVFP4/snapshots/a19cfe00be84568a6867111c9a68c9c44fdcffe6; skipping download.
+Multi-thread loading shards:   0% Completed | 0/2 [00:00<?, ?it/s]Multi-thread loading shards:  50% Completed | 1/2 [00:08<00:08,  8.15s/it]Multi-thread loading shards: 100% Completed | 2/2 [00:12<00:00,  5.80s/it]Multi-thread loading shards: 100% Completed | 2/2 [00:12<00:00,  6.15s/it]
+[2026-10-02 15:18:30] Some weights are not initialized from checkpoints: ['language_model.layers.0.moe.experts.w13_blockscale_swizzled', 'language_model.layers.0.moe.experts.w2_blockscale_swizzled', 'language_model.layers.0.self_attn.attn.k_scale', 'language_model.layers.0.self_attn.attn.v_scale', 'language_model.layers.1.moe.experts.w13_blockscale_swizzled', 'language_model.layers.1.moe.experts.w2_blockscale_swizzled', 'language_model.layers.1.self_attn.attn.k_scale', 'language_model.layers.1.self_attn.attn.v_scale', 'language_model.layers.10.moe.experts.w13_blockscale_swizzled', 'language_mo
+[2026-10-02 15:18:30] Persistent buffers not in checkpoint (using default init): ['vision_tower.encoder.layers.0.layer_scalar', 'vision_tower.encoder.layers.1.layer_scalar', 'vision_tower.encoder.layers.10.layer_scalar', 'vision_tower.encoder.layers.11.layer_scalar', 'vision_tower.encoder.layers.12.layer_scalar', 'vision_tower.encoder.layers.13.layer_scalar', 'vision_tower.encoder.layers.14.layer_scalar', 'vision_tower.encoder.layers.15.layer_scalar', 'vision_tower.encoder.layers.16.layer_scalar', 'vision_tower.encoder.layers.17.layer_scalar', 'vision_tower.encoder.layers.18.layer_scalar', 'vi
+[2026-10-02 15:18:30] Load weight end. elapsed=13.08 s, type=Gemma4ForConditionalGeneration, quant=modelopt_fp4, quant_algo=NVFP4, avail mem=11.92 GB, mem usage=18.77 GB.
+[2026-10-02 15:18:38] Reserving 0.10 GB of the KV budget for post-sizing multimodal allocations (feature-transport pools + embedding cache).
+[2026-10-02 15:18:38] Use sliding window memory pool. full_layer_tokens=36594, swa_layer_tokens=29275
+[2026-10-02 15:18:38] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 36594, K size: 0.17 GB, V size: 0.17 GB
+[2026-10-02 15:18:38] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 29275, K size: 1.40 GB, V size: 1.40 GB
+[2026-10-02 15:18:38] SWAKVPool mem usage: 3.14 GB, swa size: 29275, full size: 36594
+[2026-10-02 15:18:38] Memory pool end. avail mem=8.80 GB
+[2026-10-02 15:18:38] Running FlashInfer autotune with cache: /home/jooman/.cache/sglang/flashinfer/autotune/0.6.18/sm120/123c89d2108343fa/rank_tp0_pp0_dp0.json
