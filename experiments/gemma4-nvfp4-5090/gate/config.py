@@ -25,6 +25,11 @@ HIDDEN_DIR = os.path.join(ROOT, "hidden")
 REFERENCE_DIR = os.path.join(ROOT, "reference")
 GPU_LOCK = os.path.join(ROOT, "gpu.lock")
 PORT = 31000
+# Both study hosts dropped off the network right after an uncapped server
+# launch (2026-10-02), so every server runs in a memory-capped scope and a leg
+# refuses to start when the host is short of RAM. Picked to fit 60 GB hosts.
+SERVER_MEMORY_MAX = "28G"
+MIN_HOST_AVAILABLE_GB = 30
 
 
 class Workload(msgspec.Struct, frozen=True, kw_only=True):

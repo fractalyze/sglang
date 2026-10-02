@@ -6,7 +6,7 @@ from absl.testing import absltest, parameterized
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from gate import fidelity, quality, runner, sol, stats  # noqa: E402
+from gate import config, fidelity, quality, runner, server, sol, stats  # noqa: E402
 
 
 def _leg(prefill, decode, w1_decode=2.55, w32_wall=4.0):
@@ -117,6 +117,19 @@ class RunnerTest(absltest.TestCase):
         b = {"server_info": {"attention_backend": "fa3", "random_seed": 2}}
         self.assertEqual(runner.server_arg_diff(a, b, [])["undeclared"], ["attention_backend"])
         self.assertEqual(runner.server_arg_diff(a, b, ["--attention-backend", "fa3"])["undeclared"], [])
+
+
+class HostMemoryTest(absltest.TestCase):
+    def test_refuses_launch_when_host_ram_is_short(self):
+        orig = server.host_available_gb
+        try:
+            server.host_available_gb = lambda: config.MIN_HOST_AVAILABLE_GB - 1
+            with self.assertRaises(RuntimeError):
+                server.check_host_memory()
+            server.host_available_gb = lambda: config.MIN_HOST_AVAILABLE_GB + 1
+            server.check_host_memory()
+        finally:
+            server.host_available_gb = orig
 
 
 class SolTest(absltest.TestCase):

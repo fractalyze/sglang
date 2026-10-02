@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import signal
 import subprocess
 import time
@@ -80,6 +81,27 @@ def harness_commit() -> Dict:
     return {"commit": sha, "dirty": dirty}
 
 
+def host_available_gb() -> float:
+    with open("/proc/meminfo") as f:
+        for line in f:
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) / 1024**2
+    raise RuntimeError("MemAvailable missing from /proc/meminfo")
+
+
+def check_host_memory() -> None:
+    avail = host_available_gb()
+    if avail < config.MIN_HOST_AVAILABLE_GB:
+        raise RuntimeError(f"host has {avail:.1f} GB available < {config.MIN_HOST_AVAILABLE_GB} GB; not launching")
+
+
+def _memory_cap() -> List[str]:
+    if shutil.which("systemd-run") is None:
+        raise RuntimeError("systemd-run not found; refusing to launch an uncapped server")
+    return ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={config.SERVER_MEMORY_MAX}",
+            "-p", "MemorySwapMax=0"]
+
+
 class Server:
     """One server lifetime for one ref, logging to `log_path`."""
 
@@ -93,6 +115,9 @@ class Server:
         self.commit = resolve_commit(ref["commit"])
 
     def command(self) -> List[str]:
+        return [*_memory_cap(), *self.server_command()]
+
+    def server_command(self) -> List[str]:
         return [
             self.ref["python"], "-m", "sglang.launch_server",
             "--model-path", config.MODEL_DIR,
@@ -105,6 +130,7 @@ class Server:
         ]
 
     def start(self, timeout_s: int = 900) -> None:
+        check_host_memory()
         env = dict(os.environ)
         env.update(self.ref["env"])
         env["PYTHONPATH"] = os.path.join(self.tree, "python") + os.pathsep + env.get("PYTHONPATH", "")
