@@ -36,6 +36,9 @@ def command() -> List[str]:
         "--tool-call-parser", "gemma4", "--reasoning-parser", "gemma4", "--enable-auto-tool-choice",
         "--trust-remote-code",
         "--max-model-len", "4096", "--max-num-seqs", "32", "--gpu-memory-utilization", "0.85",
+        # Text-only like the gate; 4096 batched tokens matches SGLang's chunked prefill and
+        # clears vLLM's check that one image (2496 tokens) fits a batch.
+        "--max-num-batched-tokens", "4096", "--limit-mm-per-prompt", '{"image": 0, "video": 0}',
     ]
 
 
