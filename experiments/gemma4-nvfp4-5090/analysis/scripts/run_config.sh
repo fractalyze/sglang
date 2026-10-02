@@ -9,12 +9,12 @@
 # mode: prebuild -> launch, one request, exit (JIT/autotune cache warm-up)
 #       time     -> B=8 and B=1 timing (screen, unpaired)
 #       profile  -> timing + torch-profiler traces at B=8 and B=1
-#       experts  -> per-token expert routing dumps at B=1/8/32
+#       experts  -> routed-expert capture at B=1/8/32 (distinct experts, run lengths)
 set -uo pipefail
 source /data/jooman/gemma4nv/src-gate/experiments/gemma4-nvfp4-5090/env/env.sh
 name=$1; mode=$2; shift 2
 # Coordinator-approved fallback for JIT builds on bs2: one compile at a time.
-[ -n "${W2_MAX_JOBS:-}" ] && export MAX_JOBS=$W2_MAX_JOBS
+export MAX_JOBS=${W2_MAX_JOBS:-1}
 S=$G4/src-analysis/analysis-scripts
 R=$G4_HOME/results/$name
 URL=http://127.0.0.1:30000
@@ -27,10 +27,6 @@ git -C $G4/src-analysis rev-parse HEAD > $R/commit.txt 2>/dev/null || cat $G4/sr
 printf '%s\n' "${BASE[*]} $*" > $R/flags.txt
 python -c "import torch, flashinfer, sglang; print(torch.__version__, flashinfer.__version__)" > $R/versions.txt 2>&1
 
-if [ "$mode" = experts ]; then
-  export SGLANG_EXPERT_DISTRIBUTION_RECORDER_DIR=$R/expert_dumps
-  mkdir -p $SGLANG_EXPERT_DISTRIBUTION_RECORDER_DIR
-fi
 
 python -m sglang.launch_server --model-path $G4_MODEL_DIR --host 127.0.0.1 --port 30000 \
   "${BASE[@]}" "$@" &
@@ -44,7 +40,9 @@ trap cleanup EXIT
 # uses ptxas) is a cache miss: stop the step and report it. ALLOW_COMPILE=1
 # lifts the guard for a deliberate, coordinator-approved build.
 [ "${ALLOW_COMPILE:-0}" != 1 ] && ( while kill -0 $SPID 2>/dev/null; do
-    if pgrep -u "$(id -u)" -x "nvcc|cicc" >/dev/null; then
+    # SGLang jit_kernel units (one cuda.cu each, specialized per KV dtype or
+    # shape) are small and allowed at MAX_JOBS=1; anything else is a miss.
+    if pgrep -u "$(id -u)" -a -x "nvcc|cicc" | grep -v -e "sgl_kernel_jit" -e "sglang/kernels/jit" | grep -q .; then
       echo "$(date -Is) COMPILE-DETECTED $name: $(pgrep -u "$(id -u)" -a -x 'nvcc|cicc' | head -3)" >> $G4_HOME/results/jobs.log
       touch $R/COMPILE_DETECTED; kill $SPID; pkill -u "$(id -u)" -x "nvcc|cicc|ninja"; exit 0
     fi
@@ -104,14 +102,8 @@ if [ "$mode" = profile ]; then
 fi
 if [ "$mode" = experts ]; then
   for B in 1 8 32; do
-    reps=$(( B == 32 ? 2 : 8 ))
-    curl -sf -X POST $URL/start_expert_distribution_record
-    drive --batch $B --decode-len 64 --reps $reps --warmup 0 --label "$name experts B$B"
-    curl -sf -X POST $URL/stop_expert_distribution_record
-    curl -sf -X POST $URL/dump_expert_distribution_record
-    sleep 10
-    mkdir -p $R/b$B; mv $R/expert_dumps/*.pt $R/b$B/ 2>/dev/null
-    python $S/experts.py --batch $B --json-out $R/experts_b$B.json $R/b$B/*.pt > $R/experts_b$B.txt 2>&1
+    python $S/experts.py --url $URL --prompts $P --batch $B --groups $(( B == 32 ? 2 : 3 )) \
+      --decode-len 64 --out $R/experts_b$B.json 2>&1 | tail -1 | tee -a $R/summary.txt
   done
 fi
 echo "$(date -Is) done $name" >> $G4_HOME/results/jobs.log

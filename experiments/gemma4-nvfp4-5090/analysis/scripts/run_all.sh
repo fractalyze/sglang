@@ -14,7 +14,10 @@ $G4_VENV/bin/python -m gate.hostwatch --csv $G4_HOME/results/microbench/hostmem.
 # Every later step keeps the compile guard on.
 ALLOW_COMPILE=1 W2_MAX_JOBS=1 bash $S/job.sh prebuild prebuild || { echo "$(date -Is) STOP: prebuild failed" >> $G4_HOME/results/jobs.log; exit 3; }
 bash $S/job.sh base profile
-bash $S/job.sh experts experts --expert-distribution-recorder-mode per_token --expert-distribution-recorder-buffer-size -1
+# Routing capture (W1's gate-sol route): Gemma4 lacks ExpertLocationMetadata, so
+# the distribution recorder cannot run; the capturer needs num_experts_per_tok.
+bash $S/job.sh experts experts --enable-return-routed-experts --disable-cuda-graph \
+  --json-model-override-args '{"text_config": {"num_experts_per_tok": 8}}'
 # Knob screen (screen, unpaired). A step that hits a JIT cache miss stops itself
 # (COMPILE_DETECTED) and the screen continues with the next config.
 bash $S/job.sh kv_bf16 time --kv-cache-dtype bf16
