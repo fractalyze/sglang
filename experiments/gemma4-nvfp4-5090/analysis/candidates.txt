@@ -1,0 +1,14 @@
+replace flashinfer CUTLASS grouped NVFP4 MoE at decode (B<=16, ~1.3 tokens per expert) with a gather-GEMV expert kernel that reads each expert once and skips empty tiles (RUNSKIP / pair-sharing)
+fuse MoE expert gate/up GEMM with GeGLU activation and fold router weights into the down-projection epilogue (one kernel instead of quant+gemm1+act+gemm2+finalize)
+quantize the BF16 attention qkv_proj and o_proj weights to FP8 W8A8 per-channel on SM120 (decode GEMV bytes halve)
+quantize the BF16 dense/shared MLP (gate_up and down) weights to FP8 W8A8 per-channel
+FP8 lm_head (tied 262144x2816 BF16 embedding) for decode logits, or a certified coarse-screen exact-greedy lm_head
+keep FP8 KV on sliding-window layers but use BF16 KV on the 5 full-attention layers (checkpoint default puts FP8 on all layers)
+NVFP4 / 4-bit KV cache for the sliding-window layers only
+switch decode attention from Triton split-KV to FlashInfer or a tuned kernel for sliding hd256 and full hd512, and fix the split-KV count to use the window length
+fuse RMSNorm chains: share the router norm and pre-feedforward norm, merge post-attention rmsnorm with fused_add_rmsnorm, and fuse RoPE with the KV-cache write
+fuse the skinny router GEMM (N=128 experts) with the top-k routing kernel
+overlap the dense MLP and the routed MoE on two CUDA streams inside the decode CUDA graph
+MTP speculative decoding with the Gemma 4 assistant draft (frozen-KV MTP) at batch 1 and batch 8 on an NVFP4 MoE target
+raise chunked-prefill-size from 4096 to 8192/16384 so a B=8x1024 prefill runs in one chunk
+enable torch.compile on the decode path to fuse elementwise glue
