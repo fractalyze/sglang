@@ -100,16 +100,17 @@ async def _forced_one(session, url: str, prompt: List[int], continuation: List[i
         "sampling_params": {"temperature": 0.0, "max_new_tokens": 1},
         "return_logprob": True,
         "top_logprobs_num": top_n,
-        "logprob_start_len": len(prompt),
+        # Row j holds the distribution that predicted input token start+j, and SGLang
+        # leaves the row of the first token at the start empty; start one early.
+        "logprob_start_len": len(prompt) - 1,
     }
     async with session.post(f"{url}/generate", json=payload) as resp:
         resp.raise_for_status()
         body = await resp.json()
-    rows = body["meta_info"]["input_top_logprobs"]
-    if len(rows) == len(continuation) + 1 and not rows[0]:
-        rows = rows[1:]
-    if len(rows) != len(continuation):
-        raise RuntimeError(f"forced logprobs: {len(rows)} rows for {len(continuation)} tokens")
+    rows = body["meta_info"]["input_top_logprobs"][1:]
+    if len(rows) != len(continuation) or any(not r for r in rows):
+        raise RuntimeError(f"forced logprobs: {len(rows)} rows (empty: {sum(1 for r in rows if not r)}) "
+                           f"for {len(continuation)} tokens")
     return [[(lp, tid) for lp, tid, *_ in pos] for pos in rows]
 
 
