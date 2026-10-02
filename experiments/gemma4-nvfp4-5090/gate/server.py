@@ -164,8 +164,22 @@ class Server:
     def __exit__(self, *exc):
         self.stop()
 
-    def flush_cache(self) -> None:
-        requests.post(f"{self.url}/flush_cache", timeout=60).raise_for_status()
+    def flush_cache(self, timeout_s: float = 60.0) -> int:
+        """Flushes once the scheduler is idle; returns the refused attempts.
+
+        A client sees a stream's last token before the scheduler releases the
+        request, and SGLang answers 400 while any request is running or queued.
+        """
+        deadline, delay, refused = time.time() + timeout_s, 0.05, 0
+        while True:
+            r = requests.post(f"{self.url}/flush_cache", timeout=60)
+            if r.status_code == 200:
+                return refused
+            if r.status_code != 400 or time.time() > deadline:
+                raise RuntimeError(f"flush_cache failed after {refused + 1} attempts: {r.status_code} {r.text[:200]}")
+            refused += 1
+            time.sleep(delay)
+            delay = min(delay * 2, 2.0)
 
     def weight_checksum(self) -> Dict:
         """sha256 over every loaded parameter (dequantized), via /weights_checker."""

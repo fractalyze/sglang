@@ -169,6 +169,26 @@ class HostWatchTest(absltest.TestCase):
         self.assertEqual(dog.phase, "autotune")
 
 
+class FlushTest(absltest.TestCase):
+    def test_flush_retries_while_busy_then_fails_loudly(self):
+        class R:
+            def __init__(self, code):
+                self.status_code, self.text = code, ""
+
+        codes = [400, 400, 200]
+        orig = server.requests.post
+        server.requests.post = lambda *a, **k: R(codes.pop(0))
+        try:
+            srv = server.Server.__new__(server.Server)
+            srv.url = "http://x"
+            self.assertEqual(srv.flush_cache(timeout_s=5), 2)
+            server.requests.post = lambda *a, **k: R(400)
+            with self.assertRaises(RuntimeError):
+                srv.flush_cache(timeout_s=0.2)
+        finally:
+            server.requests.post = orig
+
+
 class SolTest(absltest.TestCase):
     def setUp(self):
         cfg = {"num_key_value_heads": 8, "head_dim": 256, "num_global_key_value_heads": 2, "global_head_dim": 512,
