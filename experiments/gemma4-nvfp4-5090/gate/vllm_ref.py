@@ -86,7 +86,8 @@ def run(out_dir: str, timeout_s: int = 3600) -> Dict:
         res["preflight"] = hostwatch.wait_preflight()
         with open(log_path, "w") as log:
             proc = subprocess.Popen([*hostwatch.memory_cap_prefix(), *command()], stdout=log,
-                                    stderr=subprocess.STDOUT, start_new_session=True, env=dict(os.environ))
+                                    stderr=subprocess.STDOUT, start_new_session=True,
+                                    env=dict(os.environ, MAX_JOBS=str(config.JIT_MAX_JOBS)))
             dog = hostwatch.Watchdog(proc.pid, os.path.join(out_dir, "hostmem.csv"), log_path, phases=()).start()
             try:
                 dog.set_phase("startup")
