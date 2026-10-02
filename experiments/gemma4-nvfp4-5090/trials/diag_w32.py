@@ -3,9 +3,11 @@
 Never a gate number. Each config gets its own server lifetime under the host
 lock, the same capped scope and watchdog as a gate leg, one warm-up W32 batch,
 then REPS timed W32 batches with the gate's prompt seeds. Retractions are
-counted from the server log of the timed window only.
+counted from the server log of the timed window only. With --fidelity, the
+gate's two fidelity passes (decode path and teacher-forced) run after the W32
+reps, as in a gate leg, to show the config survives the gate's memory peaks.
 
-  bin/python trials/diag_w32.py <out_dir> <name>=<json list of extra flags> ...
+  bin/python trials/diag_w32.py [--fidelity] <out_dir> <name>=<json list of extra flags> ...
 """
 
 import asyncio
@@ -16,7 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from gate import client, config, hostwatch, prompts, server  # noqa: E402
+from gate import client, config, fidelity, hostwatch, prompts, server  # noqa: E402
 
 REPS = 3
 _RETRACT = re.compile(r"Retract requests\. #retracted_reqs: (\d+)")
@@ -32,7 +34,7 @@ def _summary(rep):
             "ttft_median_s": ttft[len(ttft) // 2], "e2e_min_s": min(s["e2e_s"] for s in streams)}
 
 
-def probe(ref, name, extra, out_dir, corpus, bos):
+def probe(ref, name, extra, out_dir, corpus, bos, with_fidelity):
     leg_dir = os.path.join(out_dir, name)
     os.makedirs(leg_dir, exist_ok=True)
     log = os.path.join(leg_dir, "server.log")
@@ -46,15 +48,20 @@ def probe(ref, name, extra, out_dir, corpus, bos):
             srv.flush_cache()
             ps = prompts.timing_prompts(corpus, bos, f"diag/{wl.name}/{rep}", wl.concurrency, wl.prompt_tokens)
             reps.append(asyncio.run(client.run_batch(srv.url, ps, wl.decode_tokens)))
+        window_end = srv.log_offset()
+        if with_fidelity:
+            fidelity.run(srv.url)
+            fidelity.run_forced(srv.url, fidelity.load_json(fidelity.REFERENCE_PATH))
     with open(log) as f:
         text = f.read()
-    window = text[offset:]
+    window = text[offset:window_end]
     pool = _POOL.search(text)
     sizing = _MAX_RUNNING.search(text)
     out = {
         "name": name, "extra_args": extra, "commit": srv.commit,
         "full_layer_tokens": int(pool.group(1)), "swa_layer_tokens": int(pool.group(2)),
         "max_running_requests": int(sizing.group(2)), "available_gpu_mem_gb": float(sizing.group(3)),
+        "fidelity_passes_survived": with_fidelity or None,
         "retract_events": len(_RETRACT.findall(window)),
         "retracted_reqs": sum(int(n) for n in _RETRACT.findall(window)),
         "reps": [_summary(r) for r in reps],
@@ -67,15 +74,20 @@ def probe(ref, name, extra, out_dir, corpus, bos):
 
 
 def main():
-    out_dir = sys.argv[1]
-    configs = [arg.split("=", 1) for arg in sys.argv[2:]]
+    args = sys.argv[1:]
+    with_fidelity = args[0] == "--fidelity"
+    out_dir, *specs = args[1:] if with_fidelity else args
+    configs = [spec.split("=", 1) for spec in specs]
     ref = server.load_ref("base")
     tok = prompts.load_tokenizer()
     corpus = prompts.load_corpus(tok)
     results = []
     with hostwatch.host_lock():
         for name, extra in configs:
-            res = probe(ref, name, json.loads(extra), out_dir, corpus, tok.bos_token_id)
+            try:
+                res = probe(ref, name, json.loads(extra), out_dir, corpus, tok.bos_token_id, with_fidelity)
+            except Exception as e:  # a crashed config is a result; the next config still runs
+                res = {"name": name, "extra_args": json.loads(extra), "error": repr(e)[:500]}
             print(json.dumps({k: v for k, v in res.items() if k != "host"}), flush=True)
             results.append(res)
     with open(os.path.join(out_dir, "diag.json"), "w") as f:
