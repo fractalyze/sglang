@@ -9,8 +9,10 @@ mkdir -p $G4_HOME/results/microbench
 $G4_VENV/bin/python -m gate.hostwatch --csv $G4_HOME/results/microbench/hostmem.csv \
   --log $G4_HOME/results/microbench/microbench.log -- $G4_VENV/bin/python $S/microbench.py
 # Prebuild = first launch with the baseline flags (FlashInfer autotune + one
-# request) under the compile guard; a compile or a failed launch stops the job.
-bash $S/job.sh prebuild prebuild || { echo "$(date -Is) STOP: prebuild failed" >> $G4_HOME/results/jobs.log; exit 3; }
+# request). FlashInfer's FP4 MoE comes prebuilt (AOT dir); the small SGLang
+# jit_kernel units still build here, one at a time (MAX_JOBS=1, 24G scope).
+# Every later step keeps the compile guard on.
+ALLOW_COMPILE=1 W2_MAX_JOBS=1 bash $S/job.sh prebuild prebuild || { echo "$(date -Is) STOP: prebuild failed" >> $G4_HOME/results/jobs.log; exit 3; }
 bash $S/job.sh base profile
 bash $S/job.sh experts experts --expert-distribution-recorder-mode per_token --expert-distribution-recorder-buffer-size -1
 # Knob screen (screen, unpaired). A step that hits a JIT cache miss stops itself

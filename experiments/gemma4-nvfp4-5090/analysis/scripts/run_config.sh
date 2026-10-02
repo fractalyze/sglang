@@ -13,6 +13,8 @@
 set -uo pipefail
 source /data/jooman/gemma4nv/src-gate/experiments/gemma4-nvfp4-5090/env/env.sh
 name=$1; mode=$2; shift 2
+# Coordinator-approved fallback for JIT builds on bs2: one compile at a time.
+[ -n "${W2_MAX_JOBS:-}" ] && export MAX_JOBS=$W2_MAX_JOBS
 S=$G4/src-analysis/analysis-scripts
 R=$G4_HOME/results/$name
 URL=http://127.0.0.1:30000
