@@ -127,8 +127,8 @@ class RunnerTest(absltest.TestCase):
                                                 ["control", "candidate"]])
 
     def test_undeclared_server_arg_diff(self):
-        a = {"server_info": {"attention_backend": "triton", "random_seed": 1}}
-        b = {"server_info": {"attention_backend": "fa3", "random_seed": 2}}
+        a = {"server_info": {"attention_backend": "triton", "random_seed": 1, "startup_time": 1.0}}
+        b = {"server_info": {"attention_backend": "fa3", "random_seed": 2, "startup_time": 2.0}}
         self.assertEqual(runner.server_arg_diff(a, b, [])["undeclared"], ["attention_backend"])
         self.assertEqual(runner.server_arg_diff(a, b, ["--attention-backend", "fa3"])["undeclared"], [])
 

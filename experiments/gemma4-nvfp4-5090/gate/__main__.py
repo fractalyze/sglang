@@ -190,6 +190,8 @@ def main() -> None:
     q.add_argument("--set-baseline", action="store_true")
     sub.add_parser("peaks")
     sub.add_parser("vllm-ref")
+    rv = sub.add_parser("reevaluate")
+    rv.add_argument("--run", required=True)
     pb = sub.add_parser("prebuild")
     pb.add_argument("--ref", default="base")
     s = sub.add_parser("sol")
@@ -213,6 +215,10 @@ def main() -> None:
         print(json.dumps(runner.save_noise_from(args.report), indent=1))
     elif args.cmd == "quality":
         _quality(args)
+    elif args.cmd == "reevaluate":
+        report = runner.reevaluate(args.run)
+        print(json.dumps({"verdict": report["verdict"],
+                          "integrity": {k: v for k, v in report["integrity"].items() if k != "per_leg"}}, indent=1))
     elif args.cmd == "vllm-ref":
         res = vllm_ref.run(os.path.join(config.RUNS_DIR, runner.new_exp_id("vllm-ref")))
         print(json.dumps({"summary": res["summary"], "host": res["host"]}, indent=1))

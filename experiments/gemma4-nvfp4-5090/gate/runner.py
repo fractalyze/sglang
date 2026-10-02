@@ -15,7 +15,7 @@ from gate import checkpoint, client, config, fidelity, gpu, hostwatch, prompts, 
 log = logging.getLogger(__name__)
 
 # server_info keys that legitimately differ between two launches of one config.
-_VOLATILE_SERVER_KEYS = {"random_seed", "version", "internal_states", "max_total_num_tokens", "pid"}
+_VOLATILE_SERVER_KEYS = {"random_seed", "version", "internal_states", "max_total_num_tokens", "pid", "startup_time"}
 
 
 def new_exp_id(label: str) -> str:
@@ -244,6 +244,26 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
             "promote": bool(integrity["ok"] and fid_pass.get("pass") and timing["promote"]),
         },
     }
+
+
+def reevaluate(run_dir: str) -> Dict:
+    """Recomputes a finished run's report from its saved legs (the old report is kept as report.v<n>.json)."""
+    meta = fidelity.load_json(os.path.join(run_dir, "meta.json"))
+    legs: Dict[str, List[Dict]] = {"control": [], "candidate": []}
+    for k in range(meta["n_pairs"]):
+        for role in ("control", "candidate"):
+            legs[role].append(fidelity.load_json(os.path.join(run_dir, f"pair{k}-{role}", "leg.json")))
+    old = os.path.join(run_dir, "report.json")
+    n = 1
+    while os.path.exists(os.path.join(run_dir, f"report.v{n}.json")):
+        n += 1
+    os.rename(old, os.path.join(run_dir, f"report.v{n}.json"))
+    report = evaluate(meta, legs)
+    report["reevaluated_from"] = f"report.v{n}.json"
+    _write(old, report)
+    meta["notes"] = f"{meta['notes']} [re-evaluated: {report['reevaluated_from']} superseded]"
+    append_ledger(meta, report, run_dir)
+    return report
 
 
 NOISE_PATH = os.path.join(config.REFERENCE_DIR, "noise.json")
