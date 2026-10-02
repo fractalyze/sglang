@@ -9,5 +9,13 @@
       "32"
     ],
     "env": {}
+  },
+  "w32a-mem080": {
+    "description": "T-W32a (gemma4nv-b3-w32a): base plus --mem-fraction-static 0.80, so the KV pools (66k full / 53k sliding tokens) hold W32's 32 x 1152 tokens without retraction; see trials/W32-DIAG.md.",
+    "extends": "base",
+    "server_args": [
+      "--mem-fraction-static",
+      "0.80"
+    ]
   }
 }
