@@ -12,8 +12,10 @@ Model `nvidia/Gemma-4-26B-A4B-NVFP4` (HF snapshot `a19cfe00be84`) on 1x RTX 5090
 
 ## 1. Serving configuration and what runs per op
 
-Baseline flags (same as W1): defaults plus `--moe-runner-backend flashinfer_cutlass`. My
-runs also pass `--context-length 8192 --max-running-requests 32`.
+Baseline flags are W1's pinned `base` ref (`gate/refs.json`): `--moe-runner-backend
+flashinfer_cutlass --cuda-graph-max-bs-decode 32` (+ `--decode-log-interval 1`). My measured
+job uses exactly these flags. The two bs2 bring-up launches in `evidence/` also passed
+`--context-length 8192 --max-running-requests 32`.
 
 | Setting | Resolved value | Source |
 |---|---|---|
@@ -22,7 +24,7 @@ runs also pass `--context-length 8192 --max-running-requests 32`.
 | Other NVFP4 MoE runners | `marlin` and `flashinfer_cutedsl` reject `gelu` (Gemma's GeGLU). `humming` uses erf-GELU, not tanh, which is a numerics mismatch. | `moe_runner/marlin.py:142`, `flashinfer_cutedsl.py:230` |
 | Attention | `triton` for prefill and decode. Gemma4 accepts only `trtllm_mha`/`triton` on CUDA, and `trtllm_mha` is the SM100 default. | `model_overrides/gemma4.py:28`, `model_hook.py:590` |
 | **KV cache dtype** | `auto` resolves to **FP8 e4m3 for all 30 layers**, the 5 full-attention layers included, because the checkpoint declares `kv_cache_quant_algo: FP8`. Log: `Full KV ... dtype: torch.float8_e4m3fn`, `SWA KV ... float8_e4m3fn`. | `kv_cache_dtype.py:39-46` |
-| KV pools | Hybrid SWA pool. Full pool 36,594 tokens (0.34 GB); SWA pool 29,275 tokens (2.8 GB). Full layers store K and V separately even with `k_eq_v`, because V = v_norm(k_raw) without RoPE. | log, `swa_memory_pool.py` |
+| KV pools | Hybrid SWA pool. Full pool 36,594 tokens (0.34 GB); SWA pool 29,275 tokens (2.8 GB). **Full layers store K and V as two copies even with `k_eq_v`.** K gets k_norm + RoPE, V gets v_norm and no RoPE (`gemma4_causal.py:461-507`), and both are written. So a "one copy because K=V" bound undercounts full-layer KV bytes by 2x (about 45 MB per step at B=8, FP8). | log, `gemma4_causal.py` |
 | CUDA graph | Decode: full graph, `bs=[1,2,4,8,12,16,24,32,40,48]`. **Prefill graph disabled**, because Gemma4ForConditionalGeneration is a multimodal arch. | log `cuda_graph_config` |
 | Chunked prefill | 4096 (32 GB-GPU default). A B=8x1024 prefill is 2 chunks. `max_prefill_tokens=16384`. | log |
 | Sampling | Greedy `torch.argmax` over fp32 logits after an in-place softcap(30). | `logits_processor.py:916`, `sampler.py:179` |
@@ -128,10 +130,19 @@ The plan is staged in `scripts/run_config.sh` / `scripts/run_all.sh`:
 - `microbench.py`: copy and read GB/s, BF16 and FP8 TFLOP/s at 8192³, and lm_head GEMV at M=1
   and M=8. These are the measured ceilings for the SOL column.
 
-## How to finish (when a GPU is back)
+## How to finish (when the coordinator gives a GPU slot)
 
-1. Restore the NVIDIA module on bs2 (admin), then take `host.lock` per the coordinator's
-   safe-launch protocol.
-2. `bash scripts/run_all.sh` on bs2, in order: microbench, base profile, experts, knob screen.
-3. Fill the "Achieved / sol_fraction / Gap" columns from `results/base/` and update
-   `HYPOTHESES.md` predictions.
+The job is staged on both hosts at `/data/jooman/gemma4nv/src-analysis/analysis-scripts/`
+with the prompts at `/data/jooman/gemma4nv/results/prompts_1024.json`. It is host-agnostic:
+it sources W1's `env/env.sh`, so bs3 reuses W1b's venv, model dir and JIT cache.
+1. `bash run_all.sh` runs the steps in order: microbench, `prebuild` (JIT/autotune warm-up with
+   the baseline flags, one request), base profile, experts, then the knob screen.
+   - Every step goes through `job.sh`, which runs it under W1's `gate.hostwatch`: host.lock +
+     gpu.lock, a 24G no-swap systemd scope, preflight refusal, and a 2 s watchdog writing
+     `<run>/hostmem.csv` with per-phase peaks in `hostmem.summary.json`.
+   - The lock is released between steps.
+   - bs2 needs its `src-gate` checkout updated to W1's hostwatch commit (`61b5056`) first.
+2. Fill the "Achieved / sol_fraction / Gap" columns from `results/base/`. SOL uses
+   the measured copy BW and the measured CUDA-graph per-launch floor (`microbench.json`), not
+   the datasheet. Any achieved time below its bound triggers an audit, never a claim.
+3. Re-rank `HYPOTHESES.md` by time_share x (1 - sol_fraction), then by confidence.

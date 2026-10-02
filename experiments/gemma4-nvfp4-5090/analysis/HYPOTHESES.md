@@ -38,7 +38,10 @@ evidence about this model. Those that bear on these candidates:
 
 ## Ranked list
 
-Rank = expected W8 composite gain x confidence. Δ is the predicted change in step time:
+Rank = expected W8 composite gain x confidence. This is the analytic stand-in until the
+profile lands. Then the coordinator's rule applies (crawler feed #2): order by
+time_share x (1 - sol_fraction), then confidence, and close every kernel claim end to end.
+SOL-ExecBench saw an 84%-faster attention kernel give only 3% TTFT inside SGLang. Δ is the predicted change in step time:
 negative is faster. "Composite" is the predicted W8 composite gain.
 
 | # | Hypothesis | Mechanism / evidence | Pred. B=8 decode Δ | Pred. prefill Δ | Pred. composite | Conf. | Effort | Screen |
@@ -65,8 +68,10 @@ Not candidates (checked):
 
 ## Knob screen (screen, unpaired: nothing here is a gain until it passes W1's gate)
 
-Configs are staged in `scripts/run_all.sh`. Each is one server launch, then B=8 x3 and B=1 x3
-reps over diverse prompts, with the radix cache flushed per rep.
+Configs are staged in `scripts/run_all.sh` and run through `scripts/job.sh` (W1's hostwatch
+protocol). Each is one server launch with W1's baseline flags plus the knob, then B=8 x3 and
+B=1 x3 reps over diverse prompts. The radix cache is flushed per rep, and the prefix-cache hit
+tokens are recorded per stream (they must be 0).
 
 | Config | Flags (on top of baseline) | B=8 prefill s | B=8 decode ms/step | B=1 decode ms/step | Note |
 |---|---|---|---|---|---|
@@ -79,9 +84,8 @@ reps over diverse prompts, with the radix cache flushed per rep.
 | nocg | `--disable-cuda-graph` | unmeasured | unmeasured | unmeasured | control: launch share |
 | nooverlap | `--disable-overlap-schedule` | unmeasured | unmeasured | unmeasured | control |
 | contdec4 | `--num-continuous-decode-steps 4` | unmeasured | unmeasured | unmeasured | H13 |
-| tcompile | `--enable-torch-compile --torch-compile-max-bs 8` | unmeasured | unmeasured | unmeasured | H12 |
-| attn_trtllm | `--attention-backend trtllm_mha` | unmeasured | | | expected launch failure (SM100 kernels) |
-| moe_cutedsl / moe_marlin | `--moe-runner-backend …` | unmeasured | | | expected launch failure (gelu rejected) |
+| tcompile | `--enable-torch-compile` | skipped | | | H12. Dropped from the screen: vault T37 (inductor FP8 breaks on sm_120), and inductor compile fan-out is a host-RAM risk under the host-safety protocol. Run only as a deliberate trial. |
+| attn_trtllm / moe_cutedsl / moe_marlin | | skipped | | | Settled from code (SM100-only kernels; gelu rejected). Launch attempts would add JIT risk for no information. |
 
 Hand-off: each hypothesis that the gate takes goes through wm-preregister → implement → W1
 gate → wm-record. That gives prediction vs result per row, using the "Pred." columns above as

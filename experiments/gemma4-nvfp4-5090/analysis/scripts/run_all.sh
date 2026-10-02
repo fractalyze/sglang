@@ -1,29 +1,25 @@
 #!/usr/bin/env bash
-# Whole W2 job on bs2, robust to ssh drops (run under nohup). Each config takes
-# host.lock + gpu.lock for its own lifetime only, so other studies can interleave.
-source /home/jooman/gemma4nv/env.sh
-S=$G/src-analysis/analysis-scripts
-L=$G/host.lock  # coordinator rule: one SGLang process per host
-BASE="--moe-runner-backend flashinfer_cutlass"
-run() { flock $L flock $G/gpu.lock bash $S/run_config.sh "$@"; }
-
-flock $L flock $G/gpu.lock bash -c "python $S/microbench.py > $G/results/microbench.json 2>$G/results/microbench.err"
-run base profile $BASE
-run experts experts $BASE --expert-distribution-recorder-mode per_token --expert-distribution-recorder-buffer-size -1
+# Whole W2 measured job, in order. Start it only after the coordinator's go.
+# Each step is a separate job.sh call, so the host lock is released between
+# configs and the gate can interleave.
+S=/data/jooman/gemma4nv/src-analysis/analysis-scripts
+source /data/jooman/gemma4nv/src-gate/experiments/gemma4-nvfp4-5090/env/env.sh
+cd $G4/src-gate/experiments/gemma4-nvfp4-5090
+mkdir -p $G4/results/microbench
+$G4_VENV/bin/python -m gate.hostwatch --csv $G4/results/microbench/hostmem.csv \
+  --log $G4/results/microbench/microbench.log -- $G4_VENV/bin/python $S/microbench.py
+bash $S/job.sh prebuild prebuild || exit 1
+bash $S/job.sh base profile
+bash $S/job.sh experts experts --expert-distribution-recorder-mode per_token --expert-distribution-recorder-buffer-size -1
 # Knob screen (screen, unpaired).
-run kv_fp8 time $BASE --kv-cache-dtype fp8_e4m3
-run kv_bf16 time $BASE --kv-cache-dtype bf16
-run chunk8k time $BASE --chunked-prefill-size 8192
-run chunk16k time $BASE --chunked-prefill-size 16384 --max-prefill-tokens 16384
-run splits16 time $BASE --triton-attention-num-kv-splits 16
-run splits4 time $BASE --triton-attention-num-kv-splits 4
-run cg_bs8 time $BASE --cuda-graph-max-bs 8
-run nocg time $BASE --disable-cuda-graph
-run nooverlap time $BASE --disable-overlap-schedule
-run contdec4 time $BASE --num-continuous-decode-steps 4
-run tcompile time $BASE --enable-torch-compile --torch-compile-max-bs 8
-run attn_trtllm time $BASE --attention-backend trtllm_mha
-run moe_cutedsl time --moe-runner-backend flashinfer_cutedsl
-run moe_marlin time --moe-runner-backend marlin
-run base_repeat time $BASE
-echo "$(date -Is) ALL DONE" >> $G/results/jobs.log
+bash $S/job.sh kv_bf16 time --kv-cache-dtype bf16
+bash $S/job.sh chunk8k time --chunked-prefill-size 8192
+bash $S/job.sh chunk16k time --chunked-prefill-size 16384 --max-prefill-tokens 16384
+bash $S/job.sh splits4 time --triton-attention-num-kv-splits 4
+bash $S/job.sh splits16 time --triton-attention-num-kv-splits 16
+bash $S/job.sh cg_bs8 time --cuda-graph-max-bs-decode 8
+bash $S/job.sh nocg time --disable-cuda-graph
+bash $S/job.sh nooverlap time --disable-overlap-schedule
+bash $S/job.sh contdec4 time --num-continuous-decode-steps 4
+bash $S/job.sh base_repeat time
+echo "$(date -Is) ALL DONE" >> $G4/results/jobs.log

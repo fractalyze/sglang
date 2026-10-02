@@ -49,6 +49,14 @@ for m in (1, 8):
     t = timeit(lambda: X @ W.t())
     out[f"lm_head_M{m}_us"] = t * 1e6
     out[f"lm_head_M{m}_GBs"] = W.numel() * 2 / t / 1e9
+# Per-launch floor inside a CUDA graph: a graph of N tiny dependent kernels.
+y = torch.zeros(256, device="cuda")
+g = torch.cuda.CUDAGraph()
+with torch.cuda.graph(g):
+    for _ in range(1000):
+        y.add_(1.0)
+t = timeit(lambda: g.replay(), iters=10)
+out["graph_launch_floor_us"] = t * 1e6 / 1000
 out["device"] = torch.cuda.get_device_name()
 out["clocks_note"] = "unlocked clocks on shared host; see clocks.csv"
 print(json.dumps(out, indent=1))

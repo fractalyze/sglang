@@ -51,6 +51,7 @@ def one_stream(url, ids, decode_len, out, idx):
         ttft=t_first - t0,
         decode_step=(t_last - t_first) / max(decode_len - 1, 1),
         completion_tokens=meta.get("completion_tokens"),
+        cached_tokens=meta.get("cached_tokens"),
         output_ids_tail=(text or {}).get("output_ids", [])[-8:],
     )
 
@@ -126,8 +127,10 @@ def main():
         wall_s=[r["wall"] for r in reps],
         reps=reps,
     )
+    cached = [s.get("cached_tokens") or 0 for r in reps for s in r["streams"]]
+    summary["prefix_cache_hit_tokens"] = sum(cached)
     print(
-        f"[{args.label}] B={args.batch} prefill_s med={statistics.median(summary['prefill_s']):.4f} "
+        f"[{args.label}] B={args.batch} cache_hit_tok={sum(cached)} prefill_s med={statistics.median(summary['prefill_s']):.4f} "
         f"decode_step_ms med={statistics.median(summary['decode_step_ms']):.3f} "
         f"(all {['%.3f' % x for x in summary['decode_step_ms']]})"
     )

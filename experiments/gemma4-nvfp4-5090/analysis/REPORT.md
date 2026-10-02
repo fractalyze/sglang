@@ -24,9 +24,12 @@ Branch `jumanzii/gemma4nv-analysis`, base `a9871012a`. Host build-server-2 (bs2)
 - **Ranked hypotheses** (13 candidates plus the checked non-candidates) with predicted deltas,
   and **one `wm consult`** (COLD START for this model; GPU-level priors folded in):
   `HYPOTHESES.md`, raw output in `consult_raw.txt`.
-- **Measurement tooling**, staged on bs2: `scripts/{make_prompts,drive,experts,classify_trace,microbench}.py`,
-  `scripts/run_config.sh`, `scripts/run_all.sh` (microbench → base profile → expert counts →
-  16-config knob screen, each config under `host.lock` + `gpu.lock`).
+- **Measurement tooling**, staged on bs2 and bs3: `scripts/{make_prompts,drive,experts,classify_trace,microbench}.py`
+  plus `scripts/{run_config,job,run_all}.sh`. The order is microbench → JIT prebuild → base
+  profile → expert counts → 10-config knob screen. Every step runs under W1's `gate.hostwatch`
+  (host.lock, 24G scope, watchdog) with W1's exact baseline flags.
+- **Bound correction for W1:** full-attention layers store K and V separately (K is roped, V is
+  not), so the KV bound needs two copies, not one (`PROFILE.md` §1).
 
 ## Not done (blocked)
 
@@ -38,7 +41,7 @@ Branch `jumanzii/gemma4nv-analysis`, base `a9871012a`. Host build-server-2 (bs2)
 - Missing as a result: the measured component table (achieved µs, sol_fraction, gap), the
   distinct-experts measurement, and the knob-screen results. Every "unmeasured" cell in
   `PROFILE.md` / `HYPOTHESES.md` comes from `bash scripts/run_all.sh` on bs2 once the GPU is
-  back and the coordinator gives the go under the safe-launch protocol.
+  back, or on a bs3 slot, once the coordinator gives the go.
 
 ## Top of the list (analytic)
 
