@@ -8,8 +8,8 @@ cd $G4/src-gate/experiments/gemma4-nvfp4-5090
 mkdir -p $G4_HOME/results/microbench
 $G4_VENV/bin/python -m gate.hostwatch --csv $G4_HOME/results/microbench/hostmem.csv \
   --log $G4_HOME/results/microbench/microbench.log -- $G4_VENV/bin/python $S/microbench.py
-# JIT prebuild compiles once (MAX_JOBS=4 via env.sh) into the host's cache;
-# every later step must hit that cache or it stops itself (COMPILE_DETECTED).
+# Prebuild = first launch with the baseline flags (FlashInfer autotune + one
+# request) under the compile guard; a compile or a failed launch stops the job.
 bash $S/job.sh prebuild prebuild || { echo "$(date -Is) STOP: prebuild failed" >> $G4_HOME/results/jobs.log; exit 3; }
 bash $S/job.sh base profile
 bash $S/job.sh experts experts --expert-distribution-recorder-mode per_token --expert-distribution-recorder-buffer-size -1

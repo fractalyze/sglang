@@ -36,10 +36,12 @@ SPID=$!
 cleanup() { kill $SPID 2>/dev/null; sleep 5; pkill -9 -P $SPID 2>/dev/null; kill -9 $SPID 2>/dev/null; }
 trap cleanup EXIT
 
-# Only the prebuild step may JIT-compile (MAX_JOBS=4 from env.sh). In every
-# other step an nvcc/cicc (FlashInfer/tvm JIT; Triton only uses ptxas) is a
-# cache miss: stop the step and report it.
-[ "$mode" != prebuild ] && ( while kill -0 $SPID 2>/dev/null; do
+# W2 compiles nothing by default: the FlashInfer kernels come prebuilt (on bs2,
+# W1b's bs3 SASS .so files placed in flashinfer/data/aot, because an uncapped
+# FP4-MoE JIT OOM-killed hosts). An nvcc/cicc (FlashInfer/tvm JIT; Triton only
+# uses ptxas) is a cache miss: stop the step and report it. ALLOW_COMPILE=1
+# lifts the guard for a deliberate, coordinator-approved build.
+[ "${ALLOW_COMPILE:-0}" != 1 ] && ( while kill -0 $SPID 2>/dev/null; do
     if pgrep -u "$(id -u)" -x "nvcc|cicc" >/dev/null; then
       echo "$(date -Is) COMPILE-DETECTED $name: $(pgrep -u "$(id -u)" -a -x 'nvcc|cicc' | head -3)" >> $G4_HOME/results/jobs.log
       touch $R/COMPILE_DETECTED; kill $SPID; pkill -u "$(id -u)" -x "nvcc|cicc|ninja"; exit 0
