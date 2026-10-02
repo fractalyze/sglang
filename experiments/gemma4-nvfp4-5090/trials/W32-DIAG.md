@@ -71,19 +71,32 @@ Read from `runs/vllm-ref-20261003-042242-...-e964bc/vllm.log`.
 
 The two engines run the same kernel classes and the same scheduling limits. vLLM simply gives its KV cache 2.5x the memory.
 
-## Choice for T-W32a
+## T-W32a at 0.80 failed the gate; sizing the variant
 
-The trial adds `--mem-fraction-static 0.80` and keeps the default swa ratio 0.8. It is the smallest change that removes retraction at W32:
+**What failed.** T-W32a (`--mem-fraction-static 0.80`) did not survive its first candidate leg:
 
-- Pools: 66k full and 53k sliding tokens, which is 1.4x the W32 demand.
-- GPU free after capture: 4.0 GB.
+- Run: `gemma4nv-b3-w32a-20261003-084709-build-server-3-853530`, leg `pair0-candidate`.
+- The server OOMed in the gate's teacher-forced fidelity pass.
+- The request asks for input logprobs, so a 4096-token prefill chunk allocates 2 GiB of logits over the 262k vocab. Only 1.19 GiB was free.
+- The W32-only probes above never sent such a request.
 
-Expected effects on the other workloads:
+**Re-probe.** `trials/diag_w32.py --fidelity` adds the gate's two fidelity passes after the W32 reps. Run directory: `runs/gemma4nv-b3-diag-w32-20261003-085116`.
 
-- **W8 and W1:** they never fill the pool, so they should not move. They stay as guard metrics.
-- **Fidelity:** the long hidden prompts (8k to 15.5k tokens) prefill in 4096-token chunks with the same kernels. Fidelity should sit at the A/A level.
+| config | full / sliding pool (tokens) | GPU free after capture | fidelity passes | retracted reqs (3 reps) | tok/s |
+|---|---|---|---|---|---|
+| `--mem-fraction-static 0.74` | 44,721 / 35,776 | 5.92 GB | survived | 3 | 1391 |
+| `--mem-fraction-static 0.76` | 51,893 / 41,514 | 5.24 GB | survived | 0 | **1522** |
+| `--mem-fraction-static 0.80` (first probe; gate leg) | 66,235 / 52,988 | 4.03 GB | **OOM** in the gate | 0 | 1519 |
 
-Out of scope here:
+**Choice for T-W32b.** `--mem-fraction-static 0.76`, keeping swa ratio 0.8:
 
-- vLLM's `0.85` (about 0.87 in SGLang's accounting) would leave less headroom on a GPU shared with other users. A larger `mem_fraction_static` is a separate variant if W32 ever needs more than 32 x 1152 tokens.
+- It is the smallest probed fraction with zero retractions. Its sliding pool is 1.13x the W32 demand.
+- It survives the fidelity peak with 5.24 GB left after capture, where 4.03 GB did not.
+- The margin is thin: the peak need is roughly 4.8 GB. The gate's fidelity leg is the real test.
+
+**Expected effects:** W8, W1 and fidelity should not move. Only the pool size changes, not the kernels.
+
+**Not changed:**
+
 - No code change in the SWA pool or the scheduler is needed for this gap.
+- The logprob-chunk peak is not reserved by SGLang's memory planner. It caps how far the KV pool can grow on this model; that is a separate finding.

@@ -17,5 +17,13 @@
       "--mem-fraction-static",
       "0.80"
     ]
+  },
+  "w32b-mem076": {
+    "description": "T-W32b (gemma4nv-b3-w32b, variant of T-W32a): base plus --mem-fraction-static 0.76, the smallest probed fraction whose KV pools (52k full / 41.5k sliding tokens) hold W32 without retraction while leaving 5.2 GB for the teacher-forced logprob peak that OOMed 0.80; see trials/W32-DIAG.md.",
+    "extends": "base",
+    "server_args": [
+      "--mem-fraction-static",
+      "0.76"
+    ]
   }
 }
