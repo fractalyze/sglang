@@ -114,6 +114,7 @@ class Server:
     def start(self, timeout_s: int = 900) -> None:
         self.preflight = hostwatch.preflight()
         env = dict(os.environ)
+        env["MAX_JOBS"] = str(config.JIT_MAX_JOBS)
         env.update(self.ref["env"])
         env["PYTHONPATH"] = os.path.join(self.tree, "python") + os.pathsep + env.get("PYTHONPATH", "")
         self._log_file = open(self.log_path, "w")

@@ -5,6 +5,7 @@
   gate set-noise --report <A/A report.json>
   gate quality --ref <ref> [--set-baseline]
   gate prebuild --ref base            # JIT + autotune once, capped and watched
+  gate vllm-ref                       # ungated vLLM 0.20 reference on W8/W1/W32
   gate peaks                           # measured DRAM BW, GEMM peaks, launch floor
   gate sol --ref base                  # router recording + SOL tables
   gate sol-report --report <report.json>
@@ -18,7 +19,7 @@ import os
 import sys
 import time
 
-from gate import config, fidelity, hostwatch, prompts, quality, runner, server, solrun
+from gate import config, fidelity, hostwatch, prompts, quality, runner, server, solrun, vllm_ref
 
 PEAKS_PATH = os.path.join(config.REFERENCE_DIR, "peaks.json")
 SOL_DIR = os.path.join(config.REFERENCE_DIR, "sol")
@@ -88,6 +89,13 @@ def _prebuild(args) -> None:
     tok = prompts.load_tokenizer()
     corpus = prompts.load_corpus(tok)
     with hostwatch.host_lock():
+        env = dict(os.environ, MAX_JOBS=str(config.JIT_MAX_JOBS), PYTHONPATH=os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+        jit = hostwatch.run_wrapped([ref["python"], "-m", "gate.jit_prebuild"], os.path.join(out_dir, "jit-hostmem.csv"),
+                                    os.path.join(out_dir, "jit.log"), env=env)
+        if jit["returncode"] != 0:
+            fidelity.save_json(os.path.join(out_dir, "prebuild.json"), {"jit": jit})
+            sys.exit(f"JIT prebuild failed: {jit['returncode']} (watchdog: {jit['tripped']})")
         srv = server.Server(ref, os.path.join(out_dir, "server.log"))
         try:
             srv.start(timeout_s=3600)
@@ -95,7 +103,7 @@ def _prebuild(args) -> None:
             runner.warm_up(srv, corpus, tok.bos_token_id, "prebuild")
         finally:
             srv.stop()
-    res = {"ref": args.ref, "commit": srv.commit, "preflight": srv.preflight, "host": srv.host_summary,
+    res = {"ref": args.ref, "commit": srv.commit, "jit": jit, "preflight": srv.preflight, "host": srv.host_summary,
            "env": {k: os.environ.get(k) for k in ("MAX_JOBS", "FLASHINFER_NVCC_THREADS", "NVCC_THREADS",
                                                   "TORCH_CUDA_ARCH_LIST", "FLASHINFER_WORKSPACE_BASE")}}
     fidelity.save_json(os.path.join(out_dir, "prebuild.json"), res)
@@ -171,6 +179,7 @@ def main() -> None:
     q.add_argument("--ref", required=True)
     q.add_argument("--set-baseline", action="store_true")
     sub.add_parser("peaks")
+    sub.add_parser("vllm-ref")
     pb = sub.add_parser("prebuild")
     pb.add_argument("--ref", default="base")
     s = sub.add_parser("sol")
@@ -194,6 +203,9 @@ def main() -> None:
         print(json.dumps(runner.save_noise_from(args.report), indent=1))
     elif args.cmd == "quality":
         _quality(args)
+    elif args.cmd == "vllm-ref":
+        res = vllm_ref.run(os.path.join(config.RUNS_DIR, runner.new_exp_id("vllm-ref")))
+        print(json.dumps({"summary": res["summary"], "host": res["host"]}, indent=1))
     elif args.cmd == "prebuild":
         _prebuild(args)
     elif args.cmd == "peaks":

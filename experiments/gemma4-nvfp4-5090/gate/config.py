@@ -34,6 +34,8 @@ MAX_SWAP_USED_GB = 2
 MAX_FOREIGN_GPU_GB = 4
 KILL_MEM_AVAILABLE_GB = 10
 KILL_LOAD1 = 48
+# One CUTLASS FP4 MoE cicc peaked at 9.6 GB, so 2 jobs fit the 24 GB scope.
+JIT_MAX_JOBS = 2
 
 
 class Workload(msgspec.Struct, frozen=True, kw_only=True):
