@@ -77,7 +77,8 @@ def main() -> None:
     props = torch.cuda.get_device_properties(0)
     res = {"device": props.name, "sm_count": props.multi_processor_count,
            "dram": dram_bandwidth(), "gemm": gemm_peaks(), "launch": launch_floor_us()}
-    json.dump(res, sys.stdout, indent=1)
+    with open(sys.argv[1], "w") as f:
+        json.dump(res, f, indent=1)
 
 
 if __name__ == "__main__":

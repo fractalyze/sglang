@@ -6,7 +6,7 @@ from absl.testing import absltest, parameterized
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from gate import config, fidelity, quality, runner, server, sol, stats  # noqa: E402
+from gate import config, fidelity, hostwatch, quality, runner, server, sol, stats  # noqa: E402
 
 
 def _leg(prefill, decode, w1_decode=2.55, w32_wall=4.0):
@@ -119,17 +119,40 @@ class RunnerTest(absltest.TestCase):
         self.assertEqual(runner.server_arg_diff(a, b, ["--attention-backend", "fa3"])["undeclared"], [])
 
 
-class HostMemoryTest(absltest.TestCase):
-    def test_refuses_launch_when_host_ram_is_short(self):
-        orig = server.host_available_gb
+class HostWatchTest(absltest.TestCase):
+    def _with(self, mem, swap, foreign):
+        orig = (hostwatch.meminfo_gb, hostwatch.foreign_gpu_gb, hostwatch.load1)
+        hostwatch.meminfo_gb = lambda: {"mem_available_gb": mem, "swap_used_gb": swap}
+        hostwatch.foreign_gpu_gb = lambda own_root_pid=None: foreign
+        hostwatch.load1 = lambda: 1.0
         try:
-            server.host_available_gb = lambda: config.MIN_HOST_AVAILABLE_GB - 1
-            with self.assertRaises(RuntimeError):
-                server.check_host_memory()
-            server.host_available_gb = lambda: config.MIN_HOST_AVAILABLE_GB + 1
-            server.check_host_memory()
+            return hostwatch.preflight()
         finally:
-            server.host_available_gb = orig
+            hostwatch.meminfo_gb, hostwatch.foreign_gpu_gb, hostwatch.load1 = orig
+
+    def test_preflight_passes_on_quiet_host(self):
+        self._with(50, 0, 0)
+
+    def test_preflight_refuses_low_ram_swap_or_foreign_gpu(self):
+        for args in ((config.MIN_HOST_AVAILABLE_GB - 1, 0, 0), (50, config.MAX_SWAP_USED_GB + 1, 0),
+                     (50, 0, config.MAX_FOREIGN_GPU_GB + 1)):
+            with self.assertRaises(hostwatch.HostUnsafe):
+                self._with(*args)
+
+    def test_phase_follows_server_log(self):
+        import tempfile
+
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "s.log")
+        with open(log, "w") as f:
+            f.write("Load weight begin\n")
+        dog = hostwatch.Watchdog(os.getpid(), os.path.join(d, "h.csv"), log)
+        dog._advance_phase_from_log()
+        self.assertEqual(dog.phase, "weight_load")
+        with open(log, "a") as f:
+            f.write("Running FlashInfer autotune with cache\n")
+        dog._advance_phase_from_log()
+        self.assertEqual(dog.phase, "autotune")
 
 
 class SolTest(absltest.TestCase):

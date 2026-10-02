@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import signal
 import subprocess
 import time
@@ -19,7 +18,7 @@ from typing import Dict, List, Optional
 
 import requests
 
-from gate import config
+from gate import config, hostwatch
 
 log = logging.getLogger(__name__)
 
@@ -81,27 +80,6 @@ def harness_commit() -> Dict:
     return {"commit": sha, "dirty": dirty}
 
 
-def host_available_gb() -> float:
-    with open("/proc/meminfo") as f:
-        for line in f:
-            if line.startswith("MemAvailable:"):
-                return int(line.split()[1]) / 1024**2
-    raise RuntimeError("MemAvailable missing from /proc/meminfo")
-
-
-def check_host_memory() -> None:
-    avail = host_available_gb()
-    if avail < config.MIN_HOST_AVAILABLE_GB:
-        raise RuntimeError(f"host has {avail:.1f} GB available < {config.MIN_HOST_AVAILABLE_GB} GB; not launching")
-
-
-def _memory_cap() -> List[str]:
-    if shutil.which("systemd-run") is None:
-        raise RuntimeError("systemd-run not found; refusing to launch an uncapped server")
-    return ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={config.SERVER_MEMORY_MAX}",
-            "-p", "MemorySwapMax=0"]
-
-
 class Server:
     """One server lifetime for one ref, logging to `log_path`."""
 
@@ -111,11 +89,15 @@ class Server:
         self.extra_args = extra_args or []
         self.url = f"http://127.0.0.1:{config.PORT}"
         self.proc: Optional[subprocess.Popen] = None
+        self._watchdog: Optional[hostwatch.Watchdog] = None
+        self._log_file = None
+        self.preflight: Optional[Dict] = None
+        self.host_summary: Optional[Dict] = None
         self.tree = tree_for(ref["commit"])
         self.commit = resolve_commit(ref["commit"])
 
     def command(self) -> List[str]:
-        return [*_memory_cap(), *self.server_command()]
+        return [*hostwatch.memory_cap_prefix(), *self.server_command()]
 
     def server_command(self) -> List[str]:
         return [
@@ -130,7 +112,7 @@ class Server:
         ]
 
     def start(self, timeout_s: int = 900) -> None:
-        check_host_memory()
+        self.preflight = hostwatch.preflight()
         env = dict(os.environ)
         env.update(self.ref["env"])
         env["PYTHONPATH"] = os.path.join(self.tree, "python") + os.pathsep + env.get("PYTHONPATH", "")
@@ -138,10 +120,15 @@ class Server:
         self.proc = subprocess.Popen(
             self.command(), stdout=self._log_file, stderr=subprocess.STDOUT, env=env, start_new_session=True
         )
+        self._watchdog = hostwatch.Watchdog(
+            self.proc.pid, os.path.join(os.path.dirname(self.log_path), "hostmem.csv"), self.log_path
+        ).start()
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             if self.proc.poll() is not None:
-                raise RuntimeError(f"server exited with {self.proc.returncode}; see {self.log_path}")
+                raise RuntimeError(
+                    f"server exited with {self.proc.returncode} (watchdog: {self._watchdog.tripped}); see {self.log_path}"
+                )
             try:
                 if requests.get(f"{self.url}/health_generate", timeout=5).status_code == 200:
                     return
@@ -158,8 +145,12 @@ class Server:
             except subprocess.TimeoutExpired:
                 os.killpg(self.proc.pid, signal.SIGKILL)
                 self.proc.wait()
-        if getattr(self, "_log_file", None):
+        if self._watchdog is not None:
+            self.host_summary = self._watchdog.stop()
+            self._watchdog = None
+        if self._log_file is not None:
             self._log_file.close()
+            self._log_file = None
 
     def __enter__(self):
         try:

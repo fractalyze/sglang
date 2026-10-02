@@ -25,11 +25,15 @@ HIDDEN_DIR = os.path.join(ROOT, "hidden")
 REFERENCE_DIR = os.path.join(ROOT, "reference")
 GPU_LOCK = os.path.join(ROOT, "gpu.lock")
 PORT = 31000
-# Both study hosts dropped off the network right after an uncapped server
-# launch (2026-10-02), so every server runs in a memory-capped scope and a leg
-# refuses to start when the host is short of RAM. Picked to fit 60 GB hosts.
-SERVER_MEMORY_MAX = "28G"
+# Host-safety protocol (gate/hostwatch.py) after two host OOM crashes on
+# 2026-10-02; limits set by the study coordinator for 60 GB shared hosts.
+HOST_LOCK = os.path.join(ROOT, "host.lock")
+SERVER_MEMORY_MAX = "24G"
 MIN_HOST_AVAILABLE_GB = 30
+MAX_SWAP_USED_GB = 2
+MAX_FOREIGN_GPU_GB = 4
+KILL_MEM_AVAILABLE_GB = 10
+KILL_LOAD1 = 48
 
 
 class Workload(msgspec.Struct, frozen=True, kw_only=True):

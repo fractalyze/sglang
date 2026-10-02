@@ -20,6 +20,9 @@ export TRITON_CACHE_DIR=$G4_HOME/cache/triton TORCHINDUCTOR_CACHE_DIR=$G4_HOME/c
 export FLASHINFER_WORKSPACE_BASE=$G4_HOME/cache/flashinfer CUDA_CACHE_PATH=$G4_HOME/cache/nv
 export TVM_FFI_CACHE_DIR=$G4_HOME/cache/tvm-ffi CUTE_DSL_CACHE_DIR=$G4_HOME/cache/cute-dsl
 export SGLANG_CACHE_DIR=$G4_HOME/cache/sglang SGLANG_BUILD_RUST_EXTS=none
+# Host-safety protocol: JIT builds never fan out to nproc+2 parallel nvcc jobs
+# (that OOM-killed both hosts on 2026-10-02). FlashInfer and tvm_ffi read MAX_JOBS.
+export MAX_JOBS=4 FLASHINFER_NVCC_THREADS=1 NVCC_THREADS=1 TORCH_CUDA_ARCH_LIST=12.0
 export CUDA_HOME=/usr/local/cuda-13 PATH=/usr/local/cuda-13/bin:$HOME/.local/bin:$PATH
 mkdir -p "$TMPDIR"
 if [ -f "$G4_VENV/bin/activate" ]; then source "$G4_VENV/bin/activate"; fi

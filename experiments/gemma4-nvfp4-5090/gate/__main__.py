@@ -4,6 +4,7 @@
   gate calibrate --ref base            # fidelity reference + KL thresholds (once per baseline)
   gate set-noise --report <A/A report.json>
   gate quality --ref <ref> [--set-baseline]
+  gate prebuild --ref base            # JIT + autotune once, capped and watched
   gate peaks                           # measured DRAM BW, GEMM peaks, launch floor
   gate sol --ref base                  # router recording + SOL tables
   gate sol-report --report <report.json>
@@ -14,11 +15,10 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
 import sys
 import time
 
-from gate import config, fidelity, prompts, quality, runner, server, solrun, stats
+from gate import config, fidelity, hostwatch, prompts, quality, runner, server, solrun
 
 PEAKS_PATH = os.path.join(config.REFERENCE_DIR, "peaks.json")
 SOL_DIR = os.path.join(config.REFERENCE_DIR, "sol")
@@ -31,7 +31,7 @@ def _calibrate(args) -> None:
     ref = server.load_ref(args.ref)
     out_dir = os.path.join(config.RUNS_DIR, runner.new_exp_id("calibrate"))
     os.makedirs(out_dir)
-    with runner.gpu_lock(), server.Server(ref, os.path.join(out_dir, "server.log")) as srv:
+    with hostwatch.host_lock(), server.Server(ref, os.path.join(out_dir, "server.log")) as srv:
         reference = fidelity.run(srv.url, concurrency=fidelity.REFERENCE_CONCURRENCY)
         serial = fidelity.run(srv.url, concurrency=fidelity.CALIBRATION_CONCURRENCY)
         repeat = fidelity.run(srv.url, concurrency=fidelity.REFERENCE_CONCURRENCY)
@@ -52,7 +52,7 @@ def _quality(args) -> None:
     out_dir = os.path.join(config.RUNS_DIR, runner.new_exp_id(f"quality-{args.ref}"))
     os.makedirs(out_dir)
     tok = prompts.load_tokenizer()
-    with runner.gpu_lock(), server.Server(ref, os.path.join(out_dir, "server.log")) as srv:
+    with hostwatch.host_lock(), server.Server(ref, os.path.join(out_dir, "server.log")) as srv:
         res = quality.run(srv.url, tok)
         res["commit"] = srv.commit
     res["ref"] = args.ref
@@ -65,18 +65,45 @@ def _quality(args) -> None:
 
 
 def _peaks(args) -> None:
-    os.makedirs(config.REFERENCE_DIR, exist_ok=True)
-    with runner.gpu_lock():
-        out = subprocess.run([config.VENV_PYTHON, "-m", "gate.peaks"], check=True, capture_output=True, text=True,
-                             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))).stdout
-    res = json.loads(out)
-    res["measured_at"] = time.strftime("%Y-%m-%dT%H:%M")
-    fidelity.save_json(PEAKS_PATH, res)
+    out_dir = os.path.join(config.RUNS_DIR, runner.new_exp_id("peaks"))
+    os.makedirs(out_dir)
+    tmp = os.path.join(out_dir, "peaks.json")
+    with hostwatch.host_lock():
+        res = hostwatch.run_wrapped([config.VENV_PYTHON, "-m", "gate.peaks", tmp],
+                                    os.path.join(out_dir, "hostmem.csv"), os.path.join(out_dir, "peaks.log"))
+    if res["returncode"] != 0:
+        sys.exit(f"peaks failed: {res}")
+    peaks = json.load(open(tmp))
+    peaks["measured_at"] = time.strftime("%Y-%m-%dT%H:%M")
+    peaks["run_dir"] = out_dir
+    fidelity.save_json(PEAKS_PATH, peaks)
+    print(json.dumps(peaks, indent=1))
+
+
+def _prebuild(args) -> None:
+    """JIT/autotune step before any timed launch: the ref's exact server, every timed shape once, then stop."""
+    ref = server.load_ref(args.ref)
+    out_dir = os.path.join(config.RUNS_DIR, runner.new_exp_id(f"prebuild-{args.ref}"))
+    os.makedirs(out_dir)
+    tok = prompts.load_tokenizer()
+    corpus = prompts.load_corpus(tok)
+    with hostwatch.host_lock():
+        srv = server.Server(ref, os.path.join(out_dir, "server.log"))
+        try:
+            srv.start(timeout_s=3600)
+            srv._watchdog.set_phase("first_requests")
+            runner.warm_up(srv, corpus, tok.bos_token_id, "prebuild")
+        finally:
+            srv.stop()
+    res = {"ref": args.ref, "commit": srv.commit, "preflight": srv.preflight, "host": srv.host_summary,
+           "env": {k: os.environ.get(k) for k in ("MAX_JOBS", "FLASHINFER_NVCC_THREADS", "NVCC_THREADS",
+                                                  "TORCH_CUDA_ARCH_LIST", "FLASHINFER_WORKSPACE_BASE")}}
+    fidelity.save_json(os.path.join(out_dir, "prebuild.json"), res)
     print(json.dumps(res, indent=1))
 
 
 def _sol(args) -> None:
-    with runner.gpu_lock():
+    with hostwatch.host_lock():
         res = solrun.run(args.ref, SOL_DIR, PEAKS_PATH)
     print(json.dumps({wl: {"decode_step_ms": w["decode"]["sol_step_ms"], "prefill": w["prefill"],
                            "distinct_experts_mean": w["distinct_experts_mean"]}
@@ -144,6 +171,8 @@ def main() -> None:
     q.add_argument("--ref", required=True)
     q.add_argument("--set-baseline", action="store_true")
     sub.add_parser("peaks")
+    pb = sub.add_parser("prebuild")
+    pb.add_argument("--ref", default="base")
     s = sub.add_parser("sol")
     s.add_argument("--ref", default="base")
     sr = sub.add_parser("sol-report")
@@ -165,6 +194,8 @@ def main() -> None:
         print(json.dumps(runner.save_noise_from(args.report), indent=1))
     elif args.cmd == "quality":
         _quality(args)
+    elif args.cmd == "prebuild":
+        _prebuild(args)
     elif args.cmd == "peaks":
         _peaks(args)
     elif args.cmd == "sol":

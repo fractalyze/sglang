@@ -1,7 +1,6 @@
 """`gate run`: ABBA legs, integrity checks, fidelity, verdict, report and ledger line."""
 
 import asyncio
-import fcntl
 import json
 import logging
 import os
@@ -9,27 +8,14 @@ import platform
 import secrets
 import subprocess
 import time
-from contextlib import contextmanager
 from typing import Dict, List, Optional
 
-from gate import client, config, fidelity, gpu, prompts, server, stats
+from gate import client, config, fidelity, gpu, hostwatch, prompts, server, stats
 
 log = logging.getLogger(__name__)
 
 # server_info keys that legitimately differ between two launches of one config.
 _VOLATILE_SERVER_KEYS = {"random_seed", "version", "internal_states", "max_total_num_tokens", "pid"}
-
-
-@contextmanager
-def gpu_lock():
-    os.makedirs(os.path.dirname(config.GPU_LOCK), exist_ok=True)
-    with open(config.GPU_LOCK, "a") as f:
-        log.info("waiting for %s", config.GPU_LOCK)
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def new_exp_id(label: str) -> str:
@@ -71,7 +57,7 @@ def _timed_workloads(srv: server.Server, corpus, bos: int, seed: str) -> Dict:
     return out
 
 
-def _warm_up(srv: server.Server, corpus, bos: int, seed: str) -> None:
+def warm_up(srv: server.Server, corpus, bos: int, seed: str) -> None:
     """Runs every timed shape once so JIT, autotune and allocator growth stay outside the window."""
     for wl in config.WORKLOADS:
         ps = prompts.timing_prompts(corpus, bos, f"warmup/{seed}/{wl.name}", wl.concurrency, wl.prompt_tokens)
@@ -89,7 +75,7 @@ def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fide
         leg["server_cmd"] = srv.command()
         leg["weights_at_load"] = srv.weight_checksum()
         leg["server_info"] = srv.server_info()
-        _warm_up(srv, corpus, bos, pair_seed)
+        warm_up(srv, corpus, bos, pair_seed)
         leg["gpu_before_window"] = gpu.wait_quiet(srv.proc.pid, events)
         offset = srv.log_offset()
         with gpu.Telemetry(srv.proc.pid) as tel:
@@ -102,6 +88,8 @@ def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fide
         if with_fidelity:
             leg["fidelity_outputs"] = fidelity.run(srv.url)
         leg["weights_at_end"] = srv.weight_checksum()
+        leg["host_preflight"] = srv.preflight
+    leg["host"] = srv.host_summary
     leg["integrity"] = leg_integrity(leg)
     return leg
 
@@ -116,6 +104,7 @@ def leg_integrity(leg: Dict) -> Dict:
         "no_foreign_gpu_process_in_window": not leg["telemetry"]["foreign_seen"],
         "no_thermal_throttle_in_window": not leg["telemetry"]["thermal_or_hw_throttle_samples"],
         "weights_unchanged_during_leg": (not w_load["ok"]) or w_load == w_end,
+        "host_watchdog_not_tripped": leg["host"]["tripped"] is None,
     }
     return {"checks": checks, "ok": all(checks.values()), "prefix_cache_hit_rate": cached / max(prompt, 1)}
 
@@ -158,7 +147,7 @@ def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, n
     _write(os.path.join(run_dir, "meta.json"), meta)
     refs = {"control": control_ref, "candidate": candidate_ref}
     legs: Dict[str, List[Dict]] = {"control": [], "candidate": []}
-    with gpu_lock():
+    with hostwatch.host_lock():
         for k, order in enumerate(abba_order(n_pairs)):
             for role in order:
                 leg_dir = os.path.join(run_dir, f"pair{k}-{role}")
