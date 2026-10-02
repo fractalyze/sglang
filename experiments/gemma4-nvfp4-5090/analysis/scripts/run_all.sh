@@ -8,10 +8,12 @@ cd $G4/src-gate/experiments/gemma4-nvfp4-5090
 mkdir -p $G4/results/microbench
 $G4_VENV/bin/python -m gate.hostwatch --csv $G4/results/microbench/hostmem.csv \
   --log $G4/results/microbench/microbench.log -- $G4_VENV/bin/python $S/microbench.py
-bash $S/job.sh prebuild prebuild || exit 1
+bash $S/job.sh prebuild prebuild
+[ -e $G4/results/prebuild/COMPILE_DETECTED ] && { echo "$(date -Is) STOP: prebuild would compile" >> $G4/results/jobs.log; exit 3; }
 bash $S/job.sh base profile
 bash $S/job.sh experts experts --expert-distribution-recorder-mode per_token --expert-distribution-recorder-buffer-size -1
-# Knob screen (screen, unpaired).
+# Knob screen (screen, unpaired). A step that hits a JIT cache miss stops itself
+# (COMPILE_DETECTED) and the screen continues with the next config.
 bash $S/job.sh kv_bf16 time --kv-cache-dtype bf16
 bash $S/job.sh chunk8k time --chunked-prefill-size 8192
 bash $S/job.sh chunk16k time --chunked-prefill-size 16384 --max-prefill-tokens 16384

@@ -36,6 +36,17 @@ SPID=$!
 cleanup() { kill $SPID 2>/dev/null; sleep 5; pkill -9 -P $SPID 2>/dev/null; kill -9 $SPID 2>/dev/null; }
 trap cleanup EXIT
 
+# Coordinator rule: W2 compiles nothing; it reuses W1b's FlashInfer/tvm JIT
+# cache. Any nvcc/cicc (FlashInfer/tvm JIT; Triton only uses ptxas) means a
+# cache miss: stop this step and report it.
+( while kill -0 $SPID 2>/dev/null; do
+    if pgrep -u "$(id -u)" -x "nvcc|cicc" >/dev/null; then
+      echo "$(date -Is) COMPILE-DETECTED $name: $(pgrep -u "$(id -u)" -a -x 'nvcc|cicc' | head -3)" >> $G4/results/jobs.log
+      touch $R/COMPILE_DETECTED; kill $SPID; pkill -u "$(id -u)" -x "nvcc|cicc|ninja"; exit 0
+    fi
+    sleep 2
+  done ) &
+
 t0=$(date +%s)
 until curl -sf $URL/health_generate >/dev/null 2>&1; do
   if ! kill -0 $SPID 2>/dev/null; then echo "$(date -Is) FAILED-LAUNCH $name" >> $G4/results/jobs.log; exit 1; fi
