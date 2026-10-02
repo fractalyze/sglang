@@ -193,19 +193,21 @@ def prefill_sol(flops: Dict[str, float], peaks_tflops: Dict[str, float], weight_
     }
 
 
-def distinct_experts_from_routes(routes: List, decode_steps: int) -> Dict[int, float]:
+def distinct_experts_from_routes(routes: List) -> Dict[int, float]:
     """Mean distinct experts per layer per decode step of a batch.
 
-    `routes[r]` is request r's routed experts, int array [tokens, layers, top_k]
-    starting at its first generated token. Step k is the union over the batch of
-    each request's token k; requests of unequal prompt length can be one prefill
-    chunk out of step, so this is the lockstep approximation of a forward pass.
+    `routes[r]` is request r's routed experts, int array [steps, layers, top_k]
+    from routed_experts_start_len = prompt length: row j is the decode pass that
+    consumed generated token j. Step j is the union over the batch; requests of
+    unequal prompt length can be a prefill chunk out of step, so this is the
+    lockstep approximation of one forward pass.
     """
     import numpy as np
 
     n_layers = routes[0].shape[1]
+    steps = min(r.shape[0] for r in routes)
     sums = np.zeros(n_layers)
-    for k in range(1, decode_steps):
+    for k in range(steps):
         stacked = np.concatenate([r[k] for r in routes], axis=1)
         sums += [len(np.unique(stacked[layer])) for layer in range(n_layers)]
-    return {layer: float(sums[layer] / (decode_steps - 1)) for layer in range(n_layers)}
+    return {layer: float(sums[layer] / steps) for layer in range(n_layers)}

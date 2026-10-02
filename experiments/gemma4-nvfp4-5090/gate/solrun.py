@@ -62,7 +62,7 @@ def measure_router(ref_name: str, out_dir: str) -> Dict[str, Dict[int, float]]:
             per_group = []
             for g in groups:
                 routes = asyncio.run(_routed(srv.url, g, _DECODE))
-                per_group.append(sol.distinct_experts_from_routes(routes, decode_steps=_DECODE))
+                per_group.append(sol.distinct_experts_from_routes(routes))
             layers = per_group[0].keys()
             distinct[name] = {l: sum(d[l] for d in per_group) / len(per_group) for l in layers}
     return distinct

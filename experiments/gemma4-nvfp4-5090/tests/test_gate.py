@@ -195,10 +195,10 @@ class SolTest(absltest.TestCase):
     def test_distinct_experts_unions_streams_per_step(self):
         import numpy as np
 
-        a = np.array([[[0, 1]], [[0, 1]], [[2, 3]]])  # 3 tokens, 1 layer, top-2
-        b = np.array([[[9, 9]], [[1, 5]], [[2, 3]]])
-        # step 1: {0,1,5} -> 3; step 2: {2,3} -> 2; step 0 (prefill-produced) is skipped.
-        self.assertEqual(sol.distinct_experts_from_routes([a, b], decode_steps=3), {0: 2.5})
+        a = np.array([[[0, 1]], [[2, 3]]])  # 2 decode steps, 1 layer, top-2
+        b = np.array([[[1, 5]], [[2, 3]]])
+        # step 0: {0,1,5} -> 3; step 1: {2,3} -> 2.
+        self.assertEqual(sol.distinct_experts_from_routes([a, b]), {0: 2.5})
 
 
 if __name__ == "__main__":
