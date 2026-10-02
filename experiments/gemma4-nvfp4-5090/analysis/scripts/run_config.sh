@@ -67,18 +67,28 @@ wait_quiet() {
     [ $waited -gt 1200 ] && { echo "$(date -Is) proceeding despite co-tenant (labelled)" >> $R/cotenant.log; break; }
   done
 }
-clocks() { nvidia-smi --query-gpu=timestamp,clocks.sm,clocks.mem,temperature.gpu,power.draw,utilization.gpu --format=csv,noheader >> $R/clocks.csv; }
+clocks() {
+  nvidia-smi --query-gpu=timestamp,clocks.sm,clocks.mem,temperature.gpu,power.draw,utilization.gpu --format=csv,noheader >> $R/clocks.csv
+  # Host CPU contention skews launch overhead and decode timing: a leg with
+  # load1 > 8 from other users is contaminated and gets re-run.
+  echo "$(date -Is) load=$(cut -d' ' -f1-3 /proc/loadavg) foreign_top=$(ps -eo user,pcpu,comm --sort=-pcpu --no-headers | grep -v "^$(id -un) " | head -3 | tr -s ' ' | tr '\n' ';')" >> $R/hostload.log
+}
+contaminated() { awk '{split($2,a,"="); if (a[2] > 8) bad=1} END {exit !bad}' <(tail -1 $R/hostload.log); }
 drive() { python $S/drive.py --url $URL --prompts $P "$@" 2>&1 | tail -1 | tee -a $R/summary.txt; }
 
 if [ "$mode" = prebuild ]; then
   drive --batch 8 --decode-len 8 --reps 1 --warmup 0 --label "$name prebuild"
 fi
 if [ "$mode" = time ] || [ "$mode" = profile ]; then
-  wait_quiet; clocks
-  drive --batch 8 --decode-len 128 --reps 3 --warmup 1 --label "$name B8" --out $R/time_b8.json
-  clocks
-  drive --batch 1 --decode-len 128 --reps 3 --warmup 1 --label "$name B1" --out $R/time_b1.json
-  clocks
+  for B in 8 1; do
+    for attempt in 1 2 3; do
+      wait_quiet; clocks
+      drive --batch $B --decode-len 128 --reps 3 --warmup 1 --label "$name B$B" --out $R/time_b$B.json
+      clocks
+      contaminated || break
+      echo "$(date -Is) B$B attempt $attempt contaminated (load > 8); re-run" | tee -a $R/summary.txt
+    done
+  done
 fi
 if [ "$mode" = profile ]; then
   drive --batch 8 --decode-len 32 --reps 1 --warmup 0 --profile-dir $R/trace_b8 --profile-steps 8 --label "$name B8 prof"
