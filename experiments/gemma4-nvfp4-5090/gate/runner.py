@@ -87,6 +87,7 @@ def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fide
         leg["backends"] = srv.backend_report()
         if with_fidelity:
             leg["fidelity_outputs"] = fidelity.run(srv.url)
+            leg["fidelity_forced"] = fidelity.run_forced(srv.url, fidelity.load_json(fidelity.REFERENCE_PATH))
         leg["weights_at_end"] = srv.weight_checksum()
         leg["host_preflight"] = srv.preflight
     leg["host"] = srv.host_summary
@@ -120,7 +121,8 @@ def timed_output_agreement(control: Dict, candidate: Dict) -> Dict:
         for rc, rk in zip(control["workloads"][wl], candidate["workloads"][wl]):
             for sc, sk in zip(rc["streams"], rk["streams"]):
                 rates.append(fidelity.token_match_rate(sc["output_ids"] or [], sk["output_ids"] or []))
-    return {"min": min(rates), "mean": sum(rates) / len(rates), "n_streams": len(rates)}
+    return {"min": min(rates), "mean": sum(rates) / len(rates), "n_streams": len(rates),
+            "n_identical": sum(1 for r in rates if r == 1.0)}
 
 
 def server_arg_diff(control: Dict, candidate: Dict, declared: List[str]) -> Dict:
@@ -172,9 +174,12 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
     fid = {}
     if os.path.exists(fidelity.REFERENCE_PATH):
         reference = fidelity.load_json(fidelity.REFERENCE_PATH)
+        ref_forced = fidelity.load_json(fidelity.REFERENCE_FORCED_PATH)
         for role, ls in legs.items():
             cmp = fidelity.compare(reference, ls[0]["fidelity_outputs"])
-            fid[role] = {"compare": cmp, "verdict": fidelity.verdict(cmp, thresholds) if thresholds else None}
+            cmp_forced = fidelity.compare_forced(reference, ref_forced, ls[0]["fidelity_forced"])
+            fid[role] = {"compare": cmp, "compare_forced": cmp_forced,
+                         "verdict": fidelity.verdict(cmp, cmp_forced, thresholds) if thresholds else None}
     args_diff = server_arg_diff(control[0], candidate[0], meta["candidate"].get("server_args", []) +
                                 meta["control"].get("server_args", []))
     w_c, w_k = control[0]["weights_at_load"], candidate[0]["weights_at_load"]
@@ -182,13 +187,13 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
     integrity = {
         "legs_ok": all(l["integrity"]["ok"] for ls in legs.values() for l in ls),
         "per_leg": [{"pair": l["pair"], "role": l["role"], **l["integrity"]} for ls in legs.values() for l in ls],
-        "timed_output_agreement_min": min(a["min"] for a in agreement),
+        "timed_output_agreement_mean": sum(a["mean"] for a in agreement) / len(agreement),
         "undeclared_server_arg_diffs": args_diff["undeclared"],
         "weights_match_control": weights_match,
     }
     integrity["ok"] = (
         integrity["legs_ok"]
-        and integrity["timed_output_agreement_min"] >= config.TOKEN_MATCH_MIN
+        and integrity["timed_output_agreement_mean"] >= config.TIMED_OUTPUT_AGREEMENT_MIN
         and not args_diff["undeclared"]
         and (weights_match is not False or meta["candidate"]["weight_layout_change"])
     )

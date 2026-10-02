@@ -78,5 +78,9 @@ KL_MEAN_FLOOR = 1e-3
 KL_P99_FLOOR = 1e-2
 
 # Quality: absolute accuracy may drop at most this many points vs baseline.
+# Integrity, not fidelity: the two arms' timed outputs on the same prompts must
+# mostly agree (the baseline flips greedy near-ties run to run, so not all).
+TIMED_OUTPUT_AGREEMENT_MIN = 0.5
+
 QUALITY_TOLERANCE_PT = 1.0
 GSM8K_N = 200

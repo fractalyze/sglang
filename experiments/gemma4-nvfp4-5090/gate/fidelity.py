@@ -1,10 +1,15 @@
-"""Fidelity gate: greedy-token agreement and top-k logprob KL against the pinned baseline.
+"""Fidelity gate against the pinned baseline: teacher-forced top-1 agreement and logprob KL.
 
-The prompts live only on the host (config.HIDDEN_DIR). The reference outputs
-are the pinned baseline's greedy decode with every prompt in one batch.
-Thresholds come from `calibrate`: the baseline run again at a different batch
-composition (one prompt at a time), which is the nondeterminism a correct
-kernel change can legitimately add.
+The prompts live only on the host (config.HIDDEN_DIR). The reference is the
+pinned baseline's greedy decode with every prompt in one batch. The baseline is
+not run-to-run deterministic: a repeat at the same batch composition already
+flips greedy tokens on near-ties (4 of 22 prompts, 2026-10-02 calibration), so
+free-running token match cannot carry a 10% budget. The gated token check is
+therefore teacher-forced: the reference tokens are fed back as input and each
+position's top-1 must agree with the reference token. KL is gated both
+teacher-forced (prefill path, all positions) and free-running (decode path, up
+to the first divergence). Thresholds come from `calibrate`: the baseline again
+at a different batch composition (one prompt at a time).
 """
 
 import asyncio
@@ -19,6 +24,7 @@ from gate import client, config
 PROMPTS_PATH = os.path.join(config.HIDDEN_DIR, "fidelity_prompts.jsonl")
 REFERENCE_PATH = os.path.join(config.REFERENCE_DIR, "fidelity_reference.json")
 THRESHOLDS_PATH = os.path.join(config.REFERENCE_DIR, "fidelity_thresholds.json")
+REFERENCE_FORCED_PATH = os.path.join(config.REFERENCE_DIR, "fidelity_reference_forced.json")
 
 REFERENCE_CONCURRENCY = 64
 CALIBRATION_CONCURRENCY = 1
@@ -42,6 +48,35 @@ def run(url: str, concurrency: int = REFERENCE_CONCURRENCY) -> List[Dict]:
     )
     return [{"id": p["id"], "category": p["category"], "prompt_tokens": len(p["input_ids"]), **o}
             for p, o in zip(prompts, outs)]
+
+
+def run_forced(url: str, reference: List[Dict], concurrency: int = REFERENCE_CONCURRENCY) -> List[Dict]:
+    by_id = {p["id"]: p for p in load_prompts()}
+    rows = asyncio.run(client.forced_batch(
+        url, [by_id[r["id"]]["input_ids"] for r in reference], [r["output_ids"] for r in reference],
+        config.TOP_LOGPROBS, concurrency))
+    return [{"id": r["id"], "top_logprobs": row} for r, row in zip(reference, rows)]
+
+
+def compare_forced(reference: List[Dict], ref_forced: List[Dict], cand_forced: List[Dict]) -> Dict:
+    """Per prompt: share of reference positions where the candidate's top-1 is the reference token."""
+    ref_by, cand_by = {r["id"]: r for r in ref_forced}, {c["id"]: c for c in cand_forced}
+    per_prompt, all_kl = [], []
+    for ref in reference:
+        toks = ref["output_ids"]
+        cand_rows, ref_rows = cand_by[ref["id"]]["top_logprobs"], ref_by[ref["id"]]["top_logprobs"]
+        agree = sum(1 for t, row in zip(toks, cand_rows) if max(row)[1] == t) / max(len(toks), 1)
+        kls = [topk_kl(a, b) for a, b in zip(ref_rows, cand_rows)]
+        all_kl.extend(kls)
+        per_prompt.append({"id": ref["id"], "category": ref["category"], "top1_agreement": agree,
+                           "kl_mean": sum(kls) / len(kls) if kls else 0.0})
+    return {
+        "per_prompt": per_prompt,
+        "min_top1_agreement": min(p["top1_agreement"] for p in per_prompt),
+        "mean_top1_agreement": sum(p["top1_agreement"] for p in per_prompt) / len(per_prompt),
+        "kl_mean": sum(all_kl) / len(all_kl) if all_kl else 0.0,
+        "kl_p99": _percentile(all_kl, 0.99),
+    }
 
 
 def first_divergence(a: Sequence[int], b: Sequence[int]) -> int:
@@ -127,23 +162,34 @@ def compare(reference: List[Dict], candidate: List[Dict]) -> Dict:
     }
 
 
-def thresholds_from_calibration(calib: Dict) -> Dict:
+def thresholds_from_calibration(calib: Dict, calib_forced: Dict) -> Dict:
+    f = config.KL_CALIBRATION_FACTOR
     return {
-        "token_match_min": config.TOKEN_MATCH_MIN,
-        "kl_mean_max": max(config.KL_CALIBRATION_FACTOR * calib["kl_mean"], config.KL_MEAN_FLOOR),
-        "kl_p99_max": max(config.KL_CALIBRATION_FACTOR * calib["kl_p99"], config.KL_P99_FLOOR),
-        "calibration": {k: calib[k] for k in ("kl_mean", "kl_p99", "min_token_match_rate", "n_diverged")},
+        "top1_agreement_min": config.TOKEN_MATCH_MIN,
+        "decode_kl_mean_max": max(f * calib["kl_mean"], config.KL_MEAN_FLOOR),
+        "decode_kl_p99_max": max(f * calib["kl_p99"], config.KL_P99_FLOOR),
+        "forced_kl_mean_max": max(f * calib_forced["kl_mean"], config.KL_MEAN_FLOOR),
+        "forced_kl_p99_max": max(f * calib_forced["kl_p99"], config.KL_P99_FLOOR),
+        "calibration": {
+            "decode": {k: calib[k] for k in ("kl_mean", "kl_p99", "min_token_match_rate", "mean_token_match_rate",
+                                             "n_diverged")},
+            "forced": {k: calib_forced[k] for k in ("kl_mean", "kl_p99", "min_top1_agreement",
+                                                    "mean_top1_agreement")},
+        },
     }
 
 
-def verdict(cmp: Dict, thresholds: Dict) -> Dict:
-    failing = [p["id"] for p in cmp["per_prompt"] if p["token_match_rate"] < thresholds["token_match_min"]]
+def verdict(cmp: Dict, cmp_forced: Dict, thresholds: Dict) -> Dict:
+    """Free-running token match is reported in `cmp` but not gated (see module docstring)."""
+    failing = [p["id"] for p in cmp_forced["per_prompt"] if p["top1_agreement"] < thresholds["top1_agreement_min"]]
     checks = {
-        "token_match_per_prompt": not failing,
-        "kl_mean": cmp["kl_mean"] <= thresholds["kl_mean_max"],
-        "kl_p99": cmp["kl_p99"] <= thresholds["kl_p99_max"],
+        "forced_top1_per_prompt": not failing,
+        "forced_kl_mean": cmp_forced["kl_mean"] <= thresholds["forced_kl_mean_max"],
+        "forced_kl_p99": cmp_forced["kl_p99"] <= thresholds["forced_kl_p99_max"],
+        "decode_kl_mean": cmp["kl_mean"] <= thresholds["decode_kl_mean_max"],
+        "decode_kl_p99": cmp["kl_p99"] <= thresholds["decode_kl_p99_max"],
     }
-    return {"pass": all(checks.values()), "checks": checks, "prompts_below_match_budget": failing}
+    return {"pass": all(checks.values()), "checks": checks, "prompts_below_top1_budget": failing}
 
 
 def save_json(path: str, obj) -> None:

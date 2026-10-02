@@ -79,10 +79,24 @@ class FidelityTest(parameterized.TestCase):
         self.assertEqual(cmp["n_kl_positions"], 2)
 
     def test_thresholds_have_floors(self):
-        t = fidelity.thresholds_from_calibration({"kl_mean": 0.0, "kl_p99": 0.0, "min_token_match_rate": 1.0,
-                                                  "n_diverged": 0})
-        self.assertGreater(t["kl_mean_max"], 0)
-        self.assertGreater(t["kl_p99_max"], 0)
+        t = fidelity.thresholds_from_calibration(
+            {"kl_mean": 0.0, "kl_p99": 0.0, "min_token_match_rate": 1.0, "mean_token_match_rate": 1.0,
+             "n_diverged": 0},
+            {"kl_mean": 0.0, "kl_p99": 0.0, "min_top1_agreement": 1.0, "mean_top1_agreement": 1.0})
+        for k in ("decode_kl_mean_max", "decode_kl_p99_max", "forced_kl_mean_max", "forced_kl_p99_max"):
+            self.assertGreater(t[k], 0)
+
+    def test_forced_agreement_counts_reference_tokens(self):
+        rows_ok = [[(-0.1, 5), (-3.0, 6)], [(-0.2, 7), (-2.0, 8)]]
+        rows_bad = [[(-0.1, 5), (-3.0, 6)], [(-2.0, 7), (-0.2, 8)]]
+        ref = [{"id": "a", "category": "c", "output_ids": [5, 7]}]
+        cmp = fidelity.compare_forced(ref, [{"id": "a", "top_logprobs": rows_ok}],
+                                      [{"id": "a", "top_logprobs": rows_bad}])
+        self.assertAlmostEqual(cmp["per_prompt"][0]["top1_agreement"], 0.5)
+        thr = {"top1_agreement_min": 0.9, "forced_kl_mean_max": 9, "forced_kl_p99_max": 9,
+               "decode_kl_mean_max": 9, "decode_kl_p99_max": 9}
+        free = {"kl_mean": 0.0, "kl_p99": 0.0}
+        self.assertFalse(fidelity.verdict(free, cmp, thr)["pass"])
 
 
 class QualityTest(parameterized.TestCase):

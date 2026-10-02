@@ -36,15 +36,25 @@ def _calibrate(args) -> None:
         reference = fidelity.run(srv.url, concurrency=fidelity.REFERENCE_CONCURRENCY)
         serial = fidelity.run(srv.url, concurrency=fidelity.CALIBRATION_CONCURRENCY)
         repeat = fidelity.run(srv.url, concurrency=fidelity.REFERENCE_CONCURRENCY)
+        ref_forced = fidelity.run_forced(srv.url, reference, concurrency=fidelity.REFERENCE_CONCURRENCY)
+        serial_forced = fidelity.run_forced(srv.url, reference, concurrency=fidelity.CALIBRATION_CONCURRENCY)
         info = {"commit": srv.commit, "server_info": srv.server_info(), "weights": srv.weight_checksum()}
     calib = fidelity.compare(reference, serial)
-    thresholds = fidelity.thresholds_from_calibration(calib)
+    calib_forced = fidelity.compare_forced(reference, ref_forced, serial_forced)
+    # Teacher-forced prefill argmax vs the decode-path greedy token of the same run: checks the
+    # row alignment and measures how often prefill and decode numerics pick different tokens.
+    self_forced = fidelity.compare_forced(reference, ref_forced, ref_forced)
+    thresholds = fidelity.thresholds_from_calibration(calib, calib_forced)
     thresholds.update({"ref": args.ref, "commit": info["commit"], "prompts_digest": fidelity.prompts_digest(),
-                       "same_composition_repeat": fidelity.compare(reference, repeat)})
+                       "same_composition_repeat": fidelity.compare(reference, repeat),
+                       "forced_vs_decode_self_agreement": {k: self_forced[k] for k in ("min_top1_agreement",
+                                                                                       "mean_top1_agreement")}})
     fidelity.save_json(fidelity.REFERENCE_PATH, reference)
+    fidelity.save_json(fidelity.REFERENCE_FORCED_PATH, ref_forced)
     fidelity.save_json(fidelity.THRESHOLDS_PATH, thresholds)
     fidelity.save_json(os.path.join(out_dir, "calibration.json"),
-                       {"serial_vs_batched": calib, "thresholds": thresholds, "server": info})
+                       {"serial_vs_batched": calib, "serial_vs_batched_forced": calib_forced,
+                        "forced_self": self_forced, "thresholds": thresholds, "server": info})
     print(json.dumps({k: v for k, v in thresholds.items() if k != "same_composition_repeat"}, indent=1))
 
 

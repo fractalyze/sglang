@@ -91,3 +91,35 @@ async def generate_text(url: str, prompts: List[List[int]], max_new: int, concur
 
     async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
         return list(await asyncio.gather(*(one(session, p) for p in prompts)))
+
+
+async def _forced_one(session, url: str, prompt: List[int], continuation: List[int], top_n: int) -> List:
+    """Top-n logprobs at every continuation position, the continuation fed as input (teacher forcing)."""
+    payload = {
+        "input_ids": prompt + continuation,
+        "sampling_params": {"temperature": 0.0, "max_new_tokens": 1},
+        "return_logprob": True,
+        "top_logprobs_num": top_n,
+        "logprob_start_len": len(prompt),
+    }
+    async with session.post(f"{url}/generate", json=payload) as resp:
+        resp.raise_for_status()
+        body = await resp.json()
+    rows = body["meta_info"]["input_top_logprobs"]
+    if len(rows) == len(continuation) + 1 and not rows[0]:
+        rows = rows[1:]
+    if len(rows) != len(continuation):
+        raise RuntimeError(f"forced logprobs: {len(rows)} rows for {len(continuation)} tokens")
+    return [[(lp, tid) for lp, tid, *_ in pos] for pos in rows]
+
+
+async def forced_batch(url: str, prompts: List[List[int]], continuations: List[List[int]], top_n: int,
+                       concurrency: int) -> List[List]:
+    sem = asyncio.Semaphore(concurrency)
+
+    async def one(session, p, c):
+        async with sem:
+            return await _forced_one(session, url, p, c, top_n)
+
+    async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
+        return list(await asyncio.gather(*(one(session, p, c) for p, c in zip(prompts, continuations))))
