@@ -6,13 +6,10 @@ Baseline: checkpoint defaults plus `--moe-runner-backend flashinfer_cutlass`. Th
 has triton attention, FP8 KV on all layers, decode CUDA graph, and chunked prefill 4096
 (see `PROFILE.md` §1).
 
-> **Status: the predictions are analytic, and the screen is unmeasured.** bs2 lost its NVIDIA
-> module after a reboot, and bs3 is offline (see `REPORT.md`). Each prediction comes from the
-> byte model in `PROFILE.md` §2: decode Δ ≈ −(SOL removed / total SOL), times the fraction of
-> the step that is memory-bound. The real lever sizes depend on each component's measured
-> `sol_fraction`, which the staged profile produces. Re-rank once it lands. The
-> "Screen" column is filled from `scripts/run_all.sh`. Single runs there are labelled
-> "screen, unpaired" and never quoted as gains.
+> **Status: re-ranked on the bs2 measurements (2026-10-03).** `PROFILE.md` §3 has the
+> measured component tables and §4 the knob screen. The re-ranked list below supersedes the
+> analytic one, which is kept further down as the original prediction record. Screen
+> numbers are single unpaired launches; the trials in `../trials/` are the gated ones.
 
 World-model consult: one call, `consult_raw.txt` (14 changes). It is a **COLD START for this
 model**: no LLM trial is in the vault. Every row is from diffusion models (Qwen-Image 2.1,
@@ -36,7 +33,60 @@ evidence about this model. Those that bear on these candidates:
 - **T26 `qi21mk-h16`:** cuBLASLt nvjet block-scaled FP8 (982 TF) beat CUTLASS FP8 (494 TF) on
   sm_120. Use it for any prefill FP8 GEMM.
 
-## Ranked list
+## Re-ranked list (measured, bs2)
+
+Ordering rule (crawler feed #2): measured rank = share x (1 - sol_fraction), then
+confidence. "Gap" is achieved - SOL at B=8 (B=1 in brackets). Predicted deltas are step-time
+changes (negative is faster) and assume about half of a gap is recoverable, minus the vault
+C2 clock-bin give-back. The composite is `prefill^0.25 x decode^0.75` at W8.
+
+| # | Lever | Measured basis (B=8 [B=1]) | Pred. B=8 decode Δ | Pred. B=1 Δ | Pred. W8 composite | Conf. | Effort | Kind |
+|---|---|---|---|---|---|---|---|---|
+| R1 | **H1 MoE decode path** (marlin W4A16 with tanh-GeGLU at M≤16, or gather-GEMV) | rank 0.103 [0.123]. 3065 µs, sol_frac 0.69 [0.37], gap 943 [800] µs, of which glue 528 µs / 150 launches. 35.4 distinct experts, mean run 1.8 tokens. | −4 … −8% | −8 … −13% | +3 … +6% | med-low | M-L | code |
+| R2 | **H4 glue fusion**: norm+RoPE+FP8 KV write in one kernel (today RoPE, `ConvertToFloat8E4M3` and the store are separate), shared router/pre-FF-2 norm, two-launch post-attn norm | rank 0.090 [0.097]. 392 launches, 840 [632] µs for 13 µs of bytes (sol_frac 0.02). | −2 … −4% | −3 … −5% | +1.5 … +3% | medium | M | code |
+| R3 | **H14 (new) replace the SM80 WMMA fallback for small-M BF16 o_proj + dense MLP** (cuBLASLt algo pin / nvjet SM120, or a split-K GEMV) | rank 0.038 + 0.042 at B=8. All BF16 GEMMs run `cutlass_80_wmma_..._16x16`. o_proj 0.58 at B=8 vs 0.83 at B=1 for the same bytes; dense 0.63. Gap 733 µs combined. qkv (0.89) and lm_head (1.00) are not affected. | −3 … −5% | −1 … −2% | +2 … +4% | medium | S-M | code, **no fidelity risk** |
+| R4 | **H2 FP8 weight-only BF16 projections** | qkv+o+dense = 2836 [2502] µs = 31% [39%] of the step at sol_frac 0.58-0.89. Halving bytes saves ~1.0 ms SOL. | −8 … −13% | −13 … −19% | +6 … +10% | low (fidelity: NVIDIA left them BF16) | M-L | code + fidelity |
+| R5 | **H3 FP8 lm_head** | at SOL (1.00 [0.94]), 901 [941] µs. Only fewer bytes help: FP8 halves 1.5 GB. | −4 … −5% | −6 … −7% | +3 … +4% | medium | S-M | code + fidelity |
+| R6 | **T1 one-chunk prefill** (`--chunked-prefill-size 8192`) | screen: B=8 prefill −2.8%, B=8 decode −4.2% (suspect, `PROFILE.md` §4), B=1 0. | 0 … −4% (wave artefact?) | 0 | +0.7 … +3.5% | med (prefill) / low (decode) | knob | **gated now** |
+| R7 | **T2 attention split count 16** | sliding attention sol_frac 0.72 [0.18]; screen B=8 −1.1%, B=1 −2.0%. | −0.5 … −1.5% | −1.5 … −2.5% | +0.4 … +1.1% | medium | knob | **gated now** |
+| R8 | **Idle gaps** (step setup + inter-kernel idle, 547 [533] µs) | rank 0.060 [0.082]. Knobs do not move it: cg_bs8 −0.8%, contdec4 0 (screen). Needs fewer launches (R1/R2) or a persistent decode path. | — | — | — | — | L | follows R1/R2 |
+| R9 | **H5 dense MLP ‖ MoE on two streams** | dense 1029 µs at 0.63 next to MoE 3065 µs; both small-M. | −2 … −4% | −2 … −4% | +1.5 … +3% | low-med | M | code |
+| R10 | **H10 speculative decoding, B=1 only** (see below) | B=1 step 5.99 ms; B=8 step 9.30 ms = 1.55x B=1, so a 4-8 token verify costs ≤ 1.55x one B=1 step. | off at B≥8 | +20 … +60% tok/s | ≤ 0 at W8 (keep off) | low-med | S (flags + drafter) | knob + drafter |
+| R11 | H8 FP4 sliding KV | sliding attention 697 µs at 0.72; kv_bf16 screen shows bytes matter at B=8 (+3.7%). | −2 … −3% | ~0 | +1.5 … +2% | low | L | code + fidelity |
+| R12 | H9 BF16 KV on the 5 full layers | fidelity only. All-layer BF16 cost +3.7% at B=8; full layers are 1.3% of the step, so ~+0.5%. | +0.3 … +0.6% | ~0 | −0.5% | high | M | only if fidelity fails |
+
+Dropped by the measurements: **H13** (cg_bs8, contdec4 within noise of base; nocg/nooverlap
+are controls), **H11** (subsumed by R1's glue share), **H12** (`--enable-torch-compile`, vault
+T37 plus the host-RAM risk of inductor fan-out).
+
+### Speculative decoding at B=1 (crawler feed #3)
+
+Drafters on the hub for this target: `google/gemma-4-26B-A4B-it-assistant` (an MTP-style
+assistant head) and `z-lab/gemma-4-26B-A4B-it-DFlash` (a block-diffusion drafter). SGLang has
+both paths in tree: `python/sglang/srt/models/gemma4_mtp.py`
+(`Gemma4AssistantForCausalLM`, algorithm `FROZEN_KV_MTP`) and `models/dflash.py`
+(algorithm `DFLASH`). Neither has been launched on this checkpoint; the NVFP4 target with a
+BF16 drafter is untested.
+
+Verify-cost note. Speedup ≈ τ / (verify_cost + draft_cost), in units of one B=1 step, with
+τ = accepted tokens per round.
+- **Verify cost is cheap at B=1 on this model.** 86% of B=1 bytes are BF16 dense weights that
+  a k+1-token verify reads once. Measured: a B=8 decode step is 1.55x a B=1 step, and a
+  k=3 verify (4 tokens, ~22 distinct experts by the measured 8/35/71 curve) should cost
+  ~1.3x. DFlash verifies a 16-token block, about the B=16 cost, ~1.8x by interpolation.
+- **Break-even:** MTP k=3 needs τ ≳ 1.5 (plus draft time); DFlash-16 needs τ ≳ 2.
+- **At B=8 it does not pay:** Yukon never won with spec decode on this MoE at B=8 (a verify
+  of 8x(k+1) tokens doubles the experts touched and B=8 already amortizes the dense bytes).
+  The crawler data also shows MTP gain shrinking after NVFP4 (1.70x BF16 → 1.23x NVFP4),
+  because a 4-bit target makes the target step cheaper relative to the drafter. The positive
+  anchor is dense: Gemma-4 31B on H100 gets MTP 1.8x at concurrency 1.
+- **Consequence:** speculative decoding is a B=1-latency trial with its own metric (B=1
+  tok/s and acceptance length, fidelity = token-identical greedy), never part of the W8
+  composite. It needs a drafter download (bs2 /data has ~13 GB free after the model) and is
+  config-only.
+
+## Original analytic list (2026-10-02, superseded by the re-rank above)
+
 
 Rank = expected W8 composite gain x confidence. This is the analytic stand-in until the
 profile lands. Then the coordinator's rule applies (crawler feed #2): order by
@@ -66,26 +116,11 @@ Not candidates (checked):
 - **FP8 KV vs BF16 KV as a speed lever:** the baseline is already FP8 everywhere. `kv_bf16` sizes what FP8 buys, predicted at about +7-8% B=8 decode time for BF16.
 - **Skipping the fp32 logits copy and softcap for greedy:** 8x262144x4 B is about 25 MB per step, about 14 µs. Negligible.
 
-## Knob screen (screen, unpaired: nothing here is a gain until it passes W1's gate)
+## Knob screen
 
-Configs are staged in `scripts/run_all.sh` and run through `scripts/job.sh` (W1's hostwatch
-protocol). Each is one server launch with W1's baseline flags plus the knob, then B=8 x3 and
-B=1 x3 reps over diverse prompts. The radix cache is flushed per rep, and the prefix-cache hit
-tokens are recorded per stream (they must be 0).
-
-| Config | Flags (on top of baseline) | B=8 prefill s | B=8 decode ms/step | B=1 decode ms/step | Note |
-|---|---|---|---|---|---|
-| base | — | unmeasured | unmeasured | unmeasured | |
-| kv_bf16 | `--kv-cache-dtype bf16` | unmeasured | unmeasured | unmeasured | sizes the FP8-KV value |
-| chunk8k | `--chunked-prefill-size 8192` | unmeasured | unmeasured | unmeasured | H7 |
-| chunk16k | `--chunked-prefill-size 16384 --max-prefill-tokens 16384` | unmeasured | unmeasured | unmeasured | H7 |
-| splits4 / splits16 | `--triton-attention-num-kv-splits 4/16` | unmeasured | unmeasured | unmeasured | H6 |
-| cg_bs8 | `--cuda-graph-max-bs 8` | unmeasured | unmeasured | unmeasured | H13 |
-| nocg | `--disable-cuda-graph` | unmeasured | unmeasured | unmeasured | control: launch share |
-| nooverlap | `--disable-overlap-schedule` | unmeasured | unmeasured | unmeasured | control |
-| contdec4 | `--num-continuous-decode-steps 4` | unmeasured | unmeasured | unmeasured | H13 |
-| tcompile | `--enable-torch-compile` | skipped | | | H12. Dropped from the screen: vault T37 (inductor FP8 breaks on sm_120), and inductor compile fan-out is a host-RAM risk under the host-safety protocol. Run only as a deliberate trial. |
-| attn_trtllm / moe_cutedsl / moe_marlin | | skipped | | | Settled from code (SM100-only kernels; gelu rejected). Launch attempts would add JIT risk for no information. |
+Measured on bs2; the table with deltas against base is `PROFILE.md` §4. tcompile,
+attn_trtllm, moe_cutedsl and moe_marlin were not launched (vault T37 and host-RAM risk;
+SM100-only kernels; gelu rejected).
 
 Hand-off: each hypothesis that the gate takes goes through wm-preregister → implement → W1
 gate → wm-record. That gives prediction vs result per row, using the "Pred." columns above as
