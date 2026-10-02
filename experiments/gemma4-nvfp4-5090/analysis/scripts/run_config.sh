@@ -14,13 +14,13 @@ set -uo pipefail
 source /data/jooman/gemma4nv/src-gate/experiments/gemma4-nvfp4-5090/env/env.sh
 name=$1; mode=$2; shift 2
 S=$G4/src-analysis/analysis-scripts
-R=$G4/results/$name
+R=$G4_HOME/results/$name
 URL=http://127.0.0.1:30000
-P=$G4/results/prompts_1024.json
+P=$G4_HOME/results/prompts_1024.json
 # W1's pinned baseline flags (gate/refs.json "base"); extra flags are the knob.
 BASE=(--moe-runner-backend flashinfer_cutlass --cuda-graph-max-bs-decode 32 --decode-log-interval 1)
 mkdir -p $R
-echo "$(date -Is) start $name mode=$mode host=$(hostname) flags=$*" >> $G4/results/jobs.log
+echo "$(date -Is) start $name mode=$mode host=$(hostname) flags=$*" >> $G4_HOME/results/jobs.log
 git -C $G4/src-analysis rev-parse HEAD > $R/commit.txt 2>/dev/null || cat $G4/src-analysis/COMMIT > $R/commit.txt
 printf '%s\n' "${BASE[*]} $*" > $R/flags.txt
 python -c "import torch, flashinfer, sglang; print(torch.__version__, flashinfer.__version__)" > $R/versions.txt 2>&1
@@ -36,21 +36,23 @@ SPID=$!
 cleanup() { kill $SPID 2>/dev/null; sleep 5; pkill -9 -P $SPID 2>/dev/null; kill -9 $SPID 2>/dev/null; }
 trap cleanup EXIT
 
-# Coordinator rule: W2 compiles nothing; it reuses W1b's FlashInfer/tvm JIT
-# cache. Any nvcc/cicc (FlashInfer/tvm JIT; Triton only uses ptxas) means a
-# cache miss: stop this step and report it.
-( while kill -0 $SPID 2>/dev/null; do
+# Only the prebuild step may JIT-compile (MAX_JOBS=4 from env.sh). In every
+# other step an nvcc/cicc (FlashInfer/tvm JIT; Triton only uses ptxas) is a
+# cache miss: stop the step and report it.
+[ "$mode" != prebuild ] && ( while kill -0 $SPID 2>/dev/null; do
     if pgrep -u "$(id -u)" -x "nvcc|cicc" >/dev/null; then
-      echo "$(date -Is) COMPILE-DETECTED $name: $(pgrep -u "$(id -u)" -a -x 'nvcc|cicc' | head -3)" >> $G4/results/jobs.log
+      echo "$(date -Is) COMPILE-DETECTED $name: $(pgrep -u "$(id -u)" -a -x 'nvcc|cicc' | head -3)" >> $G4_HOME/results/jobs.log
       touch $R/COMPILE_DETECTED; kill $SPID; pkill -u "$(id -u)" -x "nvcc|cicc|ninja"; exit 0
     fi
     sleep 2
   done ) &
 
+launch_timeout=1200
+[ "$mode" = prebuild ] && launch_timeout=4800
 t0=$(date +%s)
 until curl -sf $URL/health_generate >/dev/null 2>&1; do
-  if ! kill -0 $SPID 2>/dev/null; then echo "$(date -Is) FAILED-LAUNCH $name" >> $G4/results/jobs.log; exit 1; fi
-  if [ $(( $(date +%s) - t0 )) -gt 1200 ]; then echo "$(date -Is) TIMEOUT-LAUNCH $name" >> $G4/results/jobs.log; exit 1; fi
+  if ! kill -0 $SPID 2>/dev/null; then echo "$(date -Is) FAILED-LAUNCH $name" >> $G4_HOME/results/jobs.log; exit 1; fi
+  if [ $(( $(date +%s) - t0 )) -gt $launch_timeout ]; then echo "$(date -Is) TIMEOUT-LAUNCH $name" >> $G4_HOME/results/jobs.log; exit 1; fi
   sleep 5
 done
 echo "launch_s=$(( $(date +%s) - t0 ))" > $R/launch.txt
@@ -108,4 +110,4 @@ if [ "$mode" = experts ]; then
     python $S/experts.py --batch $B --json-out $R/experts_b$B.json $R/b$B/*.pt > $R/experts_b$B.txt 2>&1
   done
 fi
-echo "$(date -Is) done $name" >> $G4/results/jobs.log
+echo "$(date -Is) done $name" >> $G4_HOME/results/jobs.log

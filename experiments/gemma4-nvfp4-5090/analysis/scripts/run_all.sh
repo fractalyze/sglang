@@ -5,11 +5,12 @@
 S=/data/jooman/gemma4nv/src-analysis/analysis-scripts
 source /data/jooman/gemma4nv/src-gate/experiments/gemma4-nvfp4-5090/env/env.sh
 cd $G4/src-gate/experiments/gemma4-nvfp4-5090
-mkdir -p $G4/results/microbench
-$G4_VENV/bin/python -m gate.hostwatch --csv $G4/results/microbench/hostmem.csv \
-  --log $G4/results/microbench/microbench.log -- $G4_VENV/bin/python $S/microbench.py
-bash $S/job.sh prebuild prebuild
-[ -e $G4/results/prebuild/COMPILE_DETECTED ] && { echo "$(date -Is) STOP: prebuild would compile" >> $G4/results/jobs.log; exit 3; }
+mkdir -p $G4_HOME/results/microbench
+$G4_VENV/bin/python -m gate.hostwatch --csv $G4_HOME/results/microbench/hostmem.csv \
+  --log $G4_HOME/results/microbench/microbench.log -- $G4_VENV/bin/python $S/microbench.py
+# JIT prebuild compiles once (MAX_JOBS=4 via env.sh) into the host's cache;
+# every later step must hit that cache or it stops itself (COMPILE_DETECTED).
+bash $S/job.sh prebuild prebuild || { echo "$(date -Is) STOP: prebuild failed" >> $G4_HOME/results/jobs.log; exit 3; }
 bash $S/job.sh base profile
 bash $S/job.sh experts experts --expert-distribution-recorder-mode per_token --expert-distribution-recorder-buffer-size -1
 # Knob screen (screen, unpaired). A step that hits a JIT cache miss stops itself
@@ -24,4 +25,4 @@ bash $S/job.sh nocg time --disable-cuda-graph
 bash $S/job.sh nooverlap time --disable-overlap-schedule
 bash $S/job.sh contdec4 time --num-continuous-decode-steps 4
 bash $S/job.sh base_repeat time
-echo "$(date -Is) ALL DONE" >> $G4/results/jobs.log
+echo "$(date -Is) ALL DONE" >> $G4_HOME/results/jobs.log

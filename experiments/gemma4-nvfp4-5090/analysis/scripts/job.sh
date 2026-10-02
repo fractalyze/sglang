@@ -5,8 +5,8 @@
 # 24G without swap, logs hostmem.csv every 2 s and kills past the limits.
 source /data/jooman/gemma4nv/src-gate/experiments/gemma4-nvfp4-5090/env/env.sh
 name=$1
-R=$G4/results/$name
+R=$G4_HOME/results/$name
 mkdir -p $R
 cd $G4/src-gate/experiments/gemma4-nvfp4-5090
-exec $G4_VENV/bin/python -m gate.hostwatch --csv $R/hostmem.csv --log $R/server.log --timeout-s 5400 \
+exec $G4_VENV/bin/python -m gate.hostwatch --csv $R/hostmem.csv --log $R/server.log --timeout-s 6000 \
   -- bash $G4/src-analysis/analysis-scripts/run_config.sh "$@"
