@@ -52,7 +52,10 @@ def measure_router(ref_name: str, out_dir: str) -> Dict[str, Dict[int, float]]:
     ref = server.load_ref(ref_name)
     tok = prompts.load_tokenizer()
     corpus = prompts.load_corpus(tok)
-    extra = ["--enable-return-routed-experts", "--disable-cuda-graph"]
+    # The routed-experts capturer sizes its buffer from num_experts_per_tok, which Gemma4's
+    # text config calls top_k_experts; the model itself reads only top_k_experts.
+    extra = ["--enable-return-routed-experts", "--disable-cuda-graph",
+             "--json-model-override-args", json.dumps({"text_config": {"num_experts_per_tok": _TOP_K}})]
     distinct: Dict[str, Dict[int, float]] = {}
     with server.Server(ref, os.path.join(out_dir, "sol_server.log"), extra_args=extra) as srv:
         for name, groups in _groups(tok, corpus).items():
