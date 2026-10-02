@@ -1,0 +1,13 @@
+{
+  "base": {
+    "description": "Pinned baseline: SGLang at the study branch point; NVFP4 MoE on FlashInfer CUTLASS (the tree's auto choice, flashinfer_trtllm, is SM100-only and crashes on SM120); decode CUDA graphs up to bs 32 (the largest gate workload); attention, FP8 KV cache (from the checkpoint) and dense GEMMs on the tree's defaults.",
+    "commit": "a9871012acb768dc94a43a6542cc32626c7b7b0b",
+    "server_args": [
+      "--moe-runner-backend",
+      "flashinfer_cutlass",
+      "--cuda-graph-max-bs-decode",
+      "32"
+    ],
+    "env": {}
+  }
+}
