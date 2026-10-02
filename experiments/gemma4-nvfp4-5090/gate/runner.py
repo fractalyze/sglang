@@ -10,7 +10,7 @@ import subprocess
 import time
 from typing import Dict, List, Optional
 
-from gate import client, config, fidelity, gpu, hostwatch, prompts, server, stats
+from gate import checkpoint, client, config, fidelity, gpu, hostwatch, prompts, server, stats
 
 log = logging.getLogger(__name__)
 
@@ -170,6 +170,7 @@ def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, n
     meta = {"exp_id": exp_id, "control": control_ref, "candidate": candidate_ref, "n_pairs": n_pairs,
             "notes": notes, "nonce": nonce, "corpus_digest": prompts.corpus_digest(corpus),
             "fidelity_prompts_digest": fidelity.prompts_digest(), "environment": environment(),
+            "checkpoint": checkpoint.verify(),
             "config": {"workloads": [{"name": w.name, "concurrency": w.concurrency, "prompt": w.prompt_tokens,
                                       "decode": w.decode_tokens, "reps": w.reps_per_leg} for w in config.WORKLOADS]}}
     _write(os.path.join(run_dir, "meta.json"), meta)
@@ -222,6 +223,7 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
         and integrity["timed_output_agreement_mean"] >= config.TIMED_OUTPUT_AGREEMENT_MIN
         and not args_diff["undeclared"]
         and (weights_match is not False or meta["candidate"]["weight_layout_change"])
+        and meta["checkpoint"]["matches_hf_revision"]
     )
     fid_pass = fid.get("candidate", {}).get("verdict", {}) or {}
     return {
