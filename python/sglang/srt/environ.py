@@ -1258,6 +1258,22 @@ class Envs:
     SGLANG_OPT_DEEPGEMM_MEGA_MOE_RESERVED_SMS = EnvInt(2)
 
     # ===================================================================
+    # decode-mk megakernels (Qwen3.8-27B int4, one RTX 5090, batch 1)
+    # ===================================================================
+    # The decode megakernel decodes each token in one launch, on weights and
+    # states it owns; the stock model is not built, so a server with these on
+    # serves one request at a time and refuses to start otherwise
+    # (sglang/srt/models/qwen3_5_decode_mk.py).
+    SGLANG_DECODE_MK_DECODE = EnvBool(False)
+    # With DECODE: the prompt runs 64 tokens a launch on the prefill
+    # megakernel, rather than one token a launch on the decode megakernel.
+    SGLANG_DECODE_MK_PREFILL = EnvBool(False)
+    # With DECODE: greedy requests decode speculatively, the checkpoint's MTP
+    # head drafting --speculative-num-steps tokens a cycle and the verify
+    # megakernel checking them (speculative algorithm DECODE_MK_MTP).
+    SGLANG_DECODE_MK_MTP = EnvBool(False)
+
+    # ===================================================================
     # Top-k kernels
     # ===================================================================
     SGLANG_OPT_USE_FUSED_HASH_TOPK = EnvBool(True)

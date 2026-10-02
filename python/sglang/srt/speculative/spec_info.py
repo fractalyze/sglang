@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, Type, Union
 import torch
 
 from sglang.srt.arg_groups.overrides import resolving_view
+from sglang.srt.environ import envs
 from sglang.srt.runtime_context import get_spec as get_spec_config
 from sglang.srt.speculative.spec_registry import (
     _RESERVED_ALIASES,
@@ -517,3 +518,9 @@ def create_dummy_verify_input(
         spec_info.capture_hidden_mode = CaptureHiddenMode.NULL
 
     return spec_info
+
+
+# The decode-mk MTP algorithm exists only behind its switch, so the stock
+# algorithm list is unchanged when it is off.
+if envs.SGLANG_DECODE_MK_MTP.get():
+    from sglang.srt.speculative import decode_mk_mtp  # noqa: F401
