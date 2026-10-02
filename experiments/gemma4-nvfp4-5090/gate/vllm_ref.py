@@ -83,7 +83,7 @@ def run(out_dir: str, timeout_s: int = 3600) -> Dict:
     log_path = os.path.join(out_dir, "vllm.log")
     res: Dict = {"vllm_version": VLLM_VERSION, "command": command(), "workloads": {}}
     with hostwatch.host_lock():
-        res["preflight"] = hostwatch.preflight()
+        res["preflight"] = hostwatch.wait_preflight()
         with open(log_path, "w") as log:
             proc = subprocess.Popen([*hostwatch.memory_cap_prefix(), *command()], stdout=log,
                                     stderr=subprocess.STDOUT, start_new_session=True, env=dict(os.environ))

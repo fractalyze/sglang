@@ -112,7 +112,7 @@ class Server:
         ]
 
     def start(self, timeout_s: int = 900) -> None:
-        self.preflight = hostwatch.preflight()
+        self.preflight = hostwatch.wait_preflight()
         env = dict(os.environ)
         env["MAX_JOBS"] = str(config.JIT_MAX_JOBS)
         env.update(self.ref["env"])

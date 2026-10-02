@@ -78,10 +78,12 @@ def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fide
         warm_up(srv, corpus, bos, pair_seed)
         leg["gpu_before_window"] = gpu.wait_quiet(srv.proc.pid, events)
         offset = srv.log_offset()
+        srv._watchdog.set_phase("timed")
         with gpu.Telemetry(srv.proc.pid) as tel:
             t0 = time.time()
             leg["workloads"] = _timed_workloads(srv, corpus, bos, pair_seed)
             leg["window_s"] = time.time() - t0
+        srv._watchdog.set_phase("post")
         leg["telemetry"] = tel.summary()
         leg["decode_steps_in_window"] = srv.decode_steps_since(offset)
         leg["backends"] = srv.backend_report()
@@ -95,6 +97,28 @@ def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fide
     return leg
 
 
+_LEG_RETRIES = 2
+
+
+def run_leg_with_retries(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fidelity: bool) -> Dict:
+    """Reruns a leg the host disturbed (watchdog kill, busy-host refusal); earlier attempts are kept."""
+    attempts = []
+    for attempt in range(_LEG_RETRIES + 1):
+        d = leg_dir if attempt == 0 else f"{leg_dir}-retry{attempt}"
+        try:
+            leg = run_leg(ref, pair_seed, d, corpus, bos, with_fidelity)
+        except (RuntimeError, hostwatch.HostUnsafe) as e:
+            attempts.append({"dir": d, "error": repr(e)[:500]})
+            continue
+        disturbed = not (leg["integrity"]["checks"]["host_watchdog_not_tripped"]
+                         and leg["integrity"]["checks"]["host_load_quiet_in_window"])
+        if not disturbed or attempt == _LEG_RETRIES:
+            leg["attempts"] = attempts
+            return leg
+        attempts.append({"dir": d, "error": "host disturbed the timed window", "host": leg["host"]})
+    raise RuntimeError(f"leg failed {len(attempts)} times: {attempts}")
+
+
 def leg_integrity(leg: Dict) -> Dict:
     steps = leg["decode_steps_in_window"]
     cached = sum(s["cached_tokens"] for reps in leg["workloads"].values() for r in reps for s in r["streams"])
@@ -106,6 +130,8 @@ def leg_integrity(leg: Dict) -> Dict:
         "no_thermal_throttle_in_window": not leg["telemetry"]["thermal_or_hw_throttle_samples"],
         "weights_unchanged_during_leg": (not w_load["ok"]) or w_load == w_end,
         "host_watchdog_not_tripped": leg["host"]["tripped"] is None,
+        "host_load_quiet_in_window": leg["host"]["peaks_by_phase"].get("timed", {}).get("peak_load1", 0)
+        <= config.MAX_START_LOAD1,
     }
     return {"checks": checks, "ok": all(checks.values()), "prefix_cache_hit_rate": cached / max(prompt, 1)}
 
@@ -153,8 +179,8 @@ def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, n
         for k, order in enumerate(abba_order(n_pairs)):
             for role in order:
                 leg_dir = os.path.join(run_dir, f"pair{k}-{role}")
-                leg = run_leg(refs[role], f"{nonce}/pair{k}", leg_dir, corpus, tok.bos_token_id,
-                              with_fidelity=(k == 0))
+                leg = run_leg_with_retries(refs[role], f"{nonce}/pair{k}", leg_dir, corpus, tok.bos_token_id,
+                                           with_fidelity=(k == 0))
                 leg["pair"], leg["role"] = k, role
                 _write(os.path.join(leg_dir, "leg.json"), leg)
                 legs[role].append(leg)

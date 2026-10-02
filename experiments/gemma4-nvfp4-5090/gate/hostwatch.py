@@ -105,9 +105,26 @@ def preflight() -> Dict:
         problems.append(f"swap used {m['swap_used_gb']:.1f} GB > {config.MAX_SWAP_USED_GB}")
     if foreign > config.MAX_FOREIGN_GPU_GB:
         problems.append(f"other users hold {foreign:.1f} GB of GPU memory > {config.MAX_FOREIGN_GPU_GB}")
+    load = load1()
+    if load > config.MAX_START_LOAD1:
+        problems.append(f"load1 {load:.0f} > {config.MAX_START_LOAD1}")
     if problems:
         raise HostUnsafe("; ".join(problems))
-    return {**m, "load1": load1(), "foreign_gpu_gb": foreign}
+    return {**m, "load1": load, "foreign_gpu_gb": foreign}
+
+
+def wait_preflight(timeout_s: float = 3600, poll_s: float = 30) -> Dict:
+    """Waits out a busy host (other tenants' builds drive load past the kill limit) instead of failing."""
+    deadline = time.time() + timeout_s
+    waits = []
+    while True:
+        try:
+            return {**preflight(), "waited": waits}
+        except HostUnsafe as e:
+            waits.append({"t": round(time.time()), "reason": str(e)})
+            if time.time() > deadline:
+                raise
+            time.sleep(poll_s)
 
 
 def memory_cap_prefix() -> List[str]:
@@ -215,7 +232,7 @@ class Watchdog:
 def run_wrapped(cmd: List[str], csv_path: str, log_path: str, env: Optional[Dict[str, str]] = None,
                 timeout_s: Optional[float] = None) -> Dict:
     """Preflight, cap, watch and run `cmd` to completion (caller holds host.lock)."""
-    pre = preflight()
+    pre = wait_preflight()
     with open(log_path, "a") as log:
         proc = subprocess.Popen([*memory_cap_prefix(), *cmd], stdout=log, stderr=subprocess.STDOUT,
                                 env=env, start_new_session=True)
