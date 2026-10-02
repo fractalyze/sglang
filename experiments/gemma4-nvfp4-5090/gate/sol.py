@@ -86,15 +86,16 @@ def _text_config() -> Dict:
 
 
 def kv_bytes_per_token(kv_elem_bytes: float) -> Dict[str, float]:
-    """KV bytes one token adds per layer type, at the minimum the math needs.
+    """KV bytes one token adds per layer type: one K and one V copy per layer.
 
-    Full-attention layers have attention_k_eq_v: K and V are one tensor, so
-    the minimum is one copy even if the engine stores two.
+    attention_k_eq_v shares the projection weight only. The cached K is
+    k_norm(x W_k) with RoPE and the cached V is v_norm(x W_k), two different
+    tensors (Gemma4Attention.forward), so full-attention layers store two
+    copies like sliding layers.
     """
     c = _text_config()
     sliding = c["num_key_value_heads"] * c["head_dim"] * 2 * kv_elem_bytes
-    k_eq_v = c.get("attention_k_eq_v", False)
-    full = c["num_global_key_value_heads"] * c["global_head_dim"] * (1 if k_eq_v else 2) * kv_elem_bytes
+    full = c["num_global_key_value_heads"] * c["global_head_dim"] * 2 * kv_elem_bytes
     return {"sliding": sliding, "full": full}
 
 
