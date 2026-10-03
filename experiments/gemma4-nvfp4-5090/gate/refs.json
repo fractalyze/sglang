@@ -210,5 +210,16 @@
     "env": {
       "SGLANG_OPT_GEMMA4_FP8_LM_HEAD": "1"
     }
+  },
+  "base4-spec-fp8lmhead-k6": {
+    "extends": "base4-spec-fp8head-fp8lmhead",
+    "description": "T-SPEC7 (W12, gemma4nv-b2-tspec7): base4-spec-fp8head-fp8lmhead with MTP draft depth k=6 (7 verify tokens) on commit 43039cd0f2 (dd5361a7bc + the FP8 target head's max_m 48 -> 64, so a B=8 verify of 56 rows stays on it; a no-op for k <= 5 at B <= 8); see trials/T-SPEC7-mtp-k6.md.",
+    "commit": "43039cd0f2b6bc739f52d40ec598e665d6067de6",
+    "server_args": [
+      "--speculative-num-steps",
+      "6",
+      "--speculative-num-draft-tokens",
+      "7"
+    ]
   }
 }
