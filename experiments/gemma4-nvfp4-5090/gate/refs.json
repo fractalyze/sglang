@@ -82,5 +82,21 @@
   "base4": {
     "extends": "base3-t3b",
     "description": "Pinned base4 (W9): base3 + T3b's FP8 E4M3 weight-only o_proj (commit 36aa977541, SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1), kept on bs3 (gemma4nv-b3-t3b: W8 composite 1.0142, W1 TPOT -4.03%, decode KL 0.025) and adopted on full GSM8K (delta -0.23 pt, paired 95% CI [-0.92, +0.47]) with tool-JSON 100 -> 100."
+  },
+  "base4-glue1": {
+    "extends": "base4",
+    "commit": "1d859709ef569c5756f28ca4f3b2fcebccfc1f3c",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "1"
+    },
+    "description": "T4 sub-step A (W9b, gemma4nv-b3-t4): base4 on commit 1d859709ef (36aa977541 + Gemma4 fused decode glue) with SGLANG_OPT_GEMMA4_FUSED_GLUE=1: q/k/v RMSNorm + RoPE + FP8 KV-cache store in one Triton kernel per layer (activations and KV bytes bit-identical to the unfused path)."
+  },
+  "base4-glue2": {
+    "extends": "base4",
+    "commit": "1d859709ef569c5756f28ca4f3b2fcebccfc1f3c",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
+    },
+    "description": "T4 (W9b, gemma4nv-b3-t4): base4 on commit 1d859709ef with SGLANG_OPT_GEMMA4_FUSED_GLUE=2: sub-step A plus the post-attention norm pair, the router / pre-FF-2 norm pair and the next layer's input norm in the dual-norm epilogue (270 of 392 glue launches per decode step removed; norm sums reordered)."
   }
 }
