@@ -33,7 +33,19 @@ __device__ __forceinline__ nv_bfloat162 biased_zero(uint8_t z) {
   return *reinterpret_cast<const nv_bfloat162*>(&bits);
 }
 
-// Dequantises one k16 slice of this thread's A fragment: rows (lo, hi) = (g, g + 8).
+// One k16 slice of this thread's A fragment as exact integers q - z (bf16):
+// rows (lo, hi) = (g, g + 8). The group scale is applied to the accumulator.
+__device__ __forceinline__ void
+dequant_fragment_codes(uint32_t q, nv_bfloat162 zero_lo, nv_bfloat162 zero_hi, nv_bfloat162* out) {
+  device::marlin::dequant<nv_bfloat162, host::kU4.id(), true>(static_cast<int>(q), out);
+  device::marlin::dequant<nv_bfloat162, host::kU4.id(), true>(static_cast<int>(q >> 8), out + 2);
+  out[0] = __hsub2(out[0], zero_lo);
+  out[1] = __hsub2(out[1], zero_hi);
+  out[2] = __hsub2(out[2], zero_lo);
+  out[3] = __hsub2(out[3], zero_hi);
+}
+
+// One k16 slice dequantised to (q - z) * s in bf16, the rounding of the AWQ reference.
 __device__ __forceinline__ void dequant_fragment(
     uint32_t q,
     nv_bfloat162 zero_lo,
@@ -42,17 +54,14 @@ __device__ __forceinline__ void dequant_fragment(
     nv_bfloat162 scale_hi,
     uint32_t* frag) {
   nv_bfloat162 v[4];
-  device::marlin::dequant<nv_bfloat162, host::kU4.id(), true>(static_cast<int>(q), v);
-  device::marlin::dequant<nv_bfloat162, host::kU4.id(), true>(static_cast<int>(q >> 8), v + 2);
-  const nv_bfloat162 out[4] = {
-      __hmul2(__hsub2(v[0], zero_lo), scale_lo),
-      __hmul2(__hsub2(v[1], zero_hi), scale_hi),
-      __hmul2(__hsub2(v[2], zero_lo), scale_lo),
-      __hmul2(__hsub2(v[3], zero_hi), scale_hi),
-  };
+  dequant_fragment_codes(q, zero_lo, zero_hi, v);
+  v[0] = __hmul2(v[0], scale_lo);
+  v[1] = __hmul2(v[1], scale_hi);
+  v[2] = __hmul2(v[2], scale_lo);
+  v[3] = __hmul2(v[3], scale_hi);
 #pragma unroll
   for (int i = 0; i < 4; ++i) {
-    frag[i] = *reinterpret_cast<const uint32_t*>(&out[i]);
+    frag[i] = *reinterpret_cast<const uint32_t*>(&v[i]);
   }
 }
 
