@@ -147,6 +147,18 @@ __device__ __forceinline__ void named_barrier_sync(int id, int threads) {
   asm volatile("bar.sync %0, %1;\n" ::"r"(id), "r"(threads) : "memory");
 }
 
+// Position in the stage ring: the slot and the parity of its current fill.
+struct RingPos {
+  int stage = 0;
+  uint32_t phase = 0;
+  __device__ __forceinline__ void advance(int num_stages) {
+    if (++stage == num_stages) {
+      stage = 0;
+      phase ^= 1;
+    }
+  }
+};
+
 template <int kTokenBlock>
 __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64_t* full, uint64_t* empty) {
   using Cfg = Config<kTokenBlock>;
@@ -181,7 +193,7 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
     return m;
   };
 
-  int it = 0;
+  RingPos pos;
   Meta cur = load_meta(blockIdx.x);
   for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
     const Meta next = load_meta(tile + gridDim.x);
@@ -199,9 +211,9 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
     }
     const int64_t stage_index = (int64_t(cur.expert) * n_tiles + tile % n_tiles) * k_tiles;
 
-    for (int kt = 0; kt < k_tiles; ++kt, ++it) {
-      const int s = it % Cfg::kStages;
-      device::ptx::mbar_wait_parity(&empty[s], ((it / Cfg::kStages) & 1) ^ 1);
+    for (int kt = 0; kt < k_tiles; ++kt, pos.advance(Cfg::kStages)) {
+      const int s = pos.stage;
+      device::ptx::mbar_wait_parity(&empty[s], pos.phase ^ 1);
       uint8_t* stage = stages + s * Cfg::kStageBytes;
 
       if (tid == 0) {
@@ -270,7 +282,8 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
     return m;
   };
 
-  int it = 0;
+  int it = 0;  // stage count, for the alternating A fragments
+  RingPos pos;
   Meta cur = load_meta(blockIdx.x);
   for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
     const Meta next = load_meta(tile + gridDim.x);
@@ -327,9 +340,9 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
     // One wgmma batch stays in flight while the next stage dequantises, so the
     // register A fragments alternate and a stage is released one step late.
     int prev_stage = -1;
-    for (int kt = 0; kt < k_tiles; ++kt, ++it) {
-      const int s = it % Cfg::kStages;
-      device::ptx::mbar_wait_parity(&full[s], (it / Cfg::kStages) & 1);
+    for (int kt = 0; kt < k_tiles; ++kt, ++it, pos.advance(Cfg::kStages)) {
+      const int s = pos.stage;
+      device::ptx::mbar_wait_parity(&full[s], pos.phase);
       if (it & 1) {
         issue_stage(frag_a_odd, s);
       } else {
