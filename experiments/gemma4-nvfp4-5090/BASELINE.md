@@ -1,5 +1,7 @@
 # gemma4nv pinned baseline (build-server-3)
 
+Current pinned base: **base4** (section below). The first base is `base`.
+
 Every number below comes from a gate run json under `/data/jooman/gemma4nv/runs/` on
 build-server-3. Nothing is quoted from a single unpaired run. Compare hosts by delta only.
 
@@ -7,6 +9,246 @@ build-server-3. Nothing is quoted from a single unpaired run. Compare hosts by d
   - 6 clean ABBA pairs, harness 8f5e3a589.
   - Re-evaluated at c16a12cf5 after `startup_time` was marked volatile; the first report is kept as `report.v1.json`.
 - **Verdict:** integrity OK, fidelity pass, no promotion (as an A/A must).
+
+## base4 (current pinned base, 2026-10-03)
+
+`base4` = `base3` plus T3b, kept on bs3 (W9):
+
+- **FP8 E4M3 weight-only o_proj:** SGLang commit `36aa977541` with
+  `SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1`, from T3bS (`gemma4nv-b3-t3b`).
+  - The commit is base3's `1fd77e64b0` plus cherry-picks of the reviewed T3b commits; its
+    `python/` tree is identical to `ed0aefcd40`. It is on branch `jumanzii/gemma4nv-b3-t3b`.
+  - Decided on the W8 composite: 1.0142 against base3, with W1 TPOT -4.03%.
+  - Adopted on the full GSM8K test split: the paired delta is -0.23 pt, 95% CI [-0.92, +0.47].
+    Tool-JSON stayed at 100%.
+
+In the vault it is `stack-36aa97754-gemma4nv-base4`, with parent `stack-1fd77e64b-gemma4nv-base3`.
+
+- **Decision run:** A/A `AA-base4-20261003-110525-build-server-3-ae60a0`.
+  - 6 clean ABBA pairs.
+  - Harness b4e832f1a (deploy stamp).
+- **Verdict:** integrity OK, fidelity pass, no promotion.
+- **Noise:** `reference/noise.json` now comes from this A/A. base3's file is kept as
+  `reference/noise.base3.json`.
+  - W8 prefill's sigma rose to 0.41%, so its bar is now 1.23% (3 sigma). Every other bar
+    stays at 1%.
+- **Timed-output agreement:** 1.0 in every pair, so the threshold stays at 0.98.
+
+| metric | base4 | base3 | base | definition |
+|---|---|---|---|---|
+| **W8 prefill** | **1.785 s** per rep; batch 297 ms | 1.744 s; 291 ms | 1.740 s | sum of 8 TTFTs |
+| **W8 decode** | **8.678 s** per rep; 8.54 ms per stream-token | 8.900 s; 8.76 ms | 9.442 s; 9.29 ms | sum of 8 (e2e - TTFT) |
+| **W1 TPOT** | **5.598 ms** | 5.833 ms | 6.075 ms | 1 x 1024 x 256 |
+| W1 prefill (TTFT) | 49.5 ms | 48.0 ms | 48.4 ms | |
+| **W32 throughput** | **1554.4 tok/s** (ungated) | 1551.2 | 1020.6 | 32 x 1024 x 128 |
+
+These columns are separate A/As on one host; the gated delta is the paired T3bS run.
+T3b's prefill cost (bf16 upcast before cuBLAS) shows in W8 prefill and W1 TTFT.
+
+A/A gains and noise (6 pairs):
+
+| metric | A/A gain | per-pair sigma of ln(gain) | bar |
+|---|---|---|---|
+| W8 composite | 1.00021 | 0.080% | 1.0% |
+| W8 prefill | 1.00133 | 0.411% | 1.23% |
+| W8 decode | 0.99983 | 0.041% | 1.0% |
+| W1 TPOT | 1.00006 | 0.110% | 1.0% |
+| W32 throughput | 1.00019 | 0.044% | 1.0% |
+
+The per-pair W8 composite ranges from 0.9994 to 1.0016.
+
+sol_fraction (`gate sol-report` against the unchanged SOL tables, which still count o_proj as
+BF16; base4's real byte floor is about 0.4 GB lower per step, so these fractions understate how
+close the served kernels are to their own floor):
+
+| workload | achieved decode step | **decode sol_fraction** (base3 / base) | implied BW | prefill sol_fraction (NVFP4/FP8 / as served) |
+|---|---|---|---|---|
+| W8 | 8.54 ms | **0.65** (0.63 / 0.60) | 1166 GB/s | 0.21 / 0.52 |
+| W1 | 5.60 ms | **0.57** (0.55 / 0.52) | 1019 GB/s | 0.20 / 0.39 |
+| W32 | 15.55 ms | **0.52** (0.52 / 0.48) | 938 GB/s | 0.22 / 0.54 |
+
+**Fidelity** (pair 0 control vs the `base` reference):
+
+- Teacher-forced: min top-1 0.917, mean 0.966, KL mean 0.034, p99 0.72 (base3: 0.969, 0.032,
+  0.59). Prefill o_proj now reads the dequantized FP8 weight.
+- Decode-path KL: mean 0.025, p99 0.45, against base3's 0.011 and 0.23. The limits are 0.050
+  and 0.95, so this passes. The check runs the 22 hidden prompts in one batch (M = 22), so it
+  covers the small-M FP8 kernel.
+
+**Quality** (full GSM8K test split, n = 1,319, plus tool-JSON, n = 40; greedy; `gate quality
+--gsm8k-n all`, paired by `gate quality-compare`):
+
+| run | GSM8K | tool-JSON |
+|---|---|---|
+| base3 (A) `quality-full-base3-A-20261003-105333-build-server-3-272124` | 96.51% | 100% |
+| base3 (A') `quality-full-base3-A2-20261003-110057-build-server-3-ad25c8` | 96.59% | 100% |
+| base3 + T3b `quality-full-base3-t3b-20261003-105714-build-server-3-b032cc` | 96.29% | 100% |
+
+| pair | GSM8K delta | 95% CI (Agresti-Min paired) | lost / gained | McNemar p |
+|---|---|---|---|---|
+| A -> A' (A/A) | +0.08 pt | [-0.55, +0.71] | 8 / 9 | 1.00 |
+| **A -> T3b (deciding)** | **-0.23 pt** | **[-0.92, +0.47]** | 12 / 9 | 0.66 |
+| A' -> T3b | -0.30 pt | [-0.95, +0.34] | 11 / 7 | 0.48 |
+
+**Host peaks per phase** (max over the 12 A/A legs; the T3bS gate, the 3 quality runs and the
+prebuild stayed within these, apart from a 5.4 peak load1 at the start of the T3bS gate):
+
+| phase | min MemAvailable | peak tree RSS | peak load1 | compilers |
+|---|---|---|---|---|
+| weight load | 51.0 GB | 11.2 GB | 1.7 | 0 |
+| autotune / graph capture | 49.8 GB | 6.5 GB | 1.6 | 2 (Triton) |
+| serving / timed | 49.3 GB | 7.0 GB | 1.5 | 2 / 0 |
+
+Swap stayed at its 0.13 GB starting value. `gate prebuild --ref base3-t3b` peaked at 7.0 GB
+tree RSS and load 0.8; the FP8 Triton kernel compiled in-process, with no nvcc.
+
+## base3 (pinned 2026-10-03, superseded by base4)
+
+`base3` = `base2` plus two trials, both kept on bs3:
+
+- **Split-KV 16:** `--triton-attention-num-kv-splits 16`, from T2S (`gemma4nv-b3-t2s`). Decided
+  on W1 TPOT: -1.94% against base2.
+- **Triton small-M BF16 GEMM:** SGLang commit `1fd77e64b0` with
+  `SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM=1`, from T3S (`gemma4nv-b3-t3s`). Decided on the W8
+  composite: 1.0457 against base2 + split-KV 16.
+
+In the vault it is `stack-1fd77e64b-gemma4nv-base3`, with parent
+`stack-a9871012a-gemma4nv-base2`.
+
+- **Decision run:** A/A `AA-base3-20261003-101154-build-server-3-5644da`.
+  - 6 clean ABBA pairs.
+  - Harness de9b44278 (deploy stamp).
+- **Verdict:** integrity OK, fidelity pass, no promotion.
+- **Noise:** `reference/noise.json` now comes from this A/A. The base2 noise file is kept as
+  `reference/noise.base2.json`.
+- **Timed-output agreement:** 1.0 in every pair. The 0.98 hard threshold set from the base2
+  A/A held.
+
+| metric | base3 | base2 | base | definition |
+|---|---|---|---|---|
+| **W8 prefill** | **1.744 s** per rep; batch 291 ms | 1.742 s | 1.740 s | sum of 8 TTFTs |
+| **W8 decode** | **8.900 s** per rep; 8.76 ms per stream-token | 9.427 s; 9.28 ms | 9.442 s; 9.29 ms | sum of 8 (e2e - TTFT) |
+| **W1 TPOT** | **5.833 ms** | 6.066 ms | 6.075 ms | 1 x 1024 x 256 |
+| W1 prefill (TTFT) | 48.0 ms | 48.0 ms | 48.4 ms | |
+| **W32 throughput** | **1551.2 tok/s** (ungated) | 1527.4 | 1020.6 | 32 x 1024 x 128 |
+
+These columns are absolute control-leg numbers from three separate A/A runs on one host. The
+gated deltas are the paired trial runs (T-W32b, T2S, T3S), not differences between these
+columns.
+
+A/A gains and noise (6 pairs):
+
+| metric | A/A gain | per-pair sigma of ln(gain) | bar |
+|---|---|---|---|
+| W8 composite | 0.99970 | 0.039% | 1.0% |
+| W8 prefill | 0.99928 | 0.154% | 1.0% |
+| W8 decode | 0.99984 | 0.032% | 1.0% |
+| W1 TPOT | 0.99961 | 0.044% | 1.0% |
+| W32 throughput | 1.00004 | 0.025% | 1.0% |
+
+The largest per-pair W8 composite deviation is 0.07%.
+
+sol_fraction (`gate sol-report` against the unchanged SOL tables):
+
+| workload | achieved decode step | **decode sol_fraction** (base2 / base) | implied BW | prefill sol_fraction (NVFP4/FP8 / as served) |
+|---|---|---|---|---|
+| W8 | 8.76 ms | **0.63** (0.60 / 0.60) | 1137 GB/s | 0.22 / 0.53 |
+| W1 | 5.83 ms | **0.55** (0.52 / 0.52) | 978 GB/s | 0.21 / 0.40 |
+| W32 | 15.68 ms | **0.52** (0.51 / 0.48) | 930 GB/s | 0.23 / 0.55 |
+
+**Fidelity** (pair 0 control vs the `base` reference):
+
+- Teacher-forced: min top-1 0.917, mean 0.969, KL mean 0.032, p99 0.59. The forced pass is a
+  prefill (M > 32), which neither base3 change touches, so it equals base2's to four digits.
+- Decode-path KL: mean 0.011, p99 0.23, against base2's 0.015 and 0.39. Pass.
+
+**Host peaks per phase** (max over the 12 legs):
+
+| phase | min MemAvailable | peak tree RSS | peak load1 | compilers |
+|---|---|---|---|---|
+| weight load | 51.0 GB | 10.8 GB | 3.0 | 0 |
+| autotune / graph capture | 49.5 GB | 6.5 GB | 2.8 | 2 (Triton) |
+| serving / timed | 49.2 GB | 7.0 GB | 2.4 | 2 / 0 |
+
+`gate prebuild --ref base2-splits16-smallm` stayed under 7.0 GB tree RSS at load 1.0. Its new
+Triton GEMM compiled in-process, with no nvcc.
+
+## base2 (pinned 2026-10-03, superseded by base3)
+
+`base2` = `base` plus `--mem-fraction-static 0.76`, promoted from T-W32b (`gemma4nv-b3-w32b`,
+kept on W32 x1.49 with W8 and W1 neutral and fidelity passing). In the vault it is
+`stack-a9871012a-gemma4nv-base2` (parent `stack-a9871012a-gemma4nv`). The `base` sections below
+remain the record of the first base.
+
+- **Decision run:** A/A `AA-base2-20261003-092146-build-server-3-dce578`.
+  - 6 clean ABBA pairs.
+  - Harness a7ece6d73 (the deploy stamp names it; see `bin/deploy`).
+- **Verdict:** integrity OK, fidelity pass, no promotion (as an A/A must).
+- **Noise and bars:** `reference/noise.json` now comes from this A/A. The `base` noise file is
+  kept as `reference/noise.base.json`.
+- **Timed-output agreement:** 1.0 in every pair, so the hard threshold for numerics-unchanged
+  refs is calibrated at 0.98 (lowest pair minus max(3 sigma, 0.02)).
+- **KV pools:** FP8. Full attention holds 51,893 tokens and sliding window holds 41,514 tokens.
+  Under `base` they held 37,081 and 29,664.
+
+| metric | base2 (control legs) | base | definition |
+|---|---|---|---|
+| **W8 prefill** | **1.742 s** per rep; batch prefill 291 ms | 1.740 s; 291 ms | sum of 8 TTFTs |
+| **W8 decode** | **9.427 s** per rep; 9.28 ms per stream-token | 9.442 s; 9.29 ms | sum of 8 (e2e - TTFT) |
+| **W1 TPOT** | **6.066 ms** | 6.075 ms | 1 x 1024 x 256 |
+| W1 prefill (TTFT) | 48.0 ms | 48.4 ms | |
+| **W32 throughput** | **1527.4 tok/s** (ungated) | 1020.6 tok/s | 32 x 1024 x 128; no retraction now |
+
+A/A gains and noise (6 pairs):
+
+| metric | A/A gain | per-pair sigma of ln(gain) | bar |
+|---|---|---|---|
+| W8 composite | 1.00000 | 0.041% | 1.0% |
+| W8 prefill | 1.00000 | 0.078% | 1.0% |
+| W8 decode | 1.00001 | 0.037% | 1.0% |
+| W1 TPOT | 1.00005 | 0.041% | 1.0% |
+| W32 throughput | 0.99972 | 0.047% | 1.0% |
+
+The largest per-pair W8 composite deviation is 0.05%.
+
+sol_fraction, from `gate sol-report` on this A/A against the unchanged SOL tables in `reference/sol/sol.json`:
+
+| workload | achieved decode step | decode sol_fraction | achieved batch prefill | prefill sol_fraction (NVFP4/FP8 / as served) |
+|---|---|---|---|---|
+| W8 | 9.28 ms | **0.60** | 291 ms | 0.22 / 0.53 |
+| W1 | 6.07 ms | **0.52** | 48.0 ms | 0.21 / 0.40 |
+| W32 | 16.01 ms | **0.51** (base 0.48) | 1124 ms (base 2615) | 0.23 / 0.55 (base 0.10 / 0.24) |
+
+W32 changed and W8 and W1 did not. Retraction under `base` recomputed prefill and stretched
+decode steps, and the larger pool removes it.
+
+**Fidelity** (pair 0 control vs the `base` reference; the reference is not re-pinned, so stacked
+trials are still judged against the original model behaviour):
+
+- Teacher-forced: min top-1 agreement 0.917, mean 0.969, KL mean 0.032, KL p99 0.59. Pass.
+- Free-running decode path: KL mean 0.015, p99 0.39. Pass.
+- Free-running token match is 0.32 mean. That is reported only, since greedy near-ties flip
+  across launches.
+
+**Host peaks per phase** (max over the 12 A/A legs, from the 2 s watchdog; 24G scope, no swap):
+
+| phase | min MemAvailable | peak tree RSS | peak load1 | compilers (peak count / RSS) |
+|---|---|---|---|---|
+| start | 51.7 GB | 4.5 GB | 5.9 | 0 |
+| weight load | 51.0 GB | **10.9 GB** | 5.6 | 0 |
+| autotune / graph capture | 49.8 GB | 6.4 GB | 5.2 | 2 / 0.35 GB (Triton) |
+| serving (warm-up) | 49.3 GB | 7.1 GB | 4.3 | 2 / 0.32 GB |
+| timed | 49.8 GB | 6.7 GB | 3.2 | 0 |
+
+The weight-load phase is the RSS peak, at 10.9 GB (mmap plus modelopt post-processing), and it
+falls back to about 6.5 GB once loading ends. With a warm JIT cache, no nvcc runs at launch.
+
+The `gate prebuild --ref base2-splits16` step (warm FlashInfer cache, new Triton split-16
+kernels) peaked as follows:
+
+- Tree RSS 10.5 GB.
+- Load1 0.66.
+- Two Triton compilers at 0.28 GB.
 
 ## Pinned configuration (`gate/refs.json`, ref `base`)
 

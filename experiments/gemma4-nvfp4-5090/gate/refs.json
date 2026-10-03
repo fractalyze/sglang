@@ -45,12 +45,12 @@
     ]
   },
   "smallm-gemm": {
-    "extends": "w32b-mem076",
-    "description": "T3 (W6, gemma4nv-b2-t3): base2 (w32b-mem076) on commit 1fd77e64b0 (base a9871012 + Triton small-M BF16 GEMM) with SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM=1, routing the decode-M o_proj and dense MLP BF16 linears off cuBLAS's SM80 WMMA fallback; see trials/T3-smallm-bf16-gemm.md.",
+    "extends": "base2",
     "commit": "1fd77e64b05a88e4c89e9787e49c122caf3b47c8",
     "env": {
       "SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM": "1"
-    }
+    },
+    "description": "T3 (W6 on bs2, gemma4nv-b2-t3): base2 on commit 1fd77e64b0 (base a9871012 + Triton small-M BF16 GEMM) with SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM=1, routing the decode-M o_proj and dense MLP BF16 linears off cuBLAS's SM80 WMMA fallback. Same definition as W6's bs2 ref."
   },
   "base2": {
     "extends": "base",
@@ -131,5 +131,34 @@
       "--mem-fraction-static",
       "0.78"
     ]
+  },
+  "base3-t3b": {
+    "extends": "base3",
+    "commit": "36aa9775419852445fddd007a75d1c88e96ae098",
+    "env": {
+      "SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM": "1"
+    },
+    "weight_layout_change": true,
+    "description": "T3b stacked on base3 (W9, gemma4nv-b3-t3b, variant of gemma4nv-b2-t3b): base3 on commit 36aa977541 (base3's 1fd77e64b0 + cherry-picks 826d472504, bbbf5e4d46, ed0aefcd40; python/ tree identical to ed0aefcd40) with SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1: both o_proj shapes stored as FP8 E4M3 with per-output-channel scales, decode on the Triton small-M kernel, prefill on cuBLAS over the bf16 upcast."
+  },
+  "base4": {
+    "extends": "base3-t3b",
+    "description": "Pinned base4 (W9): base3 + T3b's FP8 E4M3 weight-only o_proj (commit 36aa977541, SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1), kept on bs3 (gemma4nv-b3-t3b: W8 composite 1.0142, W1 TPOT -4.03%, decode KL 0.025) and adopted on full GSM8K (delta -0.23 pt, paired 95% CI [-0.92, +0.47]) with tool-JSON 100 -> 100."
+  },
+  "base4-glue1": {
+    "extends": "base4",
+    "commit": "1d859709ef569c5756f28ca4f3b2fcebccfc1f3c",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "1"
+    },
+    "description": "T4 sub-step A (W9b, gemma4nv-b3-t4): base4 on commit 1d859709ef (36aa977541 + Gemma4 fused decode glue) with SGLANG_OPT_GEMMA4_FUSED_GLUE=1: q/k/v RMSNorm + RoPE + FP8 KV-cache store in one Triton kernel per layer (activations and KV bytes bit-identical to the unfused path)."
+  },
+  "base4-glue2": {
+    "extends": "base4",
+    "commit": "1d859709ef569c5756f28ca4f3b2fcebccfc1f3c",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
+    },
+    "description": "T4 (W9b, gemma4nv-b3-t4): base4 on commit 1d859709ef with SGLANG_OPT_GEMMA4_FUSED_GLUE=2: sub-step A plus the post-attention norm pair, the router / pre-FF-2 norm pair and the next layer's input norm in the dual-norm epilogue (270 of 392 glue launches per decode step removed; norm sums reordered)."
   }
 }

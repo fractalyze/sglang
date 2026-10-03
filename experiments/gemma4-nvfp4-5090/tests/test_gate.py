@@ -156,6 +156,55 @@ class QualityTest(parameterized.TestCase):
     def test_tool_items_are_deterministic(self):
         self.assertEqual(quality.tool_items(), quality.tool_items())
 
+    def test_paired_delta_counts_discordant_items(self):
+        control = [True] * 90 + [False] * 10
+        candidate = [True] * 88 + [False] * 2 + [True] * 1 + [False] * 9
+        d = quality.paired_delta(control, candidate)
+        self.assertEqual((d["control_only_correct"], d["candidate_only_correct"]), (2, 1))
+        self.assertAlmostEqual(d["control_pt"], 90.0)
+        self.assertAlmostEqual(d["candidate_pt"], 89.0)
+        self.assertAlmostEqual(d["delta_pt"], -1.0)
+        lo, hi = d["ci95_pt"]
+        self.assertLess(lo, -1.0)
+        self.assertGreater(hi, 0.0)
+
+    def test_paired_delta_interval_keeps_width_without_discordance(self):
+        d = quality.paired_delta([True] * 50, [True] * 50)
+        self.assertEqual(d["delta_pt"], 0.0)
+        self.assertLess(d["ci95_pt"][0], 0.0)
+        self.assertGreater(d["ci95_pt"][1], 0.0)
+        self.assertEqual(d["mcnemar_exact_p"], 1.0)
+
+    def test_paired_delta_rejects_unpaired_arms(self):
+        with self.assertRaises(ValueError):
+            quality.paired_delta([True], [True, False])
+
+    def test_mcnemar_exact_p(self):
+        # Binomial(10, 1/2): P(X <= 1) = 11/1024, doubled.
+        self.assertAlmostEqual(quality._mcnemar_exact_p(1, 9), 22 / 1024)
+        self.assertEqual(quality._mcnemar_exact_p(5, 5), 1.0)
+
+    def test_compare_applies_ci_floor_and_tool_no_drop(self):
+        def res(gsm, tool):
+            return {"gsm8k": {"correct": gsm}, "tool_json": {"correct": tool}}
+
+        same = [True] * 1300 + [False] * 19
+        # Large n, no change: the CI lower bound sits well inside -1 pt.
+        self.assertTrue(quality.compare(res(same, [True] * 40), res(same, [True] * 40))["pass"])
+        # Thirty net losses on 1,319 items push the CI lower bound below -1 pt.
+        worse = [False] * 30 + same[30:]
+        out = quality.compare(res(same, [True] * 40), res(worse, [True] * 40))
+        self.assertFalse(out["checks"]["gsm8k_ci_low"])
+        # One tool-JSON miss fails regardless of GSM8K.
+        out = quality.compare(res(same, [True] * 40), res(same, [False] + [True] * 39))
+        self.assertFalse(out["checks"]["tool_json_no_drop"])
+        self.assertTrue(out["checks"]["gsm8k_ci_low"])
+
+    def test_verdict_refuses_mismatched_sample_sizes(self):
+        base = {"gsm8k": {"n": 200, "accuracy_pt": 97.0}, "tool_json": {"n": 40, "accuracy_pt": 100.0}}
+        cand = {"gsm8k": {"n": 1319, "accuracy_pt": 96.0}, "tool_json": {"n": 40, "accuracy_pt": 100.0}}
+        self.assertIsNone(quality.verdict(cand, base)["pass"])
+
 
 class RunnerTest(absltest.TestCase):
     def test_abba_alternates(self):

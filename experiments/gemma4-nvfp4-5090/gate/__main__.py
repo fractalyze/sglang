@@ -4,7 +4,8 @@
   gate reevaluate --run <run dir> [--decide-on METRIC]
   gate calibrate --ref base            # fidelity reference + KL thresholds (once per baseline)
   gate set-noise --report <A/A report.json>
-  gate quality --ref <ref> [--set-baseline]
+  gate quality --ref <ref> [--gsm8k-n N|all] [--label L] [--set-baseline]
+  gate quality-compare --control <quality.json> --candidate <quality.json>
   gate prebuild --ref base            # JIT + autotune once, capped and watched
   gate vllm-ref                       # ungated vLLM 0.20 reference on W8/W1/W32
   gate peaks                           # measured DRAM BW, GEMM peaks, launch floor
@@ -61,19 +62,31 @@ def _calibrate(args) -> None:
 
 def _quality(args) -> None:
     ref = server.load_ref(args.ref)
-    out_dir = os.path.join(config.RUNS_DIR, runner.new_exp_id(f"quality-{args.ref}"))
+    out_dir = os.path.join(config.RUNS_DIR, runner.new_exp_id(args.label or f"quality-{args.ref}"))
     os.makedirs(out_dir)
     tok = prompts.load_tokenizer()
+    gsm8k_n = None if args.gsm8k_n == "all" else int(args.gsm8k_n)
     with hostwatch.host_lock(), server.Server(ref, os.path.join(out_dir, "server.log")) as srv:
-        res = quality.run(srv.url, tok)
+        res = quality.run(srv.url, tok, gsm8k_n)
         res["commit"] = srv.commit
     res["ref"] = args.ref
+    res["harness"] = server.harness_commit()
     if args.set_baseline:
         fidelity.save_json(QUALITY_BASELINE, res)
     elif os.path.exists(QUALITY_BASELINE):
         res["verdict"] = quality.verdict(res, fidelity.load_json(QUALITY_BASELINE))
     fidelity.save_json(os.path.join(out_dir, "quality.json"), res)
-    print(json.dumps({k: res[k] for k in ("gsm8k", "tool_json", "verdict") if k in res}, indent=1))
+    print(json.dumps({k: {kk: vv for kk, vv in res[k].items() if kk != "correct"} if k != "verdict" else res[k]
+                      for k in ("gsm8k", "tool_json", "verdict") if k in res}, indent=1))
+
+
+def _quality_compare(args) -> None:
+    res = quality.compare(fidelity.load_json(args.control), fidelity.load_json(args.candidate),
+                          args.gsm8k_ci_low_min)
+    res["control"], res["candidate"] = args.control, args.candidate
+    control_run = os.path.basename(os.path.dirname(os.path.abspath(args.control)))
+    fidelity.save_json(os.path.join(os.path.dirname(args.candidate), f"quality_compare-vs-{control_run}.json"), res)
+    print(json.dumps(res, indent=1))
 
 
 def _peaks(args) -> None:
@@ -197,6 +210,12 @@ def main() -> None:
     q = sub.add_parser("quality")
     q.add_argument("--ref", required=True)
     q.add_argument("--set-baseline", action="store_true")
+    q.add_argument("--gsm8k-n", default=str(config.GSM8K_N), help="GSM8K test items to run, or 'all' (1,319)")
+    q.add_argument("--label", default=None)
+    qc = sub.add_parser("quality-compare")
+    qc.add_argument("--control", required=True)
+    qc.add_argument("--candidate", required=True)
+    qc.add_argument("--gsm8k-ci-low-min", type=float, default=-1.0)
     sub.add_parser("peaks")
     sub.add_parser("vllm-ref")
     rv = sub.add_parser("reevaluate")
@@ -225,6 +244,8 @@ def main() -> None:
         print(json.dumps(runner.save_noise_from(args.report), indent=1))
     elif args.cmd == "quality":
         _quality(args)
+    elif args.cmd == "quality-compare":
+        _quality_compare(args)
     elif args.cmd == "reevaluate":
         report = runner.reevaluate(args.run, args.decide_on)
         print(json.dumps({"verdict": report["verdict"], "timing": report["timing"],
