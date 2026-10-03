@@ -27,3 +27,21 @@ Falsified if W1 TPOT improves by less than 1.0% or the W8 decode term gets slowe
 Decision rule: keep only if a gated metric clears its bs2 A/A bar and fidelity passes. The
 composite is predicted at or just under a 1% bar; W1 TPOT is predicted to clear it. If only
 W1 clears, the verdict says so explicitly (a B=1-latency keep, W8-neutral).
+
+## Result (appended after the run; the prediction above is unchanged)
+
+Gate run `T2-20261003-085810-build-server-2-22b5a6` (bs2, 6 ABBA pairs, bar 1%):
+
+| metric | measured | predicted |
+|---|---|---|
+| **W1 TPOT** | **6.001 → 5.884 ms (−1.95%)**, per-pair σ 0.03% | −1.5 … −2.5% |
+| W8 composite gain | 0.9982 (σ 0.53%) | 1.004 … 1.012 |
+| W8 decode sum | +0.2% | −0.6 … −1.5% |
+| W8 prefill | −0.1% | 0 ± 0.5% |
+| Fidelity, decode-path KL mean / p99 | 0.014 / 0.378 (control 0.018 / 0.409; limits 0.050 / 0.95): pass | pass |
+
+W1 cleared the bar as predicted. W8 is neutral, not slightly positive. The gate's verdict is
+promote=false, solely because of integrity: an undeclared `launch_command` diff, and
+timed-output agreement of 0.16 caused by the per-step change in reduction order. **Verdict:
+parked** (vault `gemma4nv-b2-t2`). It becomes a B=1-latency keep if `gate reevaluate` passes
+integrity once the gate owner scopes those checks.
