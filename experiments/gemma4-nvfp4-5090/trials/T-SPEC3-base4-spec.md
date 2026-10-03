@@ -1,5 +1,14 @@
 # T-SPEC3 (gemma4nv-b2-tspec3): T-SPEC2b's speculative stack on base4
 
+**Status: kept, promote candidate (W10, 2026-10-03).** Gate `T-SPEC3-20261003-123016-build-server-2-057827` vs `base4`:
+- W8 composite 1.366;
+- W1 TPOT 5.525 → 2.960 ms (-46.4%, CI half-width 0.05% on W1 design v2);
+- W32 +6.9%;
+- fidelity pass, integrity ok;
+- full GSM8K 96.29 → 96.51% (paired CI [-0.33, +0.78]), tool-JSON 100 → 100.
+
+Every metric landed inside its frozen interval. See `REPORT-bs2-w10.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W10 (bs2) before any gate run. Config only. Variant of T-SPEC2b (`gemma4nv-b2-tspec2b`).
 
 ## Control and candidate

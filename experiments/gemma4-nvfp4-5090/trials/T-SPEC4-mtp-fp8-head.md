@@ -1,5 +1,14 @@
 # T-SPEC4 (gemma4nv-b2-tspec4): the MTP assistant's vocab head in FP8
 
+**Status: kept (W10, 2026-10-03).** Gate `T-SPEC4-20261003-130844-build-server-2-596d2b` vs `base4-spec`:
+- W1 TPOT 2.964 → 2.800 ms (-5.5%, gain 1.0584, CI 1.0579-1.0589);
+- W8 composite 1.034;
+- W32 +2.1%;
+- hidden-set τ 3.648 → 3.655;
+- fidelity pass. The forced-KL difference traced to the gate's cache reuse; at an equal KV pool the target is bit-identical.
+
+Every metric landed inside its frozen interval. See `REPORT-bs2-w10.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W10 (bs2) before any screen or gate run of the change. Code change. The coordinator approved it, behind a default-off switch.
 
 ## What the draft loop costs (profile)

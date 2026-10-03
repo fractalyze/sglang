@@ -8,7 +8,7 @@
 | trial | control | deciding metric | predicted (frozen) | measured | verdict |
 |---|---|---|---|---|---|
 | **T-SPEC3**: T-SPEC2b's stack on base4 (`base4-spec`) | base4 | W8 composite | +34 … +50% | **+36.6%** (1.366); W1 TPOT **-46.4%**; W32 **+6.9%**; full GSM8K **+0.23 pt**, CI [-0.33, +0.78] | **kept: promote candidate** |
-| **T-SPEC4**: MTP assistant head in FP8 (`base4-spec-fp8head`) | base4-spec | W1 TPOT | -3 … -8% | TSPEC4_W1 | TSPEC4_VERDICT |
+| **T-SPEC4**: MTP assistant head in FP8 (`base4-spec-fp8head`) | base4-spec | W1 TPOT | -3 … -8% | **-5.5%** (2.964 → 2.800 ms, gain 1.0584); W8 composite **+3.4%**; W32 **+2.1%**; hidden τ 3.648 → 3.655 | **kept** |
 
 ## 1. Building `base4-spec` (step 1)
 
@@ -180,7 +180,52 @@ The B=1 screen moved more than the profile can explain (0.74 of an ~11 ms round)
 
 ### T-SPEC4 gate
 
-TSPEC4_GATE
+**Gate** `T-SPEC4-20261003-130844-build-server-2-596d2b`, `--decide-on w1_tpot_gain`, base4-spec against base4-spec-fp8head, harness stamp `1f480cbeb2`:
+
+| metric | control | candidate | gain | per-pair σ | 95% CI | bar | predicted |
+|---|---:|---:|---:|---:|---|---:|---|
+| **W1 TPOT (deciding)** | 2.964 ms | 2.800 ms | **1.0584 (-5.5%)** | 0.03% | 1.0579-1.0589 | 1% | -3 … -8% |
+| W8 composite (guard) | | | 1.034 | 1.2% | 1.016-1.054 | 1% | +1 … +4.5% |
+| W8 decode / prefill | | | 1.045 / 1.002 | | | | +2 … +6% / - |
+| W32 tok/s (guard) | 1665.9 | 1701.6 | 1.021 | 1.3% | 1.000-1.043 | 1% | 0 … +4% |
+
+- **The per-pair W1 gains were 1.0587, 1.0580, 1.0586 and 1.0584.** That is what the fixed-prompt design is for.
+- **Every metric landed inside its frozen interval.** The hidden-set τ (+0.2%) also stayed inside its interval.
+- **Fidelity: pass.** Decode KL mean is 0.0177 against the control's 0.0204, within the preregistered ±0.01.
+- **Integrity: ok.** Timed-output agreement is 0.86.
+
+**Decode/forced KL: investigated, because the target path is unchanged and should give identical numbers** (coordinator's rule).
+- **What the gate showed.** The gate's teacher-forced logprobs matched the control bit for bit on 19 of 22 prompts. They differed at every position of 3 long prompts (h18-h20), which is 452 of 3,550 positions. Base4-spec against itself across two gates matched on all 3,550.
+- **Diagnosis** (`trials/spec/forced_probe.py`, `runs/w10-forced-*`). I reran the gate's forced pass on fresh servers, at the gate's concurrency (64) and at 1:
+
+  | comparison | prompts that differ |
+  |---|---|
+  | base4-spec vs fp8head, concurrency 64 | none |
+  | base4-spec with its KV pool set to the fp8head's 52,469 tokens vs fp8head, concurrency 1 and 64 | none |
+  | base4-spec at its own pool vs fp8head, concurrency 1 | h20 only, a cache-eviction difference from the 256 MB larger pool |
+
+- **The cause is the gate, not the change.** The gate runs its forced pass right after the free-running fidelity pass and does not flush the radix cache (`runner.py:108-109`). Under speculation, the forced pass therefore reuses KV written by verify rounds, and their shapes follow the drafts.
+- **So the target numerics are unchanged.** Vault claim `c-gemma4nv-gate-forced-pass-reuses-spec-kv`.
+
+**Verdict: kept.** The drafter head is now 0.82 of the 2.92 ms draft loop.
+
+## 4b. Vault (shared checkout; only my paths committed; not pushed)
+
+| commit | what |
+|---|---|
+| `52023a8` | T-SPEC3 prediction |
+| `d929747` | raw import: T-SPEC3 gate, base4/base4-spec prebuilds, ledger |
+| `9dad67d` | T-SPEC3 verdict **kept**, with the full-GSM8K accuracy note |
+| `d45c365` | T-SPEC4 prediction |
+| `99a278d` | raw import: T-SPEC4 gate, ledger |
+| `9685637` | claim `c-gemma4nv-mtp-draft-head-half-of-draft-loop` |
+| `873525b` | claim `c-gemma4nv-gate-forced-pass-reuses-spec-kv` |
+| `898bc27` | T-SPEC4 verdict **kept** |
+| `d95ce8d` | result prose for both trials |
+
+- The bs2 measurements are `source: manual`, as in W7 and W8.
+- The quality JSONs are not in `raw/`, because the import list does not cover `runs/quality-*`. They are cited by path.
+- Lint leaves "stale" warnings on the new claims against base5, which bs3 pinned after these runs.
 
 ## 5. Host safety
 
@@ -194,4 +239,22 @@ The per-phase peaks are in `BASELINE.md` § "W10 on bs2".
 
 ## 6. Next (for the coordinator)
 
-TSPEC4_NEXT
+1. **Promote T-SPEC3 + T-SPEC4 together on bs2.** They are kept against base4 and against base4-spec respectively. The composed stack against base4:
+
+   | metric | change |
+   |---|---:|
+   | W1 TPOT | 5.525 → 2.800 ms (gain about 1.97) |
+   | W8 composite | about 1.41 |
+   | W32 | about +9% |
+
+   Full GSM8K holds. The switch to add is `SGLANG_OPT_MTP_FP8_LM_HEAD=1` on `3d1732c505` or later; it does nothing without the Gemma-4 assistant. The bs3 base5-spec line (`gemma4nv-b3-tspec5`) needs three commits cherry-picked to pick it up: `4ebe6175af`, `262f327c28` and `3d1732c505`. They touch `gemma4_mtp.py`, `environ.py` and `triton_small_m_bf16_gemm.py`, plus one test, and nothing on the target path.
+2. **Gate change to decide on:** `flush_cache()` between the free-running and the forced fidelity passes. Speculative refs would then measure the target alone. It changes the forced numbers of every future run, so it needs a recalibration, and older verdicts should be re-evaluated only for the record.
+3. **W8 under speculation** still draws fresh prompts per pair. Its CI half-width here was 2.7% in T-SPEC3, against a 1% bar. Fixing its prompts, as W1's now are, matters only for small W8 effects under speculation.
+4. **Next B=1 costs** (fp8head round of about 10.3 ms):
+   - **Verify (7.36 ms):**
+     - NVFP4 MoE 2.28 ms;
+     - cuBLAS WMMA-fallback qkv and lm_head at M=6, 1.96 ms. T3c's small-M routes for these did not pay at decode M, but at verify M=6 to 48 they are a different shape class. A verify-only route is the next candidate.
+   - **Draft loop (2.92 ms):**
+     - drafter layer GEMVs 0.91 ms (BF16, small-M Triton or FP8 candidates);
+     - full-vocab softmax + max 0.32 ms. For topk=1 greedy drafting, an argmax would do.
+5. **k re-sweep.** A cheaper draft step moves the k optimum up. k=6 or 7 may now win at B=1, but B=8 τ saturates near 3.4 (W8 sweep). That is a config-only screen.
