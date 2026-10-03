@@ -276,6 +276,12 @@ def main():
     if torch.cuda.get_device_capability()[0] != 9:
         sys.exit("needs an SM90 (Hopper) GPU")
 
+    # Bring the GPU to steady clocks first; otherwise the first timed leg runs slow.
+    x = torch.randn(8192, 8192, device="cuda", dtype=torch.bfloat16)
+    for _ in range(200):
+        x @ x
+    torch.cuda.synchronize()
+
     results = []
     for name, k, n, divisor in PROJECTIONS:
         bench_projection(
