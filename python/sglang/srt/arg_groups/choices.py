@@ -146,6 +146,7 @@ MOE_RUNNER_BACKEND_CHOICES = [
     "aiter",
     "marlin",
     "humming",
+    "w4a16_sm90",  # AWQ int4 MoE on Hopper (SM90) only
     "experimental_sgl_marlin",
     "hpc_ops",  # HPC-Ops (https://github.com/Tencent/hpc-ops), FP8 MoE on Hopper (SM90) only
     "megamoe",

@@ -167,7 +167,33 @@ class AWQMoEKernel:
         self.quant_config = quant_config
         self.runner: Optional[MoeRunner] = None
 
+    def _uses_w4a16_sm90(self) -> bool:
+        return self.runner is not None and self.runner.runner_backend.is_w4a16_sm90()
+
+    def _repack_for_w4a16_sm90(self, layer: torch.nn.Module) -> None:
+        from sglang.kernels.ops.moe.w4a16_moe_sm90 import repack_awq_moe_weights
+
+        if layer.w13_scales.dtype != torch.bfloat16:
+            raise ValueError(
+                "--moe-runner-backend w4a16_sm90 needs bfloat16 AWQ scales, "
+                f"got {layer.w13_scales.dtype}; serve with --dtype bfloat16"
+            )
+        for proj in ("w13", "w2"):
+            repacked = repack_awq_moe_weights(
+                qweight=getattr(layer, f"{proj}_qweight"),
+                scales=getattr(layer, f"{proj}_scales"),
+                qzeros=getattr(layer, f"{proj}_qzeros"),
+                group_size=self.quant_config.group_size,
+            )
+            replace_parameter(layer, f"{proj}_qweight", repacked.qweight)
+            replace_parameter(layer, f"{proj}_scales", repacked.scales)
+            replace_parameter(layer, f"{proj}_qzeros", repacked.zeros)
+
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        if self._uses_w4a16_sm90():
+            self._repack_for_w4a16_sm90(layer)
+            return
+
         num_experts = layer.w13_qweight.shape[0]
         device = layer.w13_qweight.device
 
@@ -237,6 +263,26 @@ class AWQMoEKernel:
     ) -> CombineInput:
         if self.runner is None:
             raise RuntimeError("moe runner is not initialized")
+
+        if self._uses_w4a16_sm90():
+            from sglang.kernels.ops.moe.w4a16_moe_sm90 import W4A16MoeWeights
+            from sglang.srt.layers.moe.moe_runner.w4a16_sm90 import (
+                W4A16Sm90MoeQuantInfo,
+            )
+
+            quant_info = W4A16Sm90MoeQuantInfo(
+                w13=W4A16MoeWeights(
+                    qweight=layer.w13_qweight,
+                    scales=layer.w13_scales,
+                    zeros=layer.w13_qzeros,
+                ),
+                w2=W4A16MoeWeights(
+                    qweight=layer.w2_qweight,
+                    scales=layer.w2_scales,
+                    zeros=layer.w2_qzeros,
+                ),
+            )
+            return self.runner.run(dispatch_output, quant_info)
 
         quant_info = MarlinMoeQuantInfo(
             w13_qweight=layer.w13_qweight,

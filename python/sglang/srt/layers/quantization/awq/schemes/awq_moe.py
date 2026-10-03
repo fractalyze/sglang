@@ -129,9 +129,16 @@ class AWQMoEScheme(AWQMoESchemeBase):
     def create_moe_runner(
         self, layer: torch.nn.Module, moe_runner_config: MoeRunnerConfig
     ):
-        assert get_moe_runner_backend().is_auto()
+        backend = get_moe_runner_backend()
+        if backend.is_auto():
+            backend = MoeRunnerBackend.MARLIN
+        elif not backend.is_w4a16_sm90():
+            raise ValueError(
+                "AWQ MoE supports --moe-runner-backend auto (Marlin) or "
+                f"w4a16_sm90, got {backend.value}"
+            )
         self.moe_runner_config = moe_runner_config
-        self.kernel.runner = MoeRunner(MoeRunnerBackend.MARLIN, moe_runner_config)
+        self.kernel.runner = MoeRunner(backend, moe_runner_config)
 
     def apply_weights(
         self,
