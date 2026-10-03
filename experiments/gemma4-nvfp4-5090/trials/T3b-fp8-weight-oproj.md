@@ -1,5 +1,7 @@
 # T3b (gemma4nv-b2-t3b): FP8 E4M3 weight-only o_proj on the small-M Triton GEMM
 
+**Status: kept (W7, 2026-10-03).** Gate `T3b-20261003-101044-build-server-2-df2cee` vs `smallm-gemm` (T3c was not kept): W8 composite 1.0136, W1 TPOT -3.92%, W32 flat, fidelity pass, `gate quality` pass (GSM8K 97.0 -> 96.0, at the 1-point edge; tool-JSON 100 -> 100). Final code `ed0aefcd40`; see `REPORT-bs2-w7.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W7 (bs2) before any gate run. The code is behind a new switch,
 `SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM` (default off), and changes numerics.
 

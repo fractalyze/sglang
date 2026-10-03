@@ -1,5 +1,7 @@
 # T3c (gemma4nv-b2-t3c): extend the small-M BF16 GEMM to qkv_proj, the router and lm_head
 
+**Status: retired (W7, 2026-10-03).** Gate `T3c-20261003-095735-build-server-2-fb82c2`: W1 TPOT -0.92% (bar 1%), W8 composite +0.83%, W32 flat, fidelity pass. Code removed again in `ed0aefcd40`; see `REPORT-bs2-w7.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W7 (bs2) before any gate run. Code: `826d472504` on
 `jumanzii/gemma4nv-analysis`, behind the existing switch `SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM`
 (T3's allowlist plus three shapes, so T3c is a commit change, not a new switch).
