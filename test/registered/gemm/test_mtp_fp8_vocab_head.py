@@ -89,6 +89,19 @@ class TestMtpFp8VocabHead(unittest.TestCase):
             )
             self.assertEqual(top_fp8[r, 0].item(), top_bf16.indices[r, 0].item())
 
+    def test_model_loader_postprocess_accepts_the_head(self):
+        """The loader's post-load pass reaches every quant_method; the head must survive it unchanged."""
+        from sglang.srt.model_loader.loader import DefaultModelLoader
+
+        head = self._head()
+        weight = head.weight.clone()
+        DefaultModelLoader.postprocess_weights(
+            torch.nn.ModuleList([head]), torch.device("cuda")
+        )
+        self.assertTrue(
+            torch.equal(head.weight.view(torch.uint8), weight.view(torch.uint8))
+        )
+
     def test_logits_processor_takes_the_quant_hook(self):
         from sglang.srt.layers.logits_processor import should_apply_lm_head_quant_method
 

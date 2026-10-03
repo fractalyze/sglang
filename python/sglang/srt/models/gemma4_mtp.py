@@ -52,6 +52,10 @@ _FP8_HEAD_QUANT_CHUNK = 16384
 class _Fp8VocabHeadMethod:
     """LogitsProcessor hook: logits from the head's FP8 weight on the small-M kernel."""
 
+    def process_weights_after_loading(self, layer: nn.Module) -> None:
+        # The model loader calls this on every quant_method; the head is final after load_weights.
+        del layer
+
     def apply(
         self,
         layer: _Fp8VocabHead,
