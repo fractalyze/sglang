@@ -8,6 +8,83 @@ build-server-3. Nothing is quoted from a single unpaired run. Compare hosts by d
   - Re-evaluated at c16a12cf5 after `startup_time` was marked volatile; the first report is kept as `report.v1.json`.
 - **Verdict:** integrity OK, fidelity pass, no promotion (as an A/A must).
 
+## base2 (current pinned base, 2026-10-03)
+
+`base2` = `base` plus `--mem-fraction-static 0.76`, promoted from T-W32b (`gemma4nv-b3-w32b`,
+kept on W32 x1.49 with W8 and W1 neutral and fidelity passing). In the vault it is
+`stack-a9871012a-gemma4nv-base2` (parent `stack-a9871012a-gemma4nv`). The `base` sections below
+remain the record of the first base.
+
+- **Decision run:** A/A `AA-base2-20261003-092146-build-server-3-dce578`.
+  - 6 clean ABBA pairs.
+  - Harness a7ece6d73 (the deploy stamp names it; see `bin/deploy`).
+- **Verdict:** integrity OK, fidelity pass, no promotion (as an A/A must).
+- **Noise and bars:** `reference/noise.json` now comes from this A/A. The `base` noise file is
+  kept as `reference/noise.base.json`.
+- **Timed-output agreement:** 1.0 in every pair, so the hard threshold for numerics-unchanged
+  refs is calibrated at 0.98 (lowest pair minus max(3 sigma, 0.02)).
+- **KV pools:** FP8. Full attention holds 51,893 tokens and sliding window holds 41,514 tokens.
+  Under `base` they held 37,081 and 29,664.
+
+| metric | base2 (control legs) | base | definition |
+|---|---|---|---|
+| **W8 prefill** | **1.742 s** per rep; batch prefill 291 ms | 1.740 s; 291 ms | sum of 8 TTFTs |
+| **W8 decode** | **9.427 s** per rep; 9.28 ms per stream-token | 9.442 s; 9.29 ms | sum of 8 (e2e - TTFT) |
+| **W1 TPOT** | **6.066 ms** | 6.075 ms | 1 x 1024 x 256 |
+| W1 prefill (TTFT) | 48.0 ms | 48.4 ms | |
+| **W32 throughput** | **1527.4 tok/s** (ungated) | 1020.6 tok/s | 32 x 1024 x 128; no retraction now |
+
+A/A gains and noise (6 pairs):
+
+| metric | A/A gain | per-pair sigma of ln(gain) | bar |
+|---|---|---|---|
+| W8 composite | 1.00000 | 0.041% | 1.0% |
+| W8 prefill | 1.00000 | 0.078% | 1.0% |
+| W8 decode | 1.00001 | 0.037% | 1.0% |
+| W1 TPOT | 1.00005 | 0.041% | 1.0% |
+| W32 throughput | 0.99972 | 0.047% | 1.0% |
+
+The largest per-pair W8 composite deviation is 0.05%.
+
+sol_fraction, from `gate sol-report` on this A/A against the unchanged SOL tables in `reference/sol/sol.json`:
+
+| workload | achieved decode step | decode sol_fraction | achieved batch prefill | prefill sol_fraction (NVFP4/FP8 / as served) |
+|---|---|---|---|---|
+| W8 | 9.28 ms | **0.60** | 291 ms | 0.22 / 0.53 |
+| W1 | 6.07 ms | **0.52** | 48.0 ms | 0.21 / 0.40 |
+| W32 | 16.01 ms | **0.51** (base 0.48) | 1124 ms (base 2615) | 0.23 / 0.55 (base 0.10 / 0.24) |
+
+W32 changed and W8 and W1 did not. Retraction under `base` recomputed prefill and stretched
+decode steps, and the larger pool removes it.
+
+**Fidelity** (pair 0 control vs the `base` reference; the reference is not re-pinned, so stacked
+trials are still judged against the original model behaviour):
+
+- Teacher-forced: min top-1 agreement 0.917, mean 0.969, KL mean 0.032, KL p99 0.59. Pass.
+- Free-running decode path: KL mean 0.015, p99 0.39. Pass.
+- Free-running token match is 0.32 mean. That is reported only, since greedy near-ties flip
+  across launches.
+
+**Host peaks per phase** (max over the 12 A/A legs, from the 2 s watchdog; 24G scope, no swap):
+
+| phase | min MemAvailable | peak tree RSS | peak load1 | compilers (peak count / RSS) |
+|---|---|---|---|---|
+| start | 51.7 GB | 4.5 GB | 5.9 | 0 |
+| weight load | 51.0 GB | **10.9 GB** | 5.6 | 0 |
+| autotune / graph capture | 49.8 GB | 6.4 GB | 5.2 | 2 / 0.35 GB (Triton) |
+| serving (warm-up) | 49.3 GB | 7.1 GB | 4.3 | 2 / 0.32 GB |
+| timed | 49.8 GB | 6.7 GB | 3.2 | 0 |
+
+The weight-load phase is the RSS peak, at 10.9 GB (mmap plus modelopt post-processing), and it
+falls back to about 6.5 GB once loading ends. With a warm JIT cache, no nvcc runs at launch.
+
+The `gate prebuild --ref base2-splits16` step (warm FlashInfer cache, new Triton split-16
+kernels) peaked as follows:
+
+- Tree RSS 10.5 GB.
+- Load1 0.66.
+- Two Triton compilers at 0.28 GB.
+
 ## Pinned configuration (`gate/refs.json`, ref `base`)
 
 | item | value |

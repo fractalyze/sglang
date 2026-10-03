@@ -49,5 +49,21 @@
       "--triton-attention-num-kv-splits",
       "16"
     ]
+  },
+  "smallm-gemm": {
+    "extends": "base2",
+    "commit": "1fd77e64b05a88e4c89e9787e49c122caf3b47c8",
+    "env": {
+      "SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM": "1"
+    },
+    "description": "T3 (W6 on bs2, gemma4nv-b2-t3): base2 on commit 1fd77e64b0 (base a9871012 + Triton small-M BF16 GEMM) with SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM=1, routing the decode-M o_proj and dense MLP BF16 linears off cuBLAS's SM80 WMMA fallback. Same definition as W6's bs2 ref."
+  },
+  "base2-splits16-smallm": {
+    "extends": "base2-splits16",
+    "commit": "1fd77e64b05a88e4c89e9787e49c122caf3b47c8",
+    "env": {
+      "SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM": "1"
+    },
+    "description": "T3 stacked on base2-splits16 (W5, bs3): commit 1fd77e64b0 with SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM=1 on top of base2 plus split-KV 16."
   }
 }
