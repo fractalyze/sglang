@@ -12,7 +12,11 @@ from torch.nn.parameter import Parameter
 
 from sglang.kernels.fused_op import BaseFusedOp
 from sglang.kernels.ops.gemm.triton_small_m_bf16_gemm import (
+    MAX_M as TRITON_SMALL_M_MAX_M,
+    quantize_fp8_weight_per_channel,
     triton_small_m_bf16_gemm,
+    triton_small_m_fp8_weight_gemm,
+    use_fp8_weight_only,
     use_triton_small_m_bf16_gemm,
 )
 from sglang.srt.batch_invariant_ops import is_batch_invariant_mode_enabled
@@ -403,6 +407,31 @@ def fits_triton_small_m_bf16_gemm(
     return use_triton_small_m_bf16_gemm(m, weight.shape[0], weight.shape[1])
 
 
+def _fp8_weight_only_linear(
+    *,
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    scale: torch.Tensor,
+    bias: Optional[torch.Tensor],
+) -> torch.Tensor:
+    x2d = x.reshape(-1, x.shape[-1])
+    if (
+        bias is None
+        and x2d.shape[0] <= TRITON_SMALL_M_MAX_M
+        and x2d.dtype == torch.bfloat16
+        and x2d.is_contiguous()
+        and not torch.compiler.is_compiling()
+    ):
+        out = triton_small_m_fp8_weight_gemm(x2d, weight, scale)
+        return out.view(*x.shape[:-1], -1)
+    # Prefill is compute-bound, so it keeps cuBLAS on an exact bf16 upcast of the
+    # E4M3 weight; the per-output-channel scale factors out of the K sum.
+    out = F.linear(x, weight.to(torch.bfloat16)) * scale
+    if bias is not None:
+        out = out + bias
+    return out.to(x.dtype)
+
+
 def get_bf16_gemm_backend() -> Bf16GemmBackend:
     global _BF16_GEMM_BACKEND
     if _BF16_GEMM_BACKEND is None:
@@ -455,6 +484,9 @@ class UnquantizedLinearMethod(LinearMethodBase):
         self._use_triton_small_m_bf16_gemm = (
             _is_cuda and envs.SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM.get()
         )
+        self._use_fp8_weight_only = (
+            _is_cuda and envs.SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM.get()
+        )
 
     def create_weights(
         self,
@@ -481,6 +513,14 @@ class UnquantizedLinearMethod(LinearMethodBase):
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         if _is_cpu and _is_cpu_amx_available:
             _amx_process_weight_after_loading(layer, ["weight"])
+        if (
+            self._use_fp8_weight_only
+            and layer.weight.dtype == torch.bfloat16
+            and use_fp8_weight_only(*layer.weight.shape)
+        ):
+            weight_fp8, scale = quantize_fp8_weight_per_channel(layer.weight.data)
+            layer.weight = Parameter(weight_fp8, requires_grad=False)
+            layer.weight_scale = Parameter(scale, requires_grad=False)
 
     def apply(
         self,
@@ -504,6 +544,11 @@ class UnquantizedLinearMethod(LinearMethodBase):
 
         elif _use_aiter and type(layer.weight.data) is torch.Tensor:
             return tgemm.mm(x, layer.weight, bias, otype=x.dtype)
+
+        elif layer.weight.dtype == torch.float8_e4m3fn and self._use_fp8_weight_only:
+            return _fp8_weight_only_linear(
+                x=x, weight=layer.weight, scale=layer.weight_scale, bias=bias
+            )
 
         elif (
             get_bf16_gemm_backend().is_cutedsl()

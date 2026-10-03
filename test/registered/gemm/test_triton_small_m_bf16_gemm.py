@@ -1,7 +1,8 @@
 """
 Tests the Triton small-M BF16 GEMM against cuBLAS (F.linear) and an fp32
 reference, and that SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM toggles the
-UnquantizedLinearMethod and LogitsProcessor lm_head routes.
+UnquantizedLinearMethod and LogitsProcessor lm_head routes. Also tests the FP8
+weight-only variant behind SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM.
 """
 
 import unittest
@@ -27,12 +28,21 @@ _TUNED_NK = [
     (262144, 2816),
 ]
 _LM_HEAD_NK = (262144, 2816)
+_FP8_WEIGHT_NK = [(2816, 4096), (2816, 8192)]
 
 
 def _bf16_ulp(t: torch.Tensor) -> torch.Tensor:
     """Spacing of bf16 values at |t| (8 significand bits)."""
     mag = t.abs().clamp_min(torch.finfo(torch.bfloat16).tiny)
     return torch.exp2(torch.floor(torch.log2(mag)) - 7)
+
+
+def _assert_within_bf16_rounding(test, y, x, w_fp32, roundings):
+    """Each bf16 rounding of the fp32 result costs half an ulp; order error is gamma."""
+    ref = x.float() @ w_fp32.t()
+    gamma = x.shape[1] * 2.0**-24 * (x.float().abs() @ w_fp32.abs().t())
+    excess = (y.float() - ref).abs() - (roundings * 0.5 * _bf16_ulp(ref) + 2 * gamma)
+    test.assertLessEqual(excess.max().item(), 0.0)
 
 
 class _Linear(torch.nn.Module):
@@ -131,6 +141,63 @@ class TestTritonSmallMBf16Gemm(unittest.TestCase):
                 self.assertEqual(logits.shape, (8, n))
                 proc._compute_lm_head(prefill, head)
                 self.assertEqual(spy.call_count, 1 if enabled else 0)
+
+    def test_fp8_weight_matches_dequantized_reference(self):
+        from sglang.kernels.ops.gemm.triton_small_m_bf16_gemm import (
+            quantize_fp8_weight_per_channel,
+            triton_small_m_fp8_weight_gemm,
+        )
+
+        torch.manual_seed(0)
+        for n, k in _FP8_WEIGHT_NK:
+            w = torch.randn(n, k, dtype=torch.bfloat16, device="cuda") * 0.02
+            w8, scale = quantize_fp8_weight_per_channel(w)
+            # The scale is the row absmax over E4M3's largest finite value.
+            self.assertEqual(w8.float().abs().amax(dim=1).min().item(), 448.0)
+            w_deq = w8.float() * scale[:, None]
+            for m in (1, 8, 17, 32):
+                with self.subTest(n=n, k=k, m=m):
+                    x = torch.randn(m, k, dtype=torch.bfloat16, device="cuda")
+                    y = triton_small_m_fp8_weight_gemm(x, w8, scale)
+                    _assert_within_bf16_rounding(self, y, x, w_deq, roundings=1)
+
+    def test_fp8_weight_switch_converts_and_routes(self):
+        from sglang.srt.environ import envs
+        from sglang.srt.layers.quantization import unquant
+
+        torch.manual_seed(0)
+        n, k = _FP8_WEIGHT_NK[0]
+        w = torch.randn(n, k, dtype=torch.bfloat16, device="cuda") * 0.02
+        decode = torch.randn(8, k, dtype=torch.bfloat16, device="cuda")
+        prefill = torch.randn(1024, k, dtype=torch.bfloat16, device="cuda")
+        for enabled in (False, True):
+            with (
+                self.subTest(enabled=enabled),
+                envs.SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM.override(enabled),
+                mock.patch.object(
+                    unquant,
+                    "triton_small_m_fp8_weight_gemm",
+                    wraps=unquant.triton_small_m_fp8_weight_gemm,
+                ) as spy,
+            ):
+                method = unquant.UnquantizedLinearMethod()
+                layer = _Linear(w.clone())
+                other_shape = _Linear(w[:1024].clone())
+                method.process_weights_after_loading(layer)
+                method.process_weights_after_loading(other_shape)
+                self.assertEqual(other_shape.weight.dtype, torch.bfloat16)
+                if not enabled:
+                    self.assertEqual(layer.weight.dtype, torch.bfloat16)
+                    continue
+                self.assertEqual(layer.weight.dtype, torch.float8_e4m3fn)
+                w_deq = layer.weight.float() * layer.weight_scale[:, None]
+                y = method.apply(layer, decode)
+                self.assertEqual(spy.call_count, 1)
+                _assert_within_bf16_rounding(self, y, decode, w_deq, roundings=1)
+                # Prefill rounds the unscaled GEMM output, then the scaled one.
+                y = method.apply(layer, prefill)
+                self.assertEqual(spy.call_count, 1)
+                _assert_within_bf16_rounding(self, y, prefill, w_deq, roundings=3)
 
 
 if __name__ == "__main__":
