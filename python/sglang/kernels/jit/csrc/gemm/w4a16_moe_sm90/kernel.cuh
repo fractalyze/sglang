@@ -230,8 +230,8 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64
   // Only the shape matters: it sizes the register A fragment.
   auto a_shape = make_tensor(
       make_smem_ptr(static_cast<bf16*>(nullptr)), Layout<Shape<_64, Int<kTileK>>, Stride<Int<kTileK>, _1>>{});
-  Tensor frag_a = thr_mma.partition_fragment_A(a_shape);  // ((2,2,2), 1, 8)
-  Tensor frag_a_words = recast<uint32_t>(frag_a);
+  Tensor frag_a_even = thr_mma.partition_fragment_A(a_shape);  // ((2,2,2), 1, 8)
+  Tensor frag_a_odd = thr_mma.partition_fragment_A(a_shape);
   Tensor acc = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
   Tensor acc_coord = thr_mma.partition_C(make_identity_tensor(Shape<_64, Int<kTokenBlock>>{}));
 
@@ -245,12 +245,9 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64
     const TileCoord c = tile_coord(p, tile, n_tiles);
     if (c.expert < 0) continue;
 
-    clear(acc);
-    for (int kt = 0; kt < k_tiles; ++kt, ++it) {
-      const int s = it % Cfg::kStages;
-      device::ptx::mbar_wait_parity(&full[s], (it / Cfg::kStages) & 1);
+    // Dequantises stage `s` into `frag_a` and issues its wgmma batch without waiting on it.
+    auto issue_stage = [&](auto& frag_a, int s) {
       const uint8_t* stage = stages + s * Cfg::kStageBytes;
-
       const __nv_bfloat16* scales = reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset);
       const uint8_t* zeros = stage + Cfg::kZeroOffset;
       const nv_bfloat162 scale_lo = __bfloat162bfloat162(scales[row_lo]);
@@ -258,6 +255,7 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64
       const nv_bfloat162 zero_lo = biased_zero(zeros[row_lo]);
       const nv_bfloat162 zero_hi = biased_zero(zeros[row_lo + 8]);
 
+      Tensor frag_a_words = recast<uint32_t>(frag_a);
       const uint4* words = reinterpret_cast<const uint4*>(stage) + wg * 2 * 128 + tid;
 #pragma unroll
       for (int half = 0; half < 2; ++half) {
@@ -279,18 +277,34 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64
       Tensor frag_b = thr_mma.partition_fragment_B(tokens);  // descriptors, (1, 1, 8)
 
       warpgroup_fence_operand(frag_a);
-      warpgroup_fence_operand(acc);
       warpgroup_arrive();
 #pragma unroll
       for (int k16 = 0; k16 < size<2>(frag_a); ++k16) {
         cute::gemm(tiled_mma, frag_a(_, _, k16), frag_b(_, _, k16), acc);
       }
       warpgroup_commit_batch();
-      warpgroup_wait<0>();
-      warpgroup_fence_operand(acc);
-      warpgroup_fence_operand(frag_a);
-      device::ptx::mbar_arrive(&empty[s]);
+    };
+
+    clear(acc);
+    warpgroup_fence_operand(acc);
+    // One wgmma batch stays in flight while the next stage dequantises, so the
+    // register A fragments alternate and a stage is released one step late.
+    int prev_stage = -1;
+    for (int kt = 0; kt < k_tiles; ++kt, ++it) {
+      const int s = it % Cfg::kStages;
+      device::ptx::mbar_wait_parity(&full[s], (it / Cfg::kStages) & 1);
+      if (it & 1) {
+        issue_stage(frag_a_odd, s);
+      } else {
+        issue_stage(frag_a_even, s);
+      }
+      warpgroup_wait<1>();
+      if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
+      prev_stage = s;
     }
+    warpgroup_wait<0>();
+    warpgroup_fence_operand(acc);
+    if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
 
     // Transpose through shared memory so each routed row leaves as 16B stores.
     const int block_base = c.m_block * kTokenBlock;

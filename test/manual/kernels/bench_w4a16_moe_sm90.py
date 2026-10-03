@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import torch
 
 from sglang.kernels.ops.moe.w4a16_moe_sm90 import (
+    TOKEN_BLOCKS,
     repack_awq_moe_weights,
     select_token_block,
     w4a16_moe_sm90_gemm,
@@ -140,7 +141,8 @@ def _marlin_block(num_tokens: int) -> int:
 
 
 def _humming_gemm(qweight, scales, qzeros, k, n):
-    from humming.layer import HummingLayer
+    from humming.config import GemmType
+    from humming.layer import HummingLayer, HummingMethod
 
     layer = HummingLayer(
         shape_n=n,
@@ -151,6 +153,17 @@ def _humming_gemm(qweight, scales, qzeros, k, n):
     ).cuda()
     layer.load_from_tensors({"qweight": qweight, "scales": scales, "qzeros": qzeros})
     layer.transform()
+    # Same configs the sglang humming runner builds for its indexed MoE GEMM.
+    compute_config = json.dumps({"use_f16_accum": False, "gemm_type": "indexed"})
+    tuning = HummingMethod.get_default_tuning_configs(
+        layer=layer, use_f16_accum=False, gemm_type=GemmType.INDEXED, sublayer_name=""
+    )
+
+    def block_for(valid_shape_m):
+        for low, high, config in tuning:
+            if low < valid_shape_m <= high:
+                return config["block_shape"][0]
+        raise ValueError(f"no humming tuning entry for shape_m={valid_shape_m}")
 
     def run(a, out, routing, top_k, num_tokens):
         sorted_ids, expert_ids, num_post = routing
@@ -162,17 +175,21 @@ def _humming_gemm(qweight, scales, qzeros, k, n):
             num_tokens_padded=num_post,
             top_k=top_k,
             valid_shape_m=num_tokens * top_k,
+            compute_config=compute_config,
+            tuning_config=json.dumps(tuning),
         )
 
-    return run
+    return run, block_for
 
 
-def bench_projection(name, k, n, a_row_divisor, tokens_per_expert, iters, results):
+def bench_projection(
+    name, k, n, a_row_divisor, tokens_per_expert, iters, sweep_blocks, results
+):
     qweight, scales, qzeros = _random_awq(k, n, seed=k + n)
     ours_weights = repack_awq_moe_weights(qweight, scales, qzeros, GROUP)
     marlin = _marlin_gemm(qweight, scales, qzeros, k, n)
     try:
-        humming = _humming_gemm(qweight, scales, qzeros, k, n)
+        humming, humming_block = _humming_gemm(qweight, scales, qzeros, k, n)
     except Exception as exc:  # report and keep the other legs
         humming = None
         results.append({"projection": name, "method": "humming", "error": repr(exc)})
@@ -188,28 +205,37 @@ def bench_projection(name, k, n, a_row_divisor, tokens_per_expert, iters, result
         top_k = TOP_K if a_row_divisor == TOP_K else 1
 
         legs = {}
-        block = select_token_block(
+
+        def ours(block):
+            routing = moe_align_block_size(topk_ids, block, NUM_EXPERTS)
+            return lambda: w4a16_moe_sm90_gemm(
+                a=a,
+                out=out,
+                weights=ours_weights,
+                sorted_token_ids=routing[0],
+                expert_ids=routing[1],
+                num_tokens_post_padded=routing[2],
+                topk_weights=None,
+                token_block=block,
+                a_row_divisor=a_row_divisor,
+            )
+
+        selected = select_token_block(
             num_tokens=num_tokens, top_k=TOP_K, num_experts=NUM_EXPERTS
         )
-        routing = moe_align_block_size(topk_ids, block, NUM_EXPERTS)
-        legs["w4a16_sm90"] = lambda: w4a16_moe_sm90_gemm(
-            a=a,
-            out=out,
-            weights=ours_weights,
-            sorted_token_ids=routing[0],
-            expert_ids=routing[1],
-            num_tokens_post_padded=routing[2],
-            topk_weights=None,
-            token_block=block,
-            a_row_divisor=a_row_divisor,
-        )
+        legs["w4a16_sm90"] = ours(selected)
+        if sweep_blocks:
+            for block in TOKEN_BLOCKS:
+                if block != selected:
+                    legs[f"w4a16_sm90_b{block}"] = ours(block)
         m_block = _marlin_block(num_tokens)
         m_routing = moe_align_block_size(topk_ids, m_block, NUM_EXPERTS)
         legs["marlin"] = lambda: marlin(
             a, out, m_routing, topk_weights, m_block, top_k, a_rows
         )
         if humming is not None:
-            h_routing = moe_align_block_size(topk_ids, 16, NUM_EXPERTS)
+            h_block = humming_block(a_rows * top_k)
+            h_routing = moe_align_block_size(topk_ids, h_block, NUM_EXPERTS)
             legs["humming"] = lambda: humming(a, out, h_routing, top_k, a_rows)
 
         for method, fn in legs.items():
@@ -240,6 +266,11 @@ def main():
     parser.add_argument("--iters", type=int, default=50)
     parser.add_argument(
         "--tokens-per-expert", type=int, nargs="+", default=[4, 8, 16, 32, 64, 128]
+    )
+    parser.add_argument(
+        "--sweep-blocks",
+        action="store_true",
+        help="also time w4a16_sm90 at every token block, not only the selected one",
     )
     args = parser.parse_args()
     if torch.cuda.get_device_capability()[0] != 9:

@@ -13,6 +13,7 @@ and each thread reads its wgmma A fragments with one 16-byte shared-memory load.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, NamedTuple
 
 import torch
@@ -163,10 +164,15 @@ TOKEN_BLOCKS = (8, 16, 32, 64, 128)
 
 
 def select_token_block(num_tokens: int, top_k: int, num_experts: int) -> int:
-    """Smallest block that holds the mean routed tokens per expert."""
+    """Smallest block that holds nearly every expert's routed tokens.
+
+    Per-expert counts are roughly binomial, so mean + 3 sd keeps almost every
+    expert in one block; a second block would stream that expert's weights again.
+    """
     mean = num_tokens * top_k / num_experts
+    target = mean + 3 * math.sqrt(mean)
     for block in TOKEN_BLOCKS:
-        if mean <= block:
+        if target <= block:
             return block
     return TOKEN_BLOCKS[-1]
 
