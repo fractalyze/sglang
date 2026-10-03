@@ -83,24 +83,27 @@ def mode_spec(srv: server.Server, out: Dict, decode_new: int) -> None:
     out["hidden"] = {cat: _accept_stats(m) for cat, m in sorted(by_cat.items())}
     out["hidden_all"] = _accept_stats([m for ms in by_cat.values() for m in ms])
 
-    for batch, reps, new in ((1, 3, 256), (8, 2, 128)):
-        rows = []
+    for batch, reps, new in ((1, 3, 256), (8, 2, 128), (32, 1, 128)):
+        rows, wall_s = [], 0.0
         for rep in range(reps + 1):  # rep 0 warms up
             srv.flush_cache()
             ps = _timing_prompts(f"w8-spec-b{batch}-r{rep}", batch)
             res = asyncio.run(client.run_batch(srv.url, ps, new))
             if rep == 0:
                 continue
+            wall_s += res["wall_s"]
             for s in res["streams"]:
                 rows.append({"tpot_ms": 1e3 * (s["e2e_s"] - s["ttft_s"]) / (s["output_tokens"] - 1),
                              "ttft_s": s["ttft_s"]})
         # Acceptance on the same corpus, read back per request (non-streamed).
         metas = []
-        for i, p in enumerate(_timing_prompts(f"w8-spec-acc-b{batch}", 4 if batch == 1 else 8)):
+        for p in _timing_prompts(f"w8-spec-acc-b{batch}", 4 if batch == 1 else 8):
             srv.flush_cache()
             metas.append(_generate(srv.url, p, new)["meta_info"])
         out[f"timing_b{batch}"] = {
             "tpot_ms_median": statistics.median(r["tpot_ms"] for r in rows),
+            "ttft_s_median": statistics.median(r["ttft_s"] for r in rows),
+            "wall_tok_s": round(batch * new * reps / wall_s, 1),
             "tpot_ms_all": [round(r["tpot_ms"], 3) for r in rows],
             "accept": _accept_stats(metas),
         }
