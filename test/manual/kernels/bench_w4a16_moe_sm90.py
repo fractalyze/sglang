@@ -279,7 +279,14 @@ def main():
     results = []
     for name, k, n, divisor in PROJECTIONS:
         bench_projection(
-            name, k, n, divisor, args.tokens_per_expert, args.iters, results
+            name=name,
+            k=k,
+            n=n,
+            a_row_divisor=divisor,
+            tokens_per_expert=args.tokens_per_expert,
+            iters=args.iters,
+            sweep_blocks=args.sweep_blocks,
+            results=results,
         )
     with open(args.out, "w") as f:
         for row in results:
