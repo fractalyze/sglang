@@ -221,5 +221,10 @@
       "--speculative-num-draft-tokens",
       "7"
     ]
+  },
+  "base4-spec-fp8lmhead-oprojtiers": {
+    "commit": "350d0531002c7a043abdd9b7977ebb433105df8a",
+    "description": "T3d (W13, gemma4nv-b2-t3d): base4-spec-fp8head-fp8lmhead on commit 350d053100 (dd5361a7bc's python tree + M tiers for the FP8 weight-only o_proj: Triton with capped BLOCK_M up to M=8192 instead of the bf16 upcast + cuBLAS route above M=32); see trials/T3d-oproj-fp8-m-tiers.md.",
+    "extends": "base4-spec-fp8head-fp8lmhead"
   }
 }
