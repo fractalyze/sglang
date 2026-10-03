@@ -155,8 +155,9 @@ def tactic_sweep(weights, routings, finalize, results, label):
     torch.cuda.synchronize()
     ref = moe.call(x, routings[0], out.clone(), weights[0]).clone()
     tuned_us, tuned_fn = time_case(moe, weights, routings, None)
-    from flashinfer.fused_moe.core import MoERunner
+    from flashinfer.fused_moe.core import get_cutlass_fused_moe_module
 
+    MoERunner = get_cutlass_fused_moe_module("120").MoERunner
     runner = next(iter(MoERunner.runner_dict.values()))
     for key, r in MoERunner.runner_dict.items():
         if key[7] == finalize:
