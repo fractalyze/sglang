@@ -76,11 +76,16 @@ def _accept_stats(metas: List[Dict]) -> Dict:
 
 def mode_spec(srv: server.Server, out: Dict, decode_new: int) -> None:
     by_cat = collections.defaultdict(list)
+    per_prompt = []
     for p in _hidden():
         srv.flush_cache()
         body = _generate(srv.url, p["input_ids"], decode_new)
         by_cat[p["category"]].append(body["meta_info"])
+        # Index and category only; hidden prompt contents are never written out.
+        per_prompt.append({"index": len(per_prompt), "category": p["category"],
+                           "accept_length": _accept_stats([body["meta_info"]])["accept_length"]})
     out["hidden"] = {cat: _accept_stats(m) for cat, m in sorted(by_cat.items())}
+    out["hidden_per_prompt"] = per_prompt
     out["hidden_all"] = _accept_stats([m for ms in by_cat.values() for m in ms])
 
     for batch, reps, new in ((1, 3, 256), (8, 2, 128), (32, 1, 128)):
