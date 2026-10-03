@@ -87,14 +87,17 @@ struct Config {
   // Padded so a warp's column-wise accumulator stores spread over banks.
   static constexpr int kEpilogueStride = kWarpgroupRows + 8;
   static constexpr int kEpilogueBytes = 2 * kTokenBlock * kEpilogueStride * 2;
+  // Per consumer warpgroup: the tile's routed row ids, then their top-k weights.
+  static constexpr int kRowMetaBytes = 2 * kTokenBlock * 8;
   static constexpr int kBarrierBytes = 2 * kMaxStages * 8;
   // Dynamic smem is only 16B-aligned; the stages are realigned to 1024B in-kernel.
   static constexpr int kAlignSlack = 1024;
 
   static constexpr int kStages =
-      std::min(kMaxStages, (kSmemLimit - kEpilogueBytes - kBarrierBytes - kAlignSlack) / kStageBytes);
+      std::min(kMaxStages, (kSmemLimit - kEpilogueBytes - kRowMetaBytes - kBarrierBytes - kAlignSlack) / kStageBytes);
   static_assert(kStages >= 3, "token block too wide for a three-stage pipeline");
-  static constexpr int kSmemBytes = kAlignSlack + kStages * kStageBytes + kEpilogueBytes + kBarrierBytes;
+  static constexpr int kSmemBytes =
+      kAlignSlack + kStages * kStageBytes + kEpilogueBytes + kRowMetaBytes + kBarrierBytes;
 
   static constexpr int kStageTxBytes = kWeightBytes + kScaleBytes + kZeroBytes;
   // One expect_tx arrival plus one cp.async arrival per producer thread.
@@ -235,9 +238,34 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   }
 }
 
+// Dequantises the stage's weights into this thread's e4m3 A fragments.
+template <typename Fragment>
+__device__ __forceinline__ void
+dequant_stage(const uint8_t* stage, int zero_offset, int wg, int tid, int row_lo, Fragment& frag_a) {
+  const half2 zero_lo = biased_zero(stage[zero_offset + row_lo]);
+  const half2 zero_hi = biased_zero(stage[zero_offset + row_lo + 8]);
+  auto frag_a_words = cute::recast<uint32_t>(frag_a);
+  const uint4* words = reinterpret_cast<const uint4*>(stage) + wg * 2 * 128 + tid;
+#pragma unroll
+  for (int half = 0; half < 2; ++half) {
+    const uint4 q = words[half * 128];
+    const uint32_t slices[4] = {q.x, q.y, q.z, q.w};
+    // A k32 fragment is two consecutive k16 slices; PTX orders its words
+    // (row g, row g + 8) of the first slice, then of the second.
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+      uint32_t frag[2];
+      dequant_fragment(slices[j], zero_lo, zero_hi, frag);
+      const int word = (half * 2 + j / 2) * 4 + (j % 2) * 2;
+      frag_a_words(word) = frag[0];
+      frag_a_words(word + 1) = frag[1];
+    }
+  }
+}
+
 template <int kTokenBlock>
 __device__ __forceinline__ void
-consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64_t* empty) {
+consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* row_meta, uint64_t* full, uint64_t* empty) {
   using namespace cute;
   using Cfg = Config<kTokenBlock>;
 
@@ -252,101 +280,105 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64
   // Only the shape matters: it sizes the register A fragment.
   auto a_shape = make_tensor(
       make_smem_ptr(static_cast<e4m3*>(nullptr)), Layout<Shape<_64, Int<kTileK>>, Stride<Int<kTileK>, _1>>{});
-  Tensor frag_a = thr_mma.partition_fragment_A(a_shape);  // ((4,2,2), 1, 4)
-  Tensor frag_a_words = recast<uint32_t>(frag_a);
+  Tensor frag_a_even = thr_mma.partition_fragment_A(a_shape);  // ((4,2,2), 1, 4)
+  Tensor frag_a_odd = thr_mma.partition_fragment_A(a_shape);
   Tensor partial = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
   Tensor acc = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
   Tensor acc_coord = thr_mma.partition_C(make_identity_tensor(Shape<_64, Int<kTokenBlock>>{}));
 
   bf16* staging = epilogue + wg * kTokenBlock * Cfg::kEpilogueStride;
+  int* row_ids = reinterpret_cast<int*>(row_meta + wg * kTokenBlock * 8);
+  float* row_weights = reinterpret_cast<float*>(row_ids + kTokenBlock);
   const int n_tiles = p.n / kTileN;
   const int k_tiles = p.k / kTileK;
   const int num_tiles = (*p.num_tokens_post_padded / kTokenBlock) * n_tiles;
+
+  auto stage_ptr = [&](int it) { return stages + (it % Cfg::kStages) * Cfg::kStageBytes; };
+  auto wait_full = [&](int it) { device::ptx::mbar_wait_parity(&full[it % Cfg::kStages], (it / Cfg::kStages) & 1); };
+
+  // Issues stage `it`'s wgmma batch from `cur`, dequantises the next stage into
+  // `next` while it runs, then promotes the partial with the group's scales.
+  auto step = [&](auto& cur, auto& next, int it, bool has_next) {
+    const uint8_t* stage = stage_ptr(it);
+    Tensor tokens = make_tensor(
+        make_smem_ptr(reinterpret_cast<const e4m3*>(stage + Cfg::kTokenOffset)), typename Cfg::SmemLayoutTokens{});
+    Tensor frag_b = thr_mma.partition_fragment_B(tokens);  // descriptors, (1, 1, 4)
+
+    warpgroup_fence_operand(cur);
+    warpgroup_fence_operand(partial);
+    warpgroup_arrive();
+    tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+#pragma unroll
+    for (int k32 = 0; k32 < size<2>(cur); ++k32) {
+      cute::gemm(tiled_mma, cur(_, _, k32), frag_b(_, _, k32), partial);
+      tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+    }
+    warpgroup_commit_batch();
+
+    if (has_next) {
+      wait_full(it + 1);
+      dequant_stage(stage_ptr(it + 1), Cfg::kZeroOffset, wg, tid, row_lo, next);
+    }
+
+    const __nv_bfloat16* weight_scales = reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset);
+    const float scale_lo = __bfloat162float(weight_scales[row_lo]);
+    const float scale_hi = __bfloat162float(weight_scales[row_lo + 8]);
+    const float* token_scales = reinterpret_cast<const float*>(stage + Cfg::kTokenScaleOffset);
+    warpgroup_wait<0>();
+    warpgroup_fence_operand(partial);
+    warpgroup_fence_operand(cur);
+#pragma unroll
+    for (int i = 0; i < size(acc); ++i) {
+      // A thread's accumulator rows are only row_lo and row_lo + 8 of its warpgroup.
+      const float s_w = get<0>(acc_coord(i)) % 16 < 8 ? scale_lo : scale_hi;
+      acc(i) += partial(i) * (s_w * token_scales[get<1>(acc_coord(i))]);
+    }
+    device::ptx::mbar_arrive(&empty[it % Cfg::kStages]);
+  };
 
   int it = 0;
   for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
     const TileCoord c = tile_coord(p, tile, n_tiles);
     if (c.expert < 0) continue;
 
+    // Issued before the main loop so the global loads land while it runs.
+    const int block_base = c.m_block * kTokenBlock;
+    if (tid < kTokenBlock) {
+      const int id = p.sorted_token_ids[block_base + tid];
+      const bool routed = id < p.num_rows;
+      row_ids[tid] = routed ? id : -1;
+      row_weights[tid] = p.topk_weights == nullptr ? 1.0f : (routed ? p.topk_weights[id] : 0.0f);
+    }
+
     clear(acc);
+    wait_full(it);
+    dequant_stage(stage_ptr(it), Cfg::kZeroOffset, wg, tid, row_lo, frag_a_even);
     for (int kt = 0; kt < k_tiles; ++kt, ++it) {
-      const int s = it % Cfg::kStages;
-      device::ptx::mbar_wait_parity(&full[s], (it / Cfg::kStages) & 1);
-      const uint8_t* stage = stages + s * Cfg::kStageBytes;
-
-      const uint8_t* zeros = stage + Cfg::kZeroOffset;
-      const half2 zero_lo = biased_zero(zeros[row_lo]);
-      const half2 zero_hi = biased_zero(zeros[row_lo + 8]);
-
-      const uint4* words = reinterpret_cast<const uint4*>(stage) + wg * 2 * 128 + tid;
-#pragma unroll
-      for (int half = 0; half < 2; ++half) {
-        const uint4 q = words[half * 128];
-        const uint32_t slices[4] = {q.x, q.y, q.z, q.w};
-        // A k32 fragment is two consecutive k16 slices; PTX orders its words
-        // (row g, row g + 8) of the first slice, then of the second.
-#pragma unroll
-        for (int j = 0; j < 4; ++j) {
-          uint32_t frag[2];
-          dequant_fragment(slices[j], zero_lo, zero_hi, frag);
-          const int word = (half * 2 + j / 2) * 4 + (j % 2) * 2;
-          frag_a_words(word) = frag[0];
-          frag_a_words(word + 1) = frag[1];
-        }
+      const bool has_next = kt + 1 < k_tiles;
+      if (kt & 1) {
+        step(frag_a_odd, frag_a_even, it, has_next);
+      } else {
+        step(frag_a_even, frag_a_odd, it, has_next);
       }
-
-      Tensor tokens = make_tensor(
-          make_smem_ptr(reinterpret_cast<const e4m3*>(stage + Cfg::kTokenOffset)), typename Cfg::SmemLayoutTokens{});
-      Tensor frag_b = thr_mma.partition_fragment_B(tokens);  // descriptors, (1, 1, 4)
-
-      warpgroup_fence_operand(frag_a);
-      warpgroup_fence_operand(partial);
-      warpgroup_arrive();
-      tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
-#pragma unroll
-      for (int k32 = 0; k32 < size<2>(frag_a); ++k32) {
-        cute::gemm(tiled_mma, frag_a(_, _, k32), frag_b(_, _, k32), partial);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
-      }
-      warpgroup_commit_batch();
-      warpgroup_wait<0>();
-      warpgroup_fence_operand(partial);
-      warpgroup_fence_operand(frag_a);
-
-      const __nv_bfloat16* weight_scales = reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset);
-      const float scale_lo = __bfloat162float(weight_scales[row_lo]);
-      const float scale_hi = __bfloat162float(weight_scales[row_lo + 8]);
-      const float* token_scales = reinterpret_cast<const float*>(stage + Cfg::kTokenScaleOffset);
-#pragma unroll
-      for (int i = 0; i < size(acc); ++i) {
-        // A thread's accumulator rows are only row_lo and row_lo + 8 of its warpgroup.
-        const float s_w = get<0>(acc_coord(i)) % 16 < 8 ? scale_lo : scale_hi;
-        acc(i) += partial(i) * (s_w * token_scales[get<1>(acc_coord(i))]);
-      }
-      device::ptx::mbar_arrive(&empty[s]);
     }
 
     // Transpose through shared memory so each routed row leaves as 16B stores.
-    const int block_base = c.m_block * kTokenBlock;
+    named_barrier_sync(1 + wg, 128);
 #pragma unroll
     for (int i = 0; i < size(acc); ++i) {
       const int row = get<0>(acc_coord(i));
       const int token = get<1>(acc_coord(i));
-      float v = acc(i);
-      if (p.topk_weights != nullptr) {
-        const int id = p.sorted_token_ids[block_base + token];
-        v *= id < p.num_rows ? p.topk_weights[id] : 0.0f;
-      }
-      staging[token * Cfg::kEpilogueStride + row] = bf16(v);
+      staging[token * Cfg::kEpilogueStride + row] = bf16(acc(i) * row_weights[token]);
     }
     named_barrier_sync(1 + wg, 128);
 
     const int col = c.n_tile * kTileN + wg * kWarpgroupRows;
+#pragma unroll
     for (int ci = tid; ci < kTokenBlock * kWarpgroupRows / 8; ci += 128) {
       const int token = ci / (kWarpgroupRows / 8);
       const int part = ci % (kWarpgroupRows / 8);
-      const int id = p.sorted_token_ids[block_base + token];
-      if (id < p.num_rows) {
+      const int id = row_ids[token];
+      if (id >= 0) {
         *reinterpret_cast<uint4*>(p.out + int64_t(id) * p.n + col + part * 8) =
             *reinterpret_cast<const uint4*>(staging + token * Cfg::kEpilogueStride + part * 8);
       }
@@ -362,7 +394,8 @@ __global__ void __launch_bounds__(kThreads, 1) w4fp8_moe_sm90_kernel(const __gri
   // Pointer arithmetic, not an integer round trip, so loads stay in the shared space.
   uint8_t* stages = smem_raw + ((1024 - device::ptx::to_shared(smem_raw) % 1024) % 1024);
   bf16* epilogue = reinterpret_cast<bf16*>(stages + Cfg::kStages * Cfg::kStageBytes);
-  uint64_t* full = reinterpret_cast<uint64_t*>(reinterpret_cast<uint8_t*>(epilogue) + Cfg::kEpilogueBytes);
+  uint8_t* row_meta = reinterpret_cast<uint8_t*>(epilogue) + Cfg::kEpilogueBytes;
+  uint64_t* full = reinterpret_cast<uint64_t*>(row_meta + Cfg::kRowMetaBytes);
   uint64_t* empty = full + Cfg::kStages;
 
   if (threadIdx.x == 0) {
@@ -379,7 +412,7 @@ __global__ void __launch_bounds__(kThreads, 1) w4fp8_moe_sm90_kernel(const __gri
     produce<kTokenBlock>(p, stages, full, empty);
   } else {
     cutlass::arch::warpgroup_reg_alloc<232>();
-    consume<kTokenBlock>(p, stages, epilogue, full, empty);
+    consume<kTokenBlock>(p, stages, epilogue, row_meta, full, empty);
   }
 }
 
