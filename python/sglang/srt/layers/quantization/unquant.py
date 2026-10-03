@@ -12,7 +12,7 @@ from torch.nn.parameter import Parameter
 
 from sglang.kernels.fused_op import BaseFusedOp
 from sglang.kernels.ops.gemm.triton_small_m_bf16_gemm import (
-    MAX_M as TRITON_SMALL_M_MAX_M,
+    fits_triton_small_m_fp8_weight_gemm,
     quantize_fp8_weight_per_channel,
     triton_small_m_bf16_gemm,
     triton_small_m_fp8_weight_gemm,
@@ -417,7 +417,7 @@ def _fp8_weight_only_linear(
     x2d = x.reshape(-1, x.shape[-1])
     if (
         bias is None
-        and x2d.shape[0] <= TRITON_SMALL_M_MAX_M
+        and fits_triton_small_m_fp8_weight_gemm(x2d.shape[0], *weight.shape)
         and x2d.dtype == torch.bfloat16
         and x2d.is_contiguous()
         and not torch.compiler.is_compiling()

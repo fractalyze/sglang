@@ -27,6 +27,8 @@ class _TileConfig(NamedTuple):
     block_n: int
     block_k: int
     num_stages: int
+    # Largest M routed to the tile; its shared memory must fit BLOCK_M = next_pow2(max_m).
+    max_m: int = MAX_M
 
 
 # Measured on RTX 5090 at M in {1, 8, 16, 32} (gemma4nv T3 microbench).
@@ -46,6 +48,10 @@ _FP8_WEIGHT_TUNED_SHAPES: Dict[Tuple[int, int], _TileConfig] = {
     # Gemma-4-26B-A4B o_proj: sliding and full.
     (2816, 4096): _TileConfig(32, 256, 4),
     (2816, 8192): _TileConfig(32, 256, 4),
+    # Gemma-4-26B-A4B qkv_proj, sliding and full: best worst case over M in 4..48, which
+    # covers MTP verify widths (1 + k) * B up to B=8 (gemma4nv W12 microbench).
+    (8192, 2816): _TileConfig(64, 128, 4, max_m=48),
+    (10240, 2816): _TileConfig(64, 128, 4, max_m=48),
 }
 # FP8 E4M3 vocab heads, kept apart so the linear allowlist above never picks them
 # up: Gemma-4-26B-A4B MTP assistant's tied head (SGLANG_OPT_MTP_FP8_LM_HEAD).
@@ -62,6 +68,11 @@ def use_triton_small_m_bf16_gemm(m: int, n: int, k: int) -> bool:
 
 def use_fp8_weight_only(n: int, k: int) -> bool:
     return (n, k) in _FP8_WEIGHT_TUNED_SHAPES
+
+
+def fits_triton_small_m_fp8_weight_gemm(m: int, n: int, k: int) -> bool:
+    cfg = _FP8_WEIGHT_TUNED_SHAPES.get((n, k))
+    return cfg is not None and m <= cfg.max_m
 
 
 def quantize_fp8_weight_per_channel(
@@ -126,7 +137,7 @@ def triton_small_m_bf16_gemm(x: torch.Tensor, weight: torch.Tensor) -> torch.Ten
 def triton_small_m_fp8_weight_gemm(
     x: torch.Tensor, weight: torch.Tensor, scale: torch.Tensor
 ) -> torch.Tensor:
-    """``(x @ weight.T) * scale`` for an E4M3 ``weight`` [N, K] and fp32 ``scale`` [N], M <= MAX_M."""
+    """``(x @ weight.T) * scale`` for an E4M3 ``weight`` [N, K] and fp32 ``scale`` [N], M <= the shape's max_m."""
     n, k = weight.shape
     return _launch(x, weight, scale, _FP8_WEIGHT_TUNED_SHAPES[(n, k)])
 

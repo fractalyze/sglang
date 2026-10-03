@@ -16,7 +16,9 @@ from sglang.test.ci.ci_register import register_cuda_ci
 register_cuda_ci(est_time=15, stage="base-b", runner_config="1-gpu-large")
 
 _TUNED_NK = [(2816, 4096), (2816, 8192), (4224, 2816), (2816, 2112)]
-_FP8_WEIGHT_NK = [(2816, 4096), (2816, 8192)]
+# (N, K) -> largest routed M: o_proj stops at decode widths, qkv_proj covers MTP verify.
+_FP8_WEIGHT_MAX_M = {(2816, 4096): 32, (2816, 8192): 32, (8192, 2816): 48, (10240, 2816): 48}
+_FP8_WEIGHT_NK = list(_FP8_WEIGHT_MAX_M)
 
 
 def _bf16_ulp(t: torch.Tensor) -> torch.Tensor:
@@ -107,7 +109,7 @@ class TestTritonSmallMBf16Gemm(unittest.TestCase):
             # The scale is the row absmax over E4M3's largest finite value.
             self.assertEqual(w8.float().abs().amax(dim=1).min().item(), 448.0)
             w_deq = w8.float() * scale[:, None]
-            for m in (1, 8, 17, 32):
+            for m in sorted({1, 6, 8, 17, 32, _FP8_WEIGHT_MAX_M[(n, k)]}):
                 with self.subTest(n=n, k=k, m=m):
                     x = torch.randn(m, k, dtype=torch.bfloat16, device="cuda")
                     y = triton_small_m_fp8_weight_gemm(x, w8, scale)
@@ -150,6 +152,38 @@ class TestTritonSmallMBf16Gemm(unittest.TestCase):
                 y = method.apply(layer, prefill)
                 self.assertEqual(spy.call_count, 1)
                 _assert_within_bf16_rounding(self, y, prefill, w_deq, roundings=3)
+
+    def test_fp8_weight_route_stops_at_each_shapes_max_m(self):
+        from sglang.srt.environ import envs
+        from sglang.srt.layers.quantization import unquant
+
+        torch.manual_seed(0)
+        method_cls = unquant.UnquantizedLinearMethod
+        for (n, k), max_m in _FP8_WEIGHT_MAX_M.items():
+            with (
+                self.subTest(n=n, k=k),
+                envs.SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM.override(True),
+                mock.patch.object(
+                    unquant,
+                    "triton_small_m_fp8_weight_gemm",
+                    wraps=unquant.triton_small_m_fp8_weight_gemm,
+                ) as spy,
+            ):
+                method = method_cls()
+                layer = _Linear(
+                    torch.randn(n, k, dtype=torch.bfloat16, device="cuda") * 0.02
+                )
+                method.process_weights_after_loading(layer)
+                self.assertEqual(layer.weight.dtype, torch.float8_e4m3fn)
+                w_deq = layer.weight.float() * layer.weight_scale[:, None]
+                x = torch.randn(max_m, k, dtype=torch.bfloat16, device="cuda")
+                y = method.apply(layer, x)
+                self.assertEqual(spy.call_count, 1)
+                _assert_within_bf16_rounding(self, y, x, w_deq, roundings=1)
+                x = torch.randn(max_m + 1, k, dtype=torch.bfloat16, device="cuda")
+                y = method.apply(layer, x)
+                self.assertEqual(spy.call_count, 1)
+                _assert_within_bf16_rounding(self, y, x, w_deq, roundings=3)
 
 
 if __name__ == "__main__":
