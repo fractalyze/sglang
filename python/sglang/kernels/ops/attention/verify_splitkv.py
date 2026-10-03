@@ -28,7 +28,8 @@ Two Triton kernels:
 bit-equivalently and returns True, otherwise returns False (doing nothing) so
 the caller falls back to ``extend_attention_fwd``. Supported case: causal
 (topk=1) verify with a constant per-sequence extend length, no sinks /
-sliding-window / logit-cap / xai-temperature. Correctness is never violated.
+logit-cap / xai-temperature, and sliding-window layers only when the caller
+opts in (``allow_sliding_window``). Correctness is never violated.
 """
 
 import torch
@@ -120,6 +121,24 @@ def choose_n_splits(avg_seqlen):
     return n
 
 
+# Occupancy policy for the CUDA path (tuned on the RTX 5090, 170 SMs). The
+# ctx-keyed table above under-fills a large GPU at small batch: at bs=1 and
+# 16 heads its 4 splits launch 64 programs. Instead pick the power of two
+# that gives about two prefix programs per SM, without splits shorter than
+# 2 * _MIN_BLOCK_KV keys. Static shapes only, so it is graph-capture safe.
+CUDA_MAX_N_SPLITS = 16
+# Stage-2 tile and warps for the CUDA path: head_dim 512 at one warp and full
+# width spills registers (an [L_EXT, L_EXT, D] product per program).
+CUDA_COMBINE_TILE = 64
+CUDA_COMBINE_NUM_WARPS = 4
+
+
+def choose_n_splits_for_occupancy(avg_seqlen, bs, h_q, sm_count):
+    want = triton.next_power_of_2(triton.cdiv(2 * sm_count, max(1, bs * h_q)))
+    by_len = triton.next_power_of_2(max(1, int(avg_seqlen) // (2 * _MIN_BLOCK_KV)))
+    return max(MIN_N_SPLITS, min(want, by_len, CUDA_MAX_N_SPLITS))
+
+
 @triton.jit
 def _verify_prefix_stage1(
     Q,  # [extend_tokens, H_Q, D]
@@ -155,6 +174,7 @@ def _verify_prefix_stage1(
     BLOCK_DV: tl.constexpr,
     BLOCK_N: tl.constexpr,
     MIN_BLOCK_KV: tl.constexpr,
+    SLIDING_WINDOW_SIZE: tl.constexpr,
 ):
     cur_batch = tl.program_id(0)
     cur_head = tl.program_id(1)
@@ -221,6 +241,13 @@ def _verify_prefix_stage1(
             qk *= sm_scale * k_scale  # fp8 dequant of prefix K (k_scale==1 if bf16)
             # NO causal mask: full prefix is visible to all draft tokens.
             qk = tl.where(n_mask[None, :], qk, float("-inf"))
+            if SLIDING_WINDOW_SIZE > 0:
+                # extend_attention_fwd's rule on the same kv slice: row l sits at
+                # slice position seq_len + l and sees key n iff that is <= n + W.
+                in_window = (cur_batch_seq_len + offs_l[:, None]) <= (
+                    offs_n[None, :] + SLIDING_WINDOW_SIZE
+                )
+                qk = tl.where(in_window, qk, float("-inf"))
 
             # V block: [BLOCK_N, Dv]
             offs_buf_v = kv_loc[:, None] * stride_buf_vbs + base_offs_v
@@ -231,8 +258,14 @@ def _verify_prefix_stage1(
             )
 
             n_e_max = tl.maximum(tl.max(qk, 1), e_max)
-            re_scale = tl.exp(e_max - n_e_max)
-            p = tl.exp(qk - n_e_max[:, None])
+            if SLIDING_WINDOW_SIZE > 0:
+                # A row can have no visible key yet; shift by 0 there so exp
+                # gives 0 instead of exp(-inf - -inf) = nan.
+                shift = tl.where(n_e_max == float("-inf"), 0.0, n_e_max)
+            else:
+                shift = n_e_max
+            re_scale = tl.exp(e_max - shift)
+            p = tl.exp(qk - shift[:, None])
             acc *= re_scale[:, None]
             acc += tl.dot(p.to(v.dtype), v)
             e_sum = e_sum * re_scale + tl.sum(p, 1)
@@ -240,6 +273,11 @@ def _verify_prefix_stage1(
 
         # fp8 dequant of prefix V: scale the accumulated (pre-normalised) output.
         acc *= v_scale
+        if SLIDING_WINDOW_SIZE > 0:
+            # A row with no visible key in this split contributes nothing (lse -inf).
+            has_key = e_sum > 0
+            e_sum = tl.where(has_key, e_sum, 1.0)
+            e_max = tl.where(has_key, e_max, float("-inf"))
 
         offs_o = (
             cur_batch * stride_ob
@@ -308,13 +346,17 @@ def _verify_combine_stage2(
     V_HEAD_DIM: tl.constexpr,
     BLOCK_DMODEL: tl.constexpr,
     BLOCK_DV: tl.constexpr,
+    BLOCK_D_TILE: tl.constexpr,  # D chunk of the draft-draft QK (== BLOCK_DMODEL: one pass)
+    BLOCK_DV_TILE: tl.constexpr,  # Dv columns per program (grid axis 2)
+    SLIDING_WINDOW_SIZE: tl.constexpr,
 ):
     cur_batch = tl.program_id(0)
     cur_head = tl.program_id(1)
+    dv_tile = tl.program_id(2)
     cur_kv_head = cur_head // kv_group_num
 
-    offs_d = tl.arange(0, BLOCK_DMODEL)
-    offs_dv = tl.arange(0, BLOCK_DV)
+    offs_dv = dv_tile * BLOCK_DV_TILE + tl.arange(0, BLOCK_DV_TILE)
+    mask_dv = offs_dv < V_HEAD_DIM
     offs_l = tl.arange(0, L_EXT)
     offs_s = tl.arange(0, N_SPLITS)
 
@@ -336,10 +378,13 @@ def _verify_combine_stage2(
         other=float("-inf"),
     )  # [N_SPLITS, L_EXT]
     m_p = tl.max(lse, 0)  # [L_EXT]
+    if SLIDING_WINDOW_SIZE > 0:
+        # Every split of a row can be empty under the window: shift by 0, not -inf.
+        m_p = tl.where(m_p == float("-inf"), 0.0, m_p)
     w = tl.exp(lse - m_p[None, :])  # [N_SPLITS, L_EXT]; -inf->0
     denom_p = tl.sum(w, 0)  # [L_EXT]
 
-    # weighted-sum of partial outputs: o_prefix[L_EXT, Dv]
+    # weighted-sum of partial outputs: o_prefix[L_EXT, Dv tile]
     # Att_Out[b,h,s,l,dv]
     offs_ao = (
         cur_batch * stride_ob
@@ -350,36 +395,46 @@ def _verify_combine_stage2(
     )
     ao = tl.load(
         offs_ao + Att_Out,
-        mask=mask_l[None, :, None] & (offs_dv[None, None, :] < V_HEAD_DIM),
+        mask=mask_l[None, :, None] & mask_dv[None, None, :],
         other=0.0,
-    )  # [N_SPLITS, L_EXT, Dv]
-    o_prefix = tl.sum(ao * w[:, :, None], 0)  # [L_EXT, Dv]
+    )  # [N_SPLITS, L_EXT, Dv tile]
+    o_prefix = tl.sum(ao * w[:, :, None], 0)  # [L_EXT, Dv tile]
+    if SLIDING_WINDOW_SIZE > 0:
+        has_prefix = denom_p > 0
+        denom_p = tl.where(has_prefix, denom_p, 1.0)
+        lse_prefix = tl.where(has_prefix, m_p + tl.log(denom_p), float("-inf"))
+    else:
+        lse_prefix = m_p + tl.log(denom_p)  # [L_EXT]
     o_prefix = o_prefix / denom_p[:, None]
-    lse_prefix = m_p + tl.log(denom_p)  # [L_EXT]
 
     # ---- (b) draft-draft causal attention (L_EXT x L_EXT) -----------------
-    # load draft queries [L_EXT, D], draft K/V [L_EXT, D]/[L_EXT, Dv]
-    offs_q = (
-        (cur_q_start + offs_l)[:, None] * stride_qbs
-        + cur_head * stride_qh
-        + offs_d[None, :]
-    )
-    q = tl.load(
-        Q + offs_q,
-        mask=mask_l[:, None] & (offs_d[None, :] < HEAD_DIM),
-        other=0.0,
-    ).to(tl.float32)
+    # scores[i,j] = q_i . k_j  (i query, j key)  -> [L_EXT, L_EXT], over D chunks
+    qk = tl.zeros([L_EXT, L_EXT], dtype=tl.float32)
+    for d_start in tl.static_range(0, BLOCK_DMODEL, BLOCK_D_TILE):
+        offs_d = d_start + tl.arange(0, BLOCK_D_TILE)
+        offs_q = (
+            (cur_q_start + offs_l)[:, None] * stride_qbs
+            + cur_head * stride_qh
+            + offs_d[None, :]
+        )
+        q = tl.load(
+            Q + offs_q,
+            mask=mask_l[:, None] & (offs_d[None, :] < HEAD_DIM),
+            other=0.0,
+        ).to(tl.float32)
+        offs_ke = (
+            (cur_q_start + offs_l)[:, None] * stride_kebs
+            + cur_kv_head * stride_keh
+            + offs_d[None, :]
+        )
+        ke = tl.load(
+            K_Extend + offs_ke,
+            mask=mask_l[:, None] & (offs_d[None, :] < HEAD_DIM),
+            other=0.0,
+        ).to(tl.float32)
+        qk += tl.sum(q[:, None, :] * ke[None, :, :], 2)
+    qk = qk * sm_scale
 
-    offs_ke = (
-        (cur_q_start + offs_l)[:, None] * stride_kebs
-        + cur_kv_head * stride_keh
-        + offs_d[None, :]
-    )
-    ke = tl.load(
-        K_Extend + offs_ke,
-        mask=mask_l[:, None] & (offs_d[None, :] < HEAD_DIM),
-        other=0.0,
-    ).to(tl.float32)
     offs_ve = (
         (cur_q_start + offs_l)[:, None] * stride_vebs
         + cur_kv_head * stride_veh
@@ -387,19 +442,20 @@ def _verify_combine_stage2(
     )
     ve = tl.load(
         V_Extend + offs_ve,
-        mask=mask_l[:, None] & (offs_dv[None, :] < V_HEAD_DIM),
+        mask=mask_l[:, None] & mask_dv[None, :],
         other=0.0,
     ).to(tl.float32)
 
-    # scores[i,j] = q_i . k_j  (i query, j key)  -> [L_EXT, L_EXT]
-    qk = tl.sum(q[:, None, :] * ke[None, :, :], 2) * sm_scale
     # causal among drafts: query i sees key j iff j <= i, and both valid
     causal = (offs_l[None, :] <= offs_l[:, None]) & mask_l[None, :] & mask_l[:, None]
+    if SLIDING_WINDOW_SIZE > 0:
+        # extend_attention_fwd's extend-part rule: i <= j + W.
+        causal &= offs_l[:, None] <= (offs_l[None, :] + SLIDING_WINDOW_SIZE)
     qk = tl.where(causal, qk, float("-inf"))
     m_d = tl.max(qk, 1)  # [L_EXT]
     pd = tl.exp(qk - m_d[:, None])  # [L_EXT, L_EXT]
     denom_d = tl.sum(pd, 1)  # [L_EXT]
-    o_draft = tl.sum(pd[:, :, None] * ve[None, :, :], 1)  # [L_EXT, Dv]
+    o_draft = tl.sum(pd[:, :, None] * ve[None, :, :], 1)  # [L_EXT, Dv tile]
     o_draft = o_draft / denom_d[:, None]
     lse_draft = m_d + tl.log(denom_d)  # [L_EXT]
 
@@ -417,7 +473,7 @@ def _verify_combine_stage2(
     tl.store(
         O_Out + offs_oo,
         o.to(O_Out.dtype.element_ty),
-        mask=mask_l[:, None] & (offs_dv[None, :] < V_HEAD_DIM),
+        mask=mask_l[:, None] & mask_dv[None, :],
     )
 
 
@@ -441,6 +497,8 @@ class VerifySplitKV:
         n_splits=DEFAULT_N_SPLITS,
         block_n=DEFAULT_BLOCK_N,
         num_warps=DEFAULT_NUM_WARPS,
+        combine_tile=None,
+        combine_num_warps=1,
     ):
         self.h_q = h_q
         self.h_kv = h_kv
@@ -450,9 +508,17 @@ class VerifySplitKV:
         self.l_ext = l_ext  # real draft tokens per seq (fixed == 4)
         self.l_pad = triton.next_power_of_2(l_ext)
         self.device = device
+        # Scratch holds n_splits splits; a call may use any count up to it.
         self.n_splits = n_splits
         self.block_n = block_n
         self.num_warps = num_warps
+        # None: one stage-2 program per (seq, head) over the full D and Dv,
+        # the layout tuned on MI350X. A width tiles both, for wide heads.
+        self.block_dmodel = triton.next_power_of_2(head_dim)
+        self.block_dv = triton.next_power_of_2(v_head_dim)
+        self.block_d_tile = min(combine_tile or self.block_dmodel, self.block_dmodel)
+        self.block_dv_tile = min(combine_tile or self.block_dv, self.block_dv)
+        self.combine_num_warps = combine_num_warps
         self._alloc(max_bs)
 
     def _alloc(self, max_bs):
@@ -476,6 +542,8 @@ class VerifySplitKV:
     def _run_prefix_kernel(
         self,
         bs,
+        n_splits,
+        sliding_window_size,
         q_extend,
         k_buffer,
         v_buffer,
@@ -486,7 +554,7 @@ class VerifySplitKV:
         k_scale,
         v_scale,
     ):
-        grid = (bs, self.h_q, self.n_splits)
+        grid = (bs, self.h_q, n_splits)
         _verify_prefix_stage1[grid](
             q_extend,
             k_buffer,
@@ -513,23 +581,33 @@ class VerifySplitKV:
             self.att_lse.stride(1),
             self.att_lse.stride(2),
             kv_group_num=self.group,
-            N_SPLITS=self.n_splits,
+            N_SPLITS=n_splits,
             L_EXT=self.l_pad,
             HEAD_DIM=self.head_dim,
             V_HEAD_DIM=self.v_head_dim,
-            BLOCK_DMODEL=triton.next_power_of_2(self.head_dim),
-            BLOCK_DV=triton.next_power_of_2(self.v_head_dim),
+            BLOCK_DMODEL=self.block_dmodel,
+            BLOCK_DV=self.block_dv,
             BLOCK_N=self.block_n,
             MIN_BLOCK_KV=_MIN_BLOCK_KV,
+            SLIDING_WINDOW_SIZE=sliding_window_size,
             num_warps=self.num_warps,
             num_stages=1,
             **_AMD_LAUNCH_KWARGS,
         )
 
     def _run_combine_kernel(
-        self, bs, q_extend, k_extend, v_extend, o_out, qo_indptr, sm_scale
+        self,
+        bs,
+        n_splits,
+        sliding_window_size,
+        q_extend,
+        k_extend,
+        v_extend,
+        o_out,
+        qo_indptr,
+        sm_scale,
     ):
-        grid = (bs, self.h_q)
+        grid = (bs, self.h_q, triton.cdiv(self.block_dv, self.block_dv_tile))
         _verify_combine_stage2[grid](
             self.att_out,
             self.att_lse,
@@ -555,13 +633,16 @@ class VerifySplitKV:
             o_out.stride(0),
             o_out.stride(1),
             kv_group_num=self.group,
-            N_SPLITS=self.n_splits,
+            N_SPLITS=n_splits,
             L_EXT=self.l_pad,
             HEAD_DIM=self.head_dim,
             V_HEAD_DIM=self.v_head_dim,
-            BLOCK_DMODEL=triton.next_power_of_2(self.head_dim),
-            BLOCK_DV=triton.next_power_of_2(self.v_head_dim),
-            num_warps=1,
+            BLOCK_DMODEL=self.block_dmodel,
+            BLOCK_DV=self.block_dv,
+            BLOCK_D_TILE=self.block_d_tile,
+            BLOCK_DV_TILE=self.block_dv_tile,
+            SLIDING_WINDOW_SIZE=sliding_window_size,
+            num_warps=self.combine_num_warps,
             num_stages=1,
         )
 
@@ -579,7 +660,12 @@ class VerifySplitKV:
         o_out=None,
         k_scale=1.0,
         v_scale=1.0,
+        n_splits=None,
+        sliding_window_size=-1,
     ):
+        if n_splits is None:
+            n_splits = self.n_splits
+        assert n_splits <= self.n_splits, (n_splits, self.n_splits)
         if o_out is None:
             o_out = torch.empty(
                 (q_extend.shape[0], self.h_q, self.v_head_dim),
@@ -592,6 +678,8 @@ class VerifySplitKV:
         # 1. prefix split-KV
         self._run_prefix_kernel(
             bs,
+            n_splits,
+            sliding_window_size,
             q_extend,
             k_buffer,
             v_buffer,
@@ -605,6 +693,8 @@ class VerifySplitKV:
         # 2+3+4. fused combine + draft-draft + merge
         self._run_combine_kernel(
             bs,
+            n_splits,
+            sliding_window_size,
             q_extend,
             k_extend,
             v_extend,
@@ -627,9 +717,28 @@ _VK_CACHE = {}
 
 
 def _get_vk(
-    max_bs, h_q, h_kv, head_dim, v_head_dim, l_ext, device, n_splits=DEFAULT_N_SPLITS
+    max_bs,
+    h_q,
+    h_kv,
+    head_dim,
+    v_head_dim,
+    l_ext,
+    device,
+    n_splits=DEFAULT_N_SPLITS,
+    combine_tile=None,
+    combine_num_warps=1,
 ):
-    key = (h_q, h_kv, head_dim, v_head_dim, l_ext, str(device), n_splits)
+    key = (
+        h_q,
+        h_kv,
+        head_dim,
+        v_head_dim,
+        l_ext,
+        str(device),
+        n_splits,
+        combine_tile,
+        combine_num_warps,
+    )
     vk = _VK_CACHE.get(key)
     if vk is None:
         block_n, num_warps = block_config(head_dim)
@@ -644,6 +753,8 @@ def _get_vk(
             n_splits=n_splits,
             block_n=block_n,
             num_warps=num_warps,
+            combine_tile=combine_tile,
+            combine_num_warps=combine_num_warps,
         )
         _VK_CACHE[key] = vk
     else:
@@ -668,6 +779,7 @@ def can_handle(
     sinks=None,
     logit_cap=0.0,
     xai_temperature_len=-1,
+    allow_sliding_window=False,
 ):
     """Return True iff the split-KV verify path can serve this exact problem
     with the same result as extend_attention_fwd. Conservative: anything not
@@ -682,7 +794,11 @@ def can_handle(
     # No exotic features.
     if sinks is not None:
         return False
-    if sliding_window_size is not None and sliding_window_size > 0:
+    if (
+        sliding_window_size is not None
+        and sliding_window_size > 0
+        and not allow_sliding_window
+    ):
         return False
     if logit_cap and logit_cap > 0:
         return False
@@ -764,6 +880,8 @@ def verify_splitkv_fwd(
     window_kv_offsets=None,
     xai_temperature_len=-1,
     max_bs=None,
+    allow_sliding_window=False,
+    sm_count=None,
 ):
     """Drop-in for extend_attention_fwd on the EAGLE target-verify (topk=1)
     shape. Returns True if it ran (o_extend written), False if the case is
@@ -772,6 +890,11 @@ def verify_splitkv_fwd(
     ``max_bs`` (optional) is the stable maximum batch size used to size the
     cached scratch buffers; the backend passes its req_to_token_pool size. If
     omitted it defaults to this call's bs.
+
+    ``allow_sliding_window`` serves sliding-window layers with
+    extend_attention_fwd's window mask. ``sm_count`` selects the CUDA tuning:
+    the occupancy split policy and the tiled stage 2. Both are off on the
+    ROCm path, which keeps its MI350X-validated behavior.
 
     Arg order mirrors extend_attention_fwd exactly so the call site is a
     one-line swap.
@@ -793,6 +916,7 @@ def verify_splitkv_fwd(
         sinks=sinks,
         logit_cap=logit_cap,
         xai_temperature_len=xai_temperature_len,
+        allow_sliding_window=allow_sliding_window,
     ):
         return False
 
@@ -823,22 +947,38 @@ def verify_splitkv_fwd(
     # mixed-length batches stay correct -- shorter seqs simply write fewer
     # active splits (the rest emit the -inf lse sentinel, ignored in stage2).
     avg_seqlen = kv_indices.shape[0] / max(1, bs)
-    n_splits = choose_n_splits(avg_seqlen)
 
     # Size scratch by the stable max_bs (backend passes req_to_token_pool size);
     # fall back to this call's bs if not provided / smaller.
     if max_bs is None or max_bs < bs:
         max_bs = bs
-    vk = _get_vk(
-        max_bs,
-        h_q,
-        h_kv,
-        head_dim,
-        v_head_dim,
-        l_ext,
-        q_extend.device,
-        n_splits=n_splits,
-    )
+    if sm_count is None:
+        n_splits = choose_n_splits(avg_seqlen)
+        vk = _get_vk(
+            max_bs,
+            h_q,
+            h_kv,
+            head_dim,
+            v_head_dim,
+            l_ext,
+            q_extend.device,
+            n_splits=n_splits,
+        )
+    else:
+        # One scratch at the split cap serves every batch size's split count.
+        n_splits = choose_n_splits_for_occupancy(avg_seqlen, bs, h_q, sm_count)
+        vk = _get_vk(
+            max_bs,
+            h_q,
+            h_kv,
+            head_dim,
+            v_head_dim,
+            l_ext,
+            q_extend.device,
+            n_splits=CUDA_MAX_N_SPLITS,
+            combine_tile=CUDA_COMBINE_TILE,
+            combine_num_warps=CUDA_COMBINE_NUM_WARPS,
+        )
     vk(
         q_extend,
         k_extend.contiguous(),
@@ -852,6 +992,8 @@ def verify_splitkv_fwd(
         o_out=o_extend,
         k_scale=k_scale,
         v_scale=v_scale,
+        n_splits=n_splits,
+        sliding_window_size=sliding_window_size if allow_sliding_window else -1,
     )
 
     return True

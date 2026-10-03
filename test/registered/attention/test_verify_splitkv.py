@@ -25,6 +25,7 @@ from sglang.kernels.ops.attention.extend_attention import (
 )
 from sglang.kernels.ops.attention.verify_splitkv import (
     can_handle,
+    choose_n_splits_for_occupancy,
     verify_splitkv_fwd,
 )
 from sglang.test.ci.ci_register import register_amd_ci, register_cuda_ci
@@ -93,11 +94,16 @@ class TestVerifySplitKV(CustomTestCase):
         k_scale=1.0,
         v_scale=1.0,
         dtype=torch.bfloat16,
+        sliding_window_size=-1,
+        sm_count=None,
+        kv_buffer_dtype=None,
     ):
         device = "cuda"
         q, k, v, kb, vb, qo, kvp, kvi, mle = _build_verify_inputs(
             prefix_lens, l_ext, h_q, h_kv, head_dim, v_head_dim, dtype, device
         )
+        if kv_buffer_dtype is not None:
+            kb, vb = kb.to(kv_buffer_dtype), vb.to(kv_buffer_dtype)
         sm_scale = 1.0 / (head_dim**0.5)
 
         # Reference: extend_attention_fwd, pure causal (custom_mask=None) -- the
@@ -120,6 +126,7 @@ class TestVerifySplitKV(CustomTestCase):
             k_scale,
             v_scale,
             sm_scale=sm_scale,
+            sliding_window_size=sliding_window_size,
         )
 
         o_split = torch.empty_like(o_ref)
@@ -140,6 +147,9 @@ class TestVerifySplitKV(CustomTestCase):
             k_scale,
             v_scale,
             sm_scale=sm_scale,
+            sliding_window_size=sliding_window_size,
+            allow_sliding_window=sliding_window_size > 0,
+            sm_count=sm_count,
         )
         self.assertTrue(ran, "verify_splitkv_fwd must handle the topk=1 causal case")
         torch.testing.assert_close(o_split, o_ref, atol=ATOL, rtol=RTOL)
@@ -170,6 +180,67 @@ class TestVerifySplitKV(CustomTestCase):
         # Exercise the k_scale/v_scale dequant-multiplier path (same multipliers
         # the fp8 KV-cache path applies); both kernels must apply them identically.
         self._run_parity([1024, 2048], k_scale=0.5, v_scale=0.25)
+
+    # --- CUDA tuning (SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA): occupancy split
+    # count, D/Dv-tiled stage 2 and sliding-window layers. Shapes are Gemma-4's:
+    # 16 query heads; head_dim 256 with 8 KV heads (sliding) and 512 with 2 (full).
+    def test_cuda_mode_numerics(self):
+        for prefix_lens in ([1100], [1100] * 8, [300, 2000]):
+            for head_dim, h_kv in ((256, 8), (512, 2)):
+                with self.subTest(prefix_lens=prefix_lens, head_dim=head_dim):
+                    self._run_parity(
+                        prefix_lens,
+                        l_ext=6,
+                        h_q=16,
+                        h_kv=h_kv,
+                        head_dim=head_dim,
+                        v_head_dim=head_dim,
+                        sm_count=170,
+                    )
+
+    def test_cuda_mode_sliding_window(self):
+        # Window 1024 masks the first keys of later rows on a full window slice;
+        # window 3 hides the whole prefix from rows 3+ and masks draft-draft
+        # pairs, which exercises the empty-row guards.
+        for window in (1024, 256, 3):
+            with self.subTest(window=window):
+                self._run_parity(
+                    [1100, 1024, 300],
+                    l_ext=6,
+                    h_q=16,
+                    h_kv=8,
+                    sliding_window_size=window,
+                    sm_count=170,
+                )
+
+    def test_cuda_mode_fp8_kv_cache(self):
+        # Gemma-4 NVFP4 serves with an FP8 E4M3 KV cache and per-layer scales.
+        self._run_parity(
+            [1100, 700],
+            l_ext=6,
+            h_q=16,
+            h_kv=8,
+            k_scale=0.5,
+            v_scale=0.25,
+            sliding_window_size=1024,
+            sm_count=170,
+            kv_buffer_dtype=torch.float8_e4m3fn,
+        )
+
+    def test_occupancy_split_count(self):
+        # Two prefix programs per SM, capped at 16 and by the prefix length.
+        self.assertEqual(choose_n_splits_for_occupancy(1100, 1, 16, 170), 16)
+        self.assertEqual(choose_n_splits_for_occupancy(1100, 8, 16, 170), 4)
+        self.assertEqual(choose_n_splits_for_occupancy(1100, 32, 16, 170), 4)
+        self.assertEqual(choose_n_splits_for_occupancy(200, 1, 16, 170), 4)
+
+    def test_fallback_sliding_window_needs_opt_in(self):
+        q, k, v, kb, vb, qo, kvp, kvi, mle = self._inputs()
+        args = (q, k, v, kb, vb, qo, kvp, kvi, None, True, None, mle)
+        self.assertFalse(can_handle(*args, sliding_window_size=1024))
+        self.assertTrue(
+            can_handle(*args, sliding_window_size=1024, allow_sliding_window=True)
+        )
 
     # --- fallback: can_handle() must reject what the kernel can't serve --------
     # (topk>1 is gated off in the backend, not here -- can_handle never inspects

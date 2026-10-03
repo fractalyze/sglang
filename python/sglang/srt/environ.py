@@ -1394,6 +1394,11 @@ class Envs:
     # extend_attention_fwd for unsupported cases or when set false (e.g. for
     # debugging). Correctness is unaffected; this only changes performance.
     SGLANG_ENABLE_SPLITKV_VERIFY = EnvBool(True)
+    # Also run that split-KV verify kernel on CUDA, including sliding-window
+    # layers, with a split count sized for SM occupancy. Off by default: the
+    # extend kernel launches one program per (seq, head) at verify, which
+    # idles most SMs at small batch on the RTX 5090.
+    SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA = EnvBool(False)
     SGLANG_NGRAM_FORCE_GREEDY_VERIFY = EnvBool(False)
 
     # ===================================================================
