@@ -157,7 +157,8 @@ def test_routed_gemm_matches_reference(k, n, tokens_per_expert, weighted):
     topk_ids, topk_weights = _routing(num_tokens, top_k, num_experts, seed=k + n)
     a_row_divisor = top_k if n != 7168 else 1
     a_rows = num_tokens if a_row_divisor == top_k else num_tokens * top_k
-    a = (torch.randn(a_rows, k, device="cuda") * 0.5).to(torch.bfloat16)
+    gen = torch.Generator(device="cuda").manual_seed(k * n + tokens_per_expert)
+    a = (torch.randn(a_rows, k, device="cuda", generator=gen) * 0.5).to(torch.bfloat16)
 
     token_block = select_token_block(
         num_tokens=num_tokens, top_k=top_k, num_experts=num_experts
@@ -208,6 +209,20 @@ def _moe_reference(hidden_states, dense13, dense2, topk_ids, topk_weights):
     return down.view(num_tokens, top_k, -1).sum(1)
 
 
+def _assert_close_to_moe_reference(actual, expected):
+    """Within four bf16 ulps of the output's largest magnitude, element-wise.
+
+    Both backends round the gate-up activations and the down partial sums to
+    bf16, so an element's error tracks the magnitude of the terms the down GEMM
+    and the top-k sum combine, not the element itself; a small output can carry
+    the rounding of large partials. bf16 spacing is at most 2^-7 of a value.
+    Marlin adds its partial sums with bf16 atomics in a run-dependent order and
+    stays within about 1.1% of max|expected| across repeats; this bound is 3.1%.
+    """
+    atol = 4 * 2**-7 * expected.abs().max().item()
+    torch.testing.assert_close(actual.float(), expected, rtol=0, atol=atol)
+
+
 def _run_awq_moe(backend, layer, hidden_states, topk_ids, topk_weights):
     """Runs the AWQ MoE layer as served: scheme repack, runner, fused func."""
     from sglang.srt.hardware_backend.gpu.quantization.awq_kernels import AWQMoEKernel
@@ -236,28 +251,31 @@ def _run_awq_moe(backend, layer, hidden_states, topk_ids, topk_weights):
 
 @pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
 @pytest.mark.parametrize("tokens_per_expert", [1, 8, 16, 32, 128])
-def test_awq_moe_matches_reference_and_marlin(tokens_per_expert):
+def test_awq_moe_matches_reference_like_marlin(tokens_per_expert):
     from sglang.srt.layers.moe.utils import MoeRunnerBackend
 
     num_experts, top_k, hidden, intermediate = 32, 8, 1024, 256
     num_tokens = max(1, tokens_per_expert * num_experts // top_k)
     topk_ids, topk_weights = _routing(num_tokens, top_k, num_experts, seed=3)
-    hidden_states = (torch.randn(num_tokens, hidden, device="cuda") * 0.5).to(
-        torch.bfloat16
-    )
+    gen = torch.Generator(device="cuda").manual_seed(4)
+    hidden_states = (
+        torch.randn(num_tokens, hidden, device="cuda", generator=gen) * 0.5
+    ).to(torch.bfloat16)
 
     layer, dense13, dense2 = _awq_layer(num_experts, hidden, intermediate, "cuda")
     ours = _run_awq_moe(
         MoeRunnerBackend.W4A16_SM90, layer, hidden_states, topk_ids, topk_weights
     )
     expected = _moe_reference(hidden_states, dense13, dense2, topk_ids, topk_weights)
-    torch.testing.assert_close(ours.float(), expected, rtol=3e-2, atol=3e-2)
+    _assert_close_to_moe_reference(ours, expected)
 
+    # Marlin is the backend this replaces; it must meet the same bound, which
+    # also checks that the bound is not tighter than an accepted backend.
     marlin_layer, _, _ = _awq_layer(num_experts, hidden, intermediate, "cuda")
     marlin = _run_awq_moe(
         MoeRunnerBackend.MARLIN, marlin_layer, hidden_states, topk_ids, topk_weights
     )
-    torch.testing.assert_close(ours.float(), marlin.float(), rtol=3e-2, atol=3e-2)
+    _assert_close_to_moe_reference(marlin, expected)
 
 
 if __name__ == "__main__":
