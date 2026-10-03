@@ -55,9 +55,8 @@ _FP8_HEAD_TUNED_SHAPES: Dict[Tuple[int, int], _TileConfig] = {
     # Best worst case over M in {1, 8, 32} on the 5090 (186-198 us vs cuBLAS BF16 353-364 us).
     (262144, 1024): _TileConfig(128, 128, 3),
     # The Gemma-4-26B-A4B target's tied head (SGLANG_OPT_GEMMA4_FP8_LM_HEAD): best worst case
-    # over M in 4..48 on the 5090 (443-525 us vs cuBLAS BF16 880-925 us; gemma4nv W12). max_m
-    # covers an MTP verify of B=8 at k up to 7; M in 33..64 already runs BLOCK_M=64.
-    (262144, 2816): _TileConfig(128, 128, 3, max_m=64),
+    # over M in 4..48 on the 5090 (443-525 us vs cuBLAS BF16 880-925 us; gemma4nv W12).
+    (262144, 2816): _TileConfig(128, 128, 3, max_m=48),
 }
 _FP8_E4M3_MAX = 448.0
 

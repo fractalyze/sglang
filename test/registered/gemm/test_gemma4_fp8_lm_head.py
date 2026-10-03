@@ -1,6 +1,6 @@
 """
 Tests the Gemma-4 target's FP8 LM head copy (SGLANG_OPT_GEMMA4_FP8_LM_HEAD):
-batches up to the tile's 64 rows get FP8 logits within E4M3's rounding bound
+batches up to the tile's 48 rows get FP8 logits within E4M3's rounding bound
 of the BF16 head, wider batches get the BF16 head's logits bit for bit, the
 copy leaves the tied embedding intact, and LogitsProcessor takes the hook.
 """
@@ -15,7 +15,7 @@ from sglang.test.ci.ci_register import register_cuda_ci
 register_cuda_ci(est_time=30, stage="base-b", runner_config="1-gpu-large")
 
 _VOCAB, _HIDDEN = 262144, 2816
-_FP8_MAX_M = 64
+_FP8_MAX_M = 48
 # E4M3 keeps 3 explicit mantissa bits, so per-row rounding errs by at most 2^-4 relative.
 _E4M3_REL = 2.0**-4
 
@@ -54,7 +54,7 @@ class TestGemma4Fp8LmHead(unittest.TestCase):
         self.assertIs(self.head.bf16_weight, self.w)
 
     def test_narrow_batches_get_fp8_logits_within_e4m3_bound(self):
-        for m in (1, 6, 8, 32, 48, 56, _FP8_MAX_M):
+        for m in (1, 6, 8, 32, _FP8_MAX_M):
             with self.subTest(m=m):
                 x = torch.randn(m, _HIDDEN, dtype=torch.bfloat16, device="cuda")
                 fp8 = self.head.quant_method.apply(self.head, x).float()
