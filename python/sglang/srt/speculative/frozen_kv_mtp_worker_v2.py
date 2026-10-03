@@ -762,7 +762,7 @@ class FrozenKVMTPWorkerV2(EAGLEWorkerV2):
 
             replay = get_spec_replay(
                 num_draft_tokens=self.speculative_num_draft_tokens,
-                num_rows=self.req_to_token_pool.size,
+                num_rows=self.req_to_token_pool.req_to_token.shape[0],
                 device=self.device,
             )
             if replay is not None:

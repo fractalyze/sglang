@@ -493,7 +493,7 @@ def run_eagle_verify(
     verify_input: EagleVerifyInput = batch.spec_info
     replay = get_spec_replay(
         num_draft_tokens=num_draft_tokens,
-        num_rows=req_to_token_pool.size,
+        num_rows=req_to_token_pool.req_to_token.shape[0],
         device=batch.seq_lens.device,
     )
     if replay is not None and not batch.forward_mode.is_idle():
