@@ -1,6 +1,6 @@
 # gemma4nv pinned baseline (build-server-3)
 
-Current pinned base: **base5** (section below). The first base is `base`.
+Current pinned base: **base6**, provisional (section below). The first base is `base`.
 
 Every number below comes from a gate run json under `/data/jooman/gemma4nv/runs/` on
 build-server-3. Nothing is quoted from a single unpaired run. Compare hosts by delta only.
@@ -10,7 +10,86 @@ build-server-3. Nothing is quoted from a single unpaired run. Compare hosts by d
   - Re-evaluated at c16a12cf5 after `startup_time` was marked volatile; the first report is kept as `report.v1.json`.
 - **Verdict:** integrity OK, fidelity pass, no promotion (as an A/A must).
 
-## base5 (current pinned base, 2026-10-03)
+## base6 (current pinned base, provisional, 2026-10-03)
+
+`base6` = `base5` plus speculative decoding, kept on bs3 (W11):
+
+- **T-SPEC5** (`gemma4nv-b3-tspec5`): MTP assistant drafter `google/gemma-4-26B-A4B-it-assistant`
+  (BF16, 4 layers, reads the target's frozen KV), k=5, topk 1; split-KV Triton TARGET_VERIFY
+  attention (`SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA=1`, cherry-pick of `c99575c4f52f`);
+  `--mem-fraction-static 0.78`. Decided on the W8 composite: 1.349 against base5, W1 TPOT
+  -44.9%, W32 +3.2%; full GSM8K -0.23 pt, paired 95% CI [-0.86, +0.40].
+- **T-SPEC4b** (`gemma4nv-b3-tspec4b`): the drafter's tied 262144 x 1024 head stored as FP8 per
+  row (`SGLANG_OPT_MTP_FP8_LM_HEAD=1`, W10's `3d1732c505` and its two parents). Decided on W1 TPOT:
+  -7.7% against base5-spec, W8 composite +5.4%, W32 +5.0%.
+- **Code:** SGLang commit `701947e266` (`jumanzii/gemma4nv-b3-tspec4b`) = base5's `1d859709ef` +
+  cherry-picks of `c99575c4f52f`, `4ebe6175af`, `262f327c28`, `3d1732c505`. Gate ref `base6`.
+
+In the vault it is `stack-701947e26-gemma4nv-base6`, with parent `stack-1d859709e-gemma4nv-base5`.
+
+- **Decision run:** A/A `AA-base6-20261003-142757-build-server-3-fd0d70`, 6 ABBA pairs, harness
+  `4f00766728` (deploy stamp).
+- **Verdict:** fidelity pass, no promotion. **Integrity: flagged on one leg.**
+- **Provisional: confirm with a clean A/A after the bs3 GPU reset.** pair5-control's timed window
+  saw a co-tenant GPU process (`/usr/local/bin/python`, 526 MiB) in 1 of 106 telemetry samples, so
+  the gate marks the run's integrity failed and the ledger records it as `contaminated`; that role
+  stays. The coordinator approved pinning on it because one 526 MiB sample cannot move a 6-pair
+  ratio of sums: every pair's gain is within 0.1% of 1 and timed-output agreement is 1.0. The
+  confirming rerun `AA-base6-r2-20261003-145007` completed 2 pairs (gains within 0.1%) before the
+  GPU went into "GPU requires reset" between legs, with no engine of ours running.
+- **Noise:** `reference/noise.json` now comes from this A/A; base5's file is kept as
+  `reference/noise.base5.json`. Every per-pair sigma is under 0.3%, so every bar is the 1% floor.
+- **Timed-output agreement:** 1.0 in every pair; the threshold stays at 0.98.
+
+| metric | base6 | base5 | base | definition |
+|---|---|---|---|---|
+| **W8 prefill** | **2.246 s** per rep; batch 297 ms | 1.733 s; 291 ms | 1.740 s | sum of 8 TTFTs |
+| **W8 decode** | **4.680 s** per rep; 4.61 ms per stream-token | 8.100 s; 7.97 ms | 9.442 s; 9.29 ms | sum of 8 (e2e - TTFT) |
+| **W1 TPOT** | **2.626 ms** | 5.167 ms | 6.075 ms | 1 x 1024 x 256 (base6: 24 fixed prompts) |
+| W1 prefill (TTFT) | 52.2 ms | 48.3 ms | 48.4 ms | |
+| **W32 throughput** | **1747.6 tok/s** (ungated) | 1616.6 | 1020.6 | 32 x 1024 x 128 |
+
+These columns are separate A/As on one host; the gated deltas are the paired T-SPEC5 and
+T-SPEC4b runs. W8 prefill (TTFT) rises under speculation, as in every speculative trial on
+either host (T-SPEC5 prefill gain 0.772); its cause is not profiled.
+
+A/A gains and noise (6 pairs):
+
+| metric | A/A gain | per-pair sigma of ln(gain) | bar |
+|---|---|---|---|
+| W8 composite | 1.0007 | 0.064% | 1.0% |
+| W8 prefill | 1.0012 | 0.286% | 1.0% |
+| W8 decode | 1.0005 | 0.057% | 1.0% |
+| W1 TPOT | 1.0005 | 0.031% | 1.0% |
+| W32 throughput | 1.0000 | 0.069% | 1.0% |
+
+W32's absolute throughput varies 1635-1837 tok/s between pairs (fresh prompts per pair, and
+acceptance follows the prompts) while each pair's two arms agree within 0.1%.
+
+**sol_fraction does not apply to speculative decode.** Against v3, base6's "decode
+sol_fraction" is 1.16 (W8), 1.13 (W1) and 0.78 (W32), and `audit_below_sol` fires. The SOL
+model charges one full weight read per generated token; a verify round reads the weights once
+for about tau tokens (hidden-set tau 3.49, timing corpus 4.36 at B=1). A speculative SOL needs
+bytes per round over tokens per round; until then base6's decode is reported as time only.
+Prefill sol_fraction (v3, NVFP4/FP8 view / as served): W8 0.21 / 0.52, W1 0.18 / 0.37, W32 0.22 / 0.55.
+
+**Fidelity** (pair 0 control vs the `base` reference): decode-path KL mean 0.0178, p99 0.34
+(base5 0.021 / 0.48; limits 0.050 / 0.95). Teacher-forced KL 0.0305, p99 0.54, min top-1 0.917,
+mean 0.965. Pass.
+
+**Quality** (full GSM8K, n = 1,319, plus tool-JSON, n = 40, greedy, against W9b's base5 run):
+
+| pair | GSM8K | delta | 95% CI | lost / gained | McNemar p | tool-JSON |
+|---|---|---:|---|---|---:|---|
+| base5 -> base6 | 96.36 -> 96.06% | -0.30 pt | [-0.95, +0.34] | 11 / 7 | 0.48 | 100 -> 100 |
+
+Passes the adoption rule (CI low >= -1.0 pt, tool-JSON no drop).
+
+**Memory:** KV pool 50.0k tokens at 0.78 with the drafter loaded (base5 55.5k at 0.76); 5.6 GB
+of GPU memory free after graph capture. Host: serving tree RSS 20.0 GB (the graphed draft loop),
+4 GB under the 24 GB scope; per-phase peaks are in `trials/REPORT-bs3-w11.md`.
+
+## base5 (pinned 2026-10-03, superseded by base6)
 
 `base5` = `base4` plus T4, kept on bs3 (W9b):
 
@@ -71,16 +150,20 @@ BF16):
 sol_fraction against SOL tables v3 (W11), which count o_proj as served from base4 on: FP8 E4M3,
 1 byte per weight plus an fp32 scale per output row (`reference/sol/sol.v3.json`, `gate
 sol-retable --from sol.v2.json --ref base5`, same router data as v2; `sol_fractions.sol.v3.json`
-in each A/A dir). The decode SOL step drops by 0.225 ms (0.40 GB less per step), so the
-fractions drop. Prefill is unchanged: o_proj prefill runs cuBLAS on the bf16 upcast.
+in each A/A dir). Prefill is unchanged: o_proj prefill runs cuBLAS on the bf16 upcast.
 
-| workload | SOL decode step (v2 / v3) | **decode sol_fraction v3** base5 (v2) | base4 v3 (v2) | implied BW (v3) |
+The fractions in parentheses are the recorded ones. `gate sol-report` reads its default
+`reference/sol/sol.json`, which is still v1 (one KV copy; W8 SOL step 5.557 ms), so every
+recorded fraction above and in older sections is against v1, not v2. v3 differs from v1 by
++0.025 ms (both KV copies) and -0.225 ms (FP8 o_proj, 0.40 GB less per step).
+
+| workload | SOL decode step (v1 / v2 / v3) | **decode sol_fraction v3** base5 (v1) | base4 v3 (v1) | implied BW (v3) |
 |---|---|---|---|---|
-| W8 | 5.582 / 5.357 ms | **0.672** (0.697) | 0.627 (0.651) | 1204 GB/s |
-| W1 | 3.186 / 2.961 ms | **0.573** (0.616) | 0.529 (0.569) | 1027 GB/s |
-| W32 | 8.240 / 8.015 ms | **0.539** (0.547) | 0.516 (0.524) | 966 GB/s |
+| W8 | 5.557 / 5.582 / 5.357 ms | **0.672** (0.697) | 0.627 (0.651) | 1204 GB/s |
+| W1 | 3.183 / 3.186 / 2.961 ms | **0.573** (0.616) | 0.529 (0.569) | 1027 GB/s |
+| W32 | 8.140 / 8.240 / 8.015 ms | **0.539** (0.547) | 0.516 (0.524) | 966 GB/s |
 
-The base3-and-earlier rows keep v2: those refs serve o_proj in BF16 (`sol-retable --ref base3`
+Refs before base4 serve o_proj in BF16, so v2 is their correct table (`sol-retable --ref base3`
 reproduces v2's 5.582 ms).
 
 **Fidelity** (pair 0 control vs the `base` reference):
