@@ -18,12 +18,13 @@ from typing import Dict, List, Optional
 
 import requests
 
-from gate import config, hostwatch
+from gate import config, hostwatch, treehash
 
 log = logging.getLogger(__name__)
 
 REFS_PATH = os.path.join(os.path.dirname(__file__), "refs.json")
-_ALLOWED_KEYS = {"commit", "python", "server_args", "env", "extends", "description", "weight_layout_change"}
+_ALLOWED_KEYS = {"commit", "python", "server_args", "env", "extends", "description", "weight_layout_change",
+                 "numerics_unchanged"}
 
 
 def load_ref(name: str) -> Dict:
@@ -37,7 +38,8 @@ def load_ref(name: str) -> Dict:
         raise ValueError(f"ref {name}: unknown keys {unknown}")
     if "extends" in ref:
         parent = load_ref(ref.pop("extends"))
-        merged = dict(parent)
+        # numerics_unchanged states a ref's own delta to its control, so it is never inherited.
+        merged = {k: v for k, v in parent.items() if k != "numerics_unchanged"}
         merged.update({k: v for k, v in ref.items() if k not in ("server_args", "env")})
         merged["server_args"] = parent.get("server_args", []) + ref.get("server_args", [])
         merged["env"] = {**parent.get("env", {}), **ref.get("env", {})}
@@ -46,6 +48,7 @@ def load_ref(name: str) -> Dict:
     ref.setdefault("python", config.VENV_PYTHON)
     ref.setdefault("env", {})
     ref.setdefault("weight_layout_change", False)
+    ref.setdefault("numerics_unchanged", False)
     return ref
 
 
@@ -73,11 +76,32 @@ def tree_for(commit: str) -> str:
     return path
 
 
-def harness_commit() -> Dict:
-    here = os.path.dirname(os.path.abspath(__file__))
-    sha = _git("rev-parse", "HEAD", cwd=here)
-    dirty = bool(_git("status", "--porcelain", "--", ".", cwd=here))
-    return {"commit": sha, "dirty": dirty}
+def harness_commit(here: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) -> Dict:
+    """The experiments commit that is actually on disk at `here` (the experiments directory).
+
+    `commit` comes from git when `here` is tracked and clean, else from bin/deploy's stamp when the
+    tree still hashes to the stamped value, else it is None and only `tree_sha256` identifies the
+    harness. `src_head` is the enclosing checkout's HEAD, which an rsync deploy leaves unrelated.
+    """
+    tree = treehash.tree_sha256(here)
+    out = {"commit": None, "source": "tree_sha256", "tree_sha256": tree, "src_head": None, "dirty": True}
+    try:
+        out["src_head"] = _git("rev-parse", "HEAD", cwd=here)
+        tracked = bool(_git("ls-files", "--", ".", cwd=here))
+        clean = not _git("status", "--porcelain", "--ignored=no", "--", ".", cwd=here)
+    except (subprocess.CalledProcessError, OSError):
+        tracked = clean = False
+    if tracked and clean:
+        out.update(commit=out["src_head"], source="git", dirty=False)
+        return out
+    stamp_path = os.path.join(here, treehash.STAMP)
+    if os.path.exists(stamp_path):
+        with open(stamp_path) as f:
+            stamp = json.load(f)
+        out["stamp"] = stamp
+        if stamp.get("tree_sha256") == tree:
+            out.update(commit=stamp["commit"], source="deploy_stamp", dirty=False)
+    return out
 
 
 class Server:

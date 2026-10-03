@@ -15,10 +15,18 @@ from gate import checkpoint, client, config, fidelity, gpu, hostwatch, prompts, 
 log = logging.getLogger(__name__)
 
 # server_info keys that legitimately differ between two launches of one config.
-_VOLATILE_SERVER_KEYS = {"random_seed", "version", "internal_states", "max_total_num_tokens", "pid", "startup_time"}
-# Follow from other server-info keys: launch_command restates the args (compared key by key), and
 # max_req_input_len is max_total_num_tokens minus a fixed reserve, so it moves with the KV pool size.
-_DERIVED_SERVER_KEYS = {"launch_command", "max_req_input_len"}
+_VOLATILE_SERVER_KEYS = {"random_seed", "version", "internal_states", "max_total_num_tokens", "max_req_input_len",
+                         "pid", "startup_time"}
+# server_info paths the server resolves from a flag: declaring the flag declares them too. A path
+# covers everything below it (cuda_graph_config.prefill covers .max_bs and .bs).
+_FLAG_DERIVED_PATHS = {
+    "chunked_prefill_size": ("cuda_graph_config.prefill.max_bs", "cuda_graph_config.prefill.bs"),
+    "mem_fraction_static": ("max_running_requests",),
+    "cuda_graph_max_bs_decode": ("cuda_graph_config.decode.max_bs", "cuda_graph_config.decode.bs"),
+    "cuda_graph_max_bs": ("cuda_graph_config.decode.max_bs", "cuda_graph_config.decode.bs",
+                          "cuda_graph_config.prefill.max_bs", "cuda_graph_config.prefill.bs"),
+}
 
 
 def new_exp_id(label: str) -> str:
@@ -154,16 +162,73 @@ def timed_output_agreement(control: Dict, candidate: Dict) -> Dict:
             "n_identical": sum(1 for r in rates if r == 1.0)}
 
 
+def _flatten(d: Dict, prefix: str = "") -> Dict:
+    out = {}
+    for k, v in d.items():
+        path = f"{prefix}{k}"
+        if isinstance(v, dict) and v:
+            out.update(_flatten(v, path + "."))
+        else:
+            out[path] = v
+    return out
+
+
+def _covered(path: str, prefixes) -> bool:
+    return any(path == p or path.startswith(p + ".") for p in prefixes)
+
+
+def _launch_flags(cmd: Optional[str]) -> List[str]:
+    return [t for t in (cmd or "").split() if t.startswith("--")]
+
+
+def agreement_threshold(aa_pair_means: List[float]) -> float:
+    """Hard timed-output-agreement bar from an A/A run's per-pair agreement means."""
+    n = len(aa_pair_means)
+    mean = sum(aa_pair_means) / n
+    sd = (sum((x - mean) ** 2 for x in aa_pair_means) / (n - 1)) ** 0.5 if n > 1 else 0.0
+    return min(aa_pair_means) - max(config.NOISE_SIGMAS * sd, config.AGREEMENT_MIN_MARGIN)
+
+
+def agreement_check(meta: Dict, agreement: List[Dict], noise: Dict) -> Dict:
+    """Hard for A/A and numerics_unchanged candidates; reported only for the rest (fidelity decides)."""
+    mean = sum(a["mean"] for a in agreement) / len(agreement)
+    hard = meta["control"]["name"] == meta["candidate"]["name"] or bool(meta["candidate"].get("numerics_unchanged"))
+    calib = noise.get("timed_output_agreement")
+    threshold = calib["threshold"] if calib else config.TIMED_OUTPUT_AGREEMENT_MIN
+    return {"hard": hard, "mean": mean, "threshold": threshold, "calibrated_from": calib and calib["from_exp"],
+            "above_threshold": mean >= threshold, "ok": mean >= threshold or not hard}
+
+
+def timed_streams_full_length(leg: Dict, meta: Dict) -> bool:
+    """Every timed stream produced its workload's decode length (the client sets ignore_eos)."""
+    want = {w["name"]: w["decode"] for w in meta["config"]["workloads"]}
+    return all(s["output_tokens"] == want[wl] for wl, reps in leg["workloads"].items() for r in reps
+               for s in r["streams"])
+
+
 def server_arg_diff(control: Dict, candidate: Dict, declared: List[str]) -> Dict:
+    """server_info paths that differ between the arms, and those no declared flag accounts for.
+
+    launch_command is not compared as a string: it restates the args, which are compared key by key.
+    Instead each flag in it that the other arm lacks must be declared.
+    """
     a, b = control["server_info"], candidate["server_info"]
-    ignored = _VOLATILE_SERVER_KEYS | _DERIVED_SERVER_KEYS
-    diff = sorted(k for k in set(a) | set(b) if k not in ignored and a.get(k) != b.get(k))
+    fa = _flatten({k: v for k, v in a.items() if k not in _VOLATILE_SERVER_KEYS | {"launch_command"}})
+    fb = _flatten({k: v for k, v in b.items() if k not in _VOLATILE_SERVER_KEYS | {"launch_command"}})
+    diff = sorted(k for k in set(fa) | set(fb) if fa.get(k) != fb.get(k))
     declared_keys = {d.lstrip("-").replace("-", "_") for d in declared if d.startswith("--")}
-    undeclared = [k for k in diff if k not in declared_keys]
+    covered = set(declared_keys)
+    for key in declared_keys:
+        covered.update(_FLAG_DERIVED_PATHS.get(key, ()))
+    undeclared = [k for k in diff if not _covered(k, covered)]
+    flags_a, flags_b = _launch_flags(a.get("launch_command")), _launch_flags(b.get("launch_command"))
+    undeclared += sorted(f"launch_command:{f}" for f in set(flags_a) ^ set(flags_b)
+                         if f.lstrip("-").replace("-", "_") not in declared_keys)
     return {"differing_keys": diff, "undeclared": undeclared}
 
 
-def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, notes: str = "") -> Dict:
+def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, notes: str = "",
+             decide_on: str = stats.DEFAULT_DECIDING_METRIC) -> Dict:
     control_ref, candidate_ref = server.load_ref(control_name), server.load_ref(candidate_name)
     exp_id = new_exp_id(label)
     run_dir = os.path.join(config.RUNS_DIR, exp_id)
@@ -172,7 +237,7 @@ def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, n
     corpus = prompts.load_corpus(tok)
     nonce = secrets.token_hex(4)
     meta = {"exp_id": exp_id, "control": control_ref, "candidate": candidate_ref, "n_pairs": n_pairs,
-            "notes": notes, "nonce": nonce, "corpus_digest": prompts.corpus_digest(corpus),
+            "notes": notes, "decide_on": decide_on, "nonce": nonce, "corpus_digest": prompts.corpus_digest(corpus),
             "fidelity_prompts_digest": fidelity.prompts_digest(), "environment": environment(),
             "checkpoint": checkpoint.verify(),
             "config": {"workloads": [{"name": w.name, "concurrency": w.concurrency, "prompt": w.prompt_tokens,
@@ -199,7 +264,7 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
     control, candidate = legs["control"], legs["candidate"]
     summary = stats.summarize_pairs([stats.leg_sums(l) for l in control], [stats.leg_sums(l) for l in candidate])
     noise = _load_noise()
-    timing = stats.timing_verdict(summary, noise)
+    timing = stats.timing_verdict(summary, noise, meta.get("decide_on", stats.DEFAULT_DECIDING_METRIC))
     agreement = [timed_output_agreement(c, k) for c, k in zip(control, candidate)]
     thresholds = fidelity.load_json(fidelity.THRESHOLDS_PATH) if os.path.exists(fidelity.THRESHOLDS_PATH) else None
     fid = {}
@@ -219,12 +284,15 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
         "legs_ok": all(l["integrity"]["ok"] for ls in legs.values() for l in ls),
         "per_leg": [{"pair": l["pair"], "role": l["role"], **l["integrity"]} for ls in legs.values() for l in ls],
         "timed_output_agreement_mean": sum(a["mean"] for a in agreement) / len(agreement),
+        "timed_output_agreement_check": agreement_check(meta, agreement, _load_noise_file()),
+        "timed_streams_full_length": all(timed_streams_full_length(l, meta) for ls in legs.values() for l in ls),
         "undeclared_server_arg_diffs": args_diff["undeclared"],
         "weights_match_control": weights_match,
     }
     integrity["ok"] = (
         integrity["legs_ok"]
-        and integrity["timed_output_agreement_mean"] >= config.TIMED_OUTPUT_AGREEMENT_MIN
+        and integrity["timed_output_agreement_check"]["ok"]
+        and integrity["timed_streams_full_length"]
         and not args_diff["undeclared"]
         and (weights_match is not False or meta["candidate"]["weight_layout_change"])
         and meta["checkpoint"]["matches_hf_revision"]
@@ -250,9 +318,16 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
     }
 
 
-def reevaluate(run_dir: str) -> Dict:
-    """Recomputes a finished run's report from its saved legs (the old report is kept as report.v<n>.json)."""
+def reevaluate(run_dir: str, decide_on: Optional[str] = None) -> Dict:
+    """Recomputes a finished run's report from its saved legs (the old report is kept as report.v<n>.json).
+
+    `decide_on` names the deciding metric of a run that predates --decide-on (its frozen prediction's
+    metric); the run's meta.json is left as it ran, and the report records the override.
+    """
     meta = fidelity.load_json(os.path.join(run_dir, "meta.json"))
+    if decide_on is not None:
+        meta["decide_on_override"] = {"from": meta.get("decide_on", stats.DEFAULT_DECIDING_METRIC), "to": decide_on}
+        meta["decide_on"] = decide_on
     legs: Dict[str, List[Dict]] = {"control": [], "candidate": []}
     for k in range(meta["n_pairs"]):
         for role in ("control", "candidate"):
@@ -264,6 +339,9 @@ def reevaluate(run_dir: str) -> Dict:
     os.rename(old, os.path.join(run_dir, f"report.v{n}.json"))
     report = evaluate(meta, legs)
     report["reevaluated_from"] = f"report.v{n}.json"
+    report["reevaluated_by_harness"] = server.harness_commit()
+    if decide_on is not None:
+        report["decide_on_override"] = meta["decide_on_override"]
     _write(old, report)
     meta["notes"] = f"{meta['notes']} [re-evaluated: {report['reevaluated_from']} superseded]"
     append_ledger(meta, report, run_dir)
@@ -273,10 +351,12 @@ def reevaluate(run_dir: str) -> Dict:
 NOISE_PATH = os.path.join(config.REFERENCE_DIR, "noise.json")
 
 
+def _load_noise_file() -> Dict:
+    return fidelity.load_json(NOISE_PATH) if os.path.exists(NOISE_PATH) else {}
+
+
 def _load_noise() -> Dict[str, float]:
-    if not os.path.exists(NOISE_PATH):
-        return {}
-    return fidelity.load_json(NOISE_PATH)["per_pair_log_sigma"]
+    return _load_noise_file().get("per_pair_log_sigma", {})
 
 
 def save_noise_from(report_path: str) -> Dict:
@@ -285,8 +365,16 @@ def save_noise_from(report_path: str) -> Dict:
         raise ValueError("noise must come from an A/A run (control == candidate)")
     noise = {"from_exp": report["exp_id"], "per_pair_log_sigma": report["summary"]["per_pair_log_sigma"],
              "bars": {m: stats.promotion_bar(s) for m, s in report["summary"]["per_pair_log_sigma"].items()}}
+    pair_means = [a["mean"] for a in report["timed_output_agreement"]]
+    noise["timed_output_agreement"] = {"from_exp": report["exp_id"], "pair_means": pair_means,
+                                       "threshold": agreement_threshold(pair_means)}
     fidelity.save_json(NOISE_PATH, noise)
     return noise
+
+
+def _ledger_harness(harness: Dict) -> str:
+    """The harness commit, or its tree hash when no commit is known to contain the files that ran."""
+    return harness["commit"] or f"tree-sha256:{harness.get('tree_sha256')}"
 
 
 def append_ledger(meta: Dict, report: Dict, run_dir: str) -> None:
@@ -302,11 +390,14 @@ def append_ledger(meta: Dict, report: Dict, run_dir: str) -> None:
         "candidate": meta["candidate"]["name"],
         "control_commit": meta["control"]["commit"],
         "candidate_commit": meta["candidate"]["commit"],
-        "harness_commit": meta["environment"]["harness"]["commit"],
+        "harness_commit": _ledger_harness(meta["environment"]["harness"]),
         "n_pairs": meta["n_pairs"],
+        **({"evaluator_harness_commit": _ledger_harness(report["reevaluated_by_harness"])}
+           if "reevaluated_by_harness" in report else {}),
         "metrics": {k: o[k] for k in ("w8_composite", "w8_prefill_gain", "w8_decode_gain", "w1_tpot_gain",
                                       "w1_tpot_control_ms", "w1_tpot_candidate_ms", "w32_tput_gain",
                                       "w32_tput_control_tok_s", "w32_tput_candidate_tok_s")},
+        "decided_on": report["timing"]["decided_on"],
         "verdict": report["verdict"],
         "output": os.path.relpath(os.path.join(run_dir, "report.json"), config.ROOT),
         "note": meta["notes"],

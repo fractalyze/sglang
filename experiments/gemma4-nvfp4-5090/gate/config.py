@@ -79,10 +79,17 @@ KL_CALIBRATION_FACTOR = 3.0
 KL_MEAN_FLOOR = 1e-3
 KL_P99_FLOOR = 1e-2
 
-# Quality: absolute accuracy may drop at most this many points vs baseline.
-# Integrity, not fidelity: the two arms' timed outputs on the same prompts must
-# mostly agree (the baseline flips greedy near-ties run to run, so not all).
+# Timed-output agreement (integrity): the two arms' greedy outputs on the timed
+# prompts. Hard only for a candidate that declares numerics_unchanged (or A/A):
+# any batch-composition or kernel-numerics change flips greedy near-ties, so for
+# the rest the teacher-forced fidelity gate decides and agreement is reported.
+# The hard threshold is calibrated from an A/A run (gate set-noise): the lowest
+# A/A pair mean minus max(NOISE_SIGMAS * sigma, AGREEMENT_MIN_MARGIN). Before a
+# calibration exists the uncalibrated floor applies.
 TIMED_OUTPUT_AGREEMENT_MIN = 0.5
+AGREEMENT_MIN_MARGIN = 0.02
+
+# Quality: absolute accuracy may drop at most this many points vs baseline.
 
 QUALITY_TOLERANCE_PT = 1.0
 GSM8K_N = 200

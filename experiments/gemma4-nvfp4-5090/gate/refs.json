@@ -51,5 +51,21 @@
     "env": {
       "SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM": "1"
     }
+  },
+  "base2": {
+    "extends": "base",
+    "description": "Pinned base2 (W5): base plus T-W32b's --mem-fraction-static 0.76, kept on bs3 (W32 x1.49, W8/W1 neutral, fidelity pass). The KV pools hold W32's 32 x 1152 tokens without retraction and leave room for the teacher-forced logprob peak.",
+    "server_args": [
+      "--mem-fraction-static",
+      "0.76"
+    ]
+  },
+  "base2-splits16": {
+    "extends": "base2",
+    "description": "T2 stacked on base2 (W5, variant of the bs2 T2 trial): base2 plus Triton decode attention split-KV count 16 (tree default 8).",
+    "server_args": [
+      "--triton-attention-num-kv-splits",
+      "16"
+    ]
   }
 }

@@ -85,26 +85,40 @@ def promotion_bar(sigma: float) -> float:
     return max(config.NOISE_SIGMAS * sigma, config.MIN_BAR)
 
 
-def timing_verdict(summary: Dict, noise: Dict[str, float]) -> Dict:
-    """Promote iff the W8 composite clears its bar and W1 TPOT does not regress past its own bar.
+# Metrics a trial may decide on (its frozen prediction names one), with their check-name stems.
+DECIDING_METRICS = {"w8_composite": "w8", "w1_tpot_gain": "w1_tpot", "w32_tput_gain": "w32_tput"}
+DEFAULT_DECIDING_METRIC = "w8_composite"
+
+
+def timing_verdict(summary: Dict, noise: Dict[str, float], decide_on: str = DEFAULT_DECIDING_METRIC) -> Dict:
+    """Promote iff the deciding metric clears its bar and no guarded metric regresses past its own bar.
+
+    The default decides on the W8 composite and guards W1 TPOT (the rule every
+    older verdict used). Any other deciding metric guards all the other
+    workload metrics in DECIDING_METRICS, W32 included.
 
     `noise` maps metric -> sigma measured by an A/A run (per-pair sigma of the
     log gain). Missing noise falls back to the 1% floor and is flagged.
     """
+    if decide_on not in DECIDING_METRICS:
+        raise ValueError(f"cannot decide on {decide_on!r}; choose one of {sorted(DECIDING_METRICS)}")
     overall = summary["overall"]
     bars = {m: promotion_bar(noise.get(m, 0.0)) for m in GATED_METRICS}
-    composite_gain = overall["w8_composite"] - 1.0
-    w1_change = overall["w1_tpot_gain"] - 1.0
-    checks = {
-        "w8_composite_clears_bar": composite_gain > bars["w8_composite"],
-        "w1_tpot_no_regression": w1_change > -bars["w1_tpot_gain"],
-        "w8_no_regression": composite_gain > -bars["w8_composite"],
-        "enough_pairs": summary["n_pairs"] >= config.MIN_PAIRS,
-    }
+    guards = ["w1_tpot_gain"] if decide_on == DEFAULT_DECIDING_METRIC else [
+        m for m in DECIDING_METRICS if m != decide_on]
+    stems = DECIDING_METRICS
+    # Check names as older reports spell them for the default rule.
+    clears = "w8_composite" if decide_on == DEFAULT_DECIDING_METRIC else stems[decide_on]
+    checks = {f"{clears}_clears_bar": overall[decide_on] - 1.0 > bars[decide_on]}
+    for m in guards:
+        checks[f"{stems[m]}_no_regression"] = overall[m] - 1.0 > -bars[m]
+    checks[f"{stems[decide_on]}_no_regression"] = overall[decide_on] - 1.0 > -bars[decide_on]
+    checks["enough_pairs"] = summary["n_pairs"] >= config.MIN_PAIRS
     return {
+        "decided_on": decide_on,
         "bars": bars,
         "noise_calibrated": all(m in noise for m in GATED_METRICS),
         "checks": checks,
         "promote": all(checks.values()),
-        "no_regression": checks["w8_no_regression"] and checks["w1_tpot_no_regression"],
+        "no_regression": all(v for k, v in checks.items() if k.endswith("_no_regression")),
     }

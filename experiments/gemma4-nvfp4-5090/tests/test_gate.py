@@ -1,12 +1,16 @@
+import json
 import math
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 
 from absl.testing import absltest, parameterized
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from gate import config, fidelity, hostwatch, quality, runner, server, sol, stats  # noqa: E402
+from gate import config, fidelity, hostwatch, quality, runner, server, sol, stats, treehash  # noqa: E402
 
 
 def _leg(prefill, decode, w1_decode=2.55, w32_wall=4.0):
@@ -50,6 +54,38 @@ class StatsTest(absltest.TestCase):
         v = stats.timing_verdict(s, noise)
         self.assertFalse(v["checks"]["w1_tpot_no_regression"])
         self.assertFalse(v["promote"])
+
+
+class DecideOnTest(absltest.TestCase):
+    noise = {m: 0.002 for m in stats.GATED_METRICS}
+
+    def test_default_rule_keeps_old_check_names(self):
+        s = stats.summarize_pairs([_leg(1, 1.05)] * 4, [_leg(1, 1.0)] * 4)
+        v = stats.timing_verdict(s, self.noise)
+        self.assertEqual(list(v["checks"]), ["w8_composite_clears_bar", "w1_tpot_no_regression", "w8_no_regression",
+                                             "enough_pairs"])
+        self.assertEqual(v["decided_on"], "w8_composite")
+
+    def test_w1_win_with_neutral_w8_promotes_only_when_deciding_on_w1(self):
+        # T2 shape: W1 TPOT -2%, W8 and W32 unchanged.
+        s = stats.summarize_pairs([_leg(1, 1.0, w1_decode=2.55)] * 4, [_leg(1, 1.0, w1_decode=2.50)] * 4)
+        self.assertFalse(stats.timing_verdict(s, self.noise)["promote"])
+        v = stats.timing_verdict(s, self.noise, "w1_tpot_gain")
+        self.assertTrue(v["promote"])
+        self.assertEqual(set(v["checks"]), {"w1_tpot_clears_bar", "w8_no_regression", "w32_tput_no_regression",
+                                            "w1_tpot_no_regression", "enough_pairs"})
+
+    def test_non_default_rule_guards_w32(self):
+        s = stats.summarize_pairs([_leg(1, 1.0, w1_decode=2.55)] * 4,
+                                  [_leg(1, 1.0, w1_decode=2.50, w32_wall=4.2)] * 4)
+        v = stats.timing_verdict(s, self.noise, "w1_tpot_gain")
+        self.assertFalse(v["checks"]["w32_tput_no_regression"])
+        self.assertFalse(v["promote"])
+
+    def test_unknown_metric_is_refused(self):
+        s = stats.summarize_pairs([_leg(1, 1.0)] * 4, [_leg(1, 1.0)] * 4)
+        with self.assertRaises(ValueError):
+            stats.timing_verdict(s, self.noise, "w8_prefill_gain")
 
 
 class FidelityTest(parameterized.TestCase):
@@ -139,6 +175,141 @@ class RunnerTest(absltest.TestCase):
                              "launch_command": "--port 1 --mem-fraction-static 0.76"}}
         diff = runner.server_arg_diff(a, b, ["--mem-fraction-static", "0.76"])
         self.assertEqual(diff, {"differing_keys": ["mem_fraction_static"], "undeclared": []})
+
+    def test_chunk_size_flag_declares_prefill_graph_shape(self):
+        # T1 on bs2: --chunked-prefill-size resizes the prefill cuda-graph config the server reports.
+        graphs = lambda n: {"decode": {"max_bs": 32}, "prefill": {"backend": "disabled", "max_bs": n, "bs": [4, n]}}
+        a = {"server_info": {"chunked_prefill_size": 4096, "cuda_graph_config": graphs(4096),
+                             "launch_command": "--port 1"}}
+        b = {"server_info": {"chunked_prefill_size": 8192, "cuda_graph_config": graphs(8192),
+                             "launch_command": "--port 1 --chunked-prefill-size 8192"}}
+        diff = runner.server_arg_diff(a, b, ["--chunked-prefill-size", "8192"])
+        self.assertEqual(diff["undeclared"], [])
+        self.assertIn("cuda_graph_config.prefill.max_bs", diff["differing_keys"])
+        self.assertEqual(runner.server_arg_diff(a, b, [])["undeclared"], [
+            "chunked_prefill_size", "cuda_graph_config.prefill.bs", "cuda_graph_config.prefill.max_bs",
+            "launch_command:--chunked-prefill-size"])
+
+    def test_derived_path_does_not_cover_siblings(self):
+        a = {"server_info": {"cuda_graph_config": {"decode": {"backend": "full"}, "prefill": {"max_bs": 1}}}}
+        b = {"server_info": {"cuda_graph_config": {"decode": {"backend": "piecewise"}, "prefill": {"max_bs": 2}}}}
+        diff = runner.server_arg_diff(a, b, ["--chunked-prefill-size", "2"])
+        self.assertEqual(diff["undeclared"], ["cuda_graph_config.decode.backend"])
+
+    def test_undeclared_launch_flag_is_flagged(self):
+        a = {"server_info": {"launch_command": "--port 1"}}
+        b = {"server_info": {"launch_command": "--port 1 --enable-foo"}}
+        self.assertEqual(runner.server_arg_diff(a, b, [])["undeclared"], ["launch_command:--enable-foo"])
+        self.assertEqual(runner.server_arg_diff(a, b, ["--enable-foo"])["undeclared"], [])
+
+
+class AgreementTest(parameterized.TestCase):
+    def _meta(self, candidate="t2", numerics_unchanged=False):
+        return {"control": {"name": "base"}, "candidate": {"name": candidate, "numerics_unchanged": numerics_unchanged},
+                "config": {"workloads": [{"name": "W8", "decode": 128}]}}
+
+    def test_threshold_from_identical_aa_uses_margin(self):
+        self.assertAlmostEqual(runner.agreement_threshold([1.0] * 6), 1.0 - config.AGREEMENT_MIN_MARGIN)
+
+    def test_threshold_widens_with_aa_spread(self):
+        means = [0.9, 1.0, 0.9, 1.0]
+        sd = (sum((x - 0.95) ** 2 for x in means) / 3) ** 0.5
+        self.assertAlmostEqual(runner.agreement_threshold(means), 0.9 - config.NOISE_SIGMAS * sd)
+
+    @parameterized.parameters(
+        # (candidate, numerics_unchanged, mean, ok): T2 on bs2 agreed 0.16 with a pass on teacher-forced fidelity.
+        ("t2", False, 0.16, True),
+        ("t2", True, 0.16, False),
+        ("t2", True, 0.99, True),
+        ("base", False, 0.16, False),
+    )
+    def test_hard_only_for_numerics_unchanged_or_aa(self, candidate, numerics_unchanged, mean, ok):
+        noise = {"timed_output_agreement": {"from_exp": "AA-x", "threshold": 0.98}}
+        check = runner.agreement_check(self._meta(candidate, numerics_unchanged), [{"mean": mean}], noise)
+        self.assertEqual(check["ok"], ok)
+        self.assertEqual(check["above_threshold"], mean >= 0.98)
+
+    def test_uncalibrated_falls_back_to_floor(self):
+        check = runner.agreement_check(self._meta(numerics_unchanged=True), [{"mean": 0.6}], {})
+        self.assertEqual((check["threshold"], check["calibrated_from"], check["ok"]),
+                         (config.TIMED_OUTPUT_AGREEMENT_MIN, None, True))
+
+    def test_short_timed_stream_fails_integrity(self):
+        leg = {"workloads": {"W8": [{"streams": [{"output_tokens": 128}, {"output_tokens": 128}]}]}}
+        self.assertTrue(runner.timed_streams_full_length(leg, self._meta()))
+        leg["workloads"]["W8"][0]["streams"][1]["output_tokens"] = 7
+        self.assertFalse(runner.timed_streams_full_length(leg, self._meta()))
+
+
+class RefTest(absltest.TestCase):
+    def test_numerics_unchanged_is_not_inherited(self):
+        refs = {"base": {"commit": "c", "server_args": ["--a"], "numerics_unchanged": True},
+                "child": {"extends": "base", "server_args": ["--b"]}}
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(refs, f)
+        old, server.REFS_PATH = server.REFS_PATH, f.name
+        try:
+            child = server.load_ref("child")
+        finally:
+            server.REFS_PATH = old
+            os.unlink(f.name)
+        self.assertEqual(child["server_args"], ["--a", "--b"])
+        self.assertFalse(child["numerics_unchanged"])
+
+
+class HarnessCommitTest(absltest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.repo = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.repo)
+        self.exp = os.path.join(self.repo, "experiments")
+        os.makedirs(os.path.join(self.exp, "gate", "__pycache__"))
+        with open(os.path.join(self.exp, "gate", "runner.py"), "w") as f:
+            f.write("x = 1\n")
+        with open(os.path.join(self.exp, "README"), "w") as f:
+            f.write("readme\n")
+
+    def _git(self, *args):
+        return subprocess.run(["git", "-C", self.repo, "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def _stamp(self, commit, tree):
+        with open(os.path.join(self.exp, treehash.STAMP), "w") as f:
+            json.dump({"commit": commit, "tree_sha256": tree}, f)
+
+    def test_tree_hash_ignores_caches_and_stamp(self):
+        before = treehash.tree_sha256(self.exp)
+        with open(os.path.join(self.exp, "gate", "__pycache__", "runner.cpython-312.pyc"), "w") as f:
+            f.write("bytecode")
+        self._stamp("abc", before)
+        self.assertEqual(treehash.tree_sha256(self.exp), before)
+        with open(os.path.join(self.exp, "gate", "runner.py"), "a") as f:
+            f.write("y = 2\n")
+        self.assertNotEqual(treehash.tree_sha256(self.exp), before)
+
+    def test_clean_tracked_tree_reports_git_head(self):
+        self._git("init", "-q")
+        self._git("add", "experiments/gate/runner.py", "experiments/README")
+        self._git("commit", "-qm", "c")
+        h = server.harness_commit(self.exp)
+        self.assertEqual((h["commit"], h["source"], h["dirty"]), (self._git("rev-parse", "HEAD"), "git", False))
+
+    def test_rsynced_tree_reports_stamp_commit_not_src_head(self):
+        # bs2: experiments/ rsynced untracked onto a checkout of the SGLang base commit.
+        self._git("init", "-q")
+        self._git("commit", "-q", "--allow-empty", "-m", "sglang base")
+        self._stamp("deadbeef", treehash.tree_sha256(self.exp))
+        h = server.harness_commit(self.exp)
+        self.assertEqual((h["commit"], h["source"]), ("deadbeef", "deploy_stamp"))
+        self.assertEqual(h["src_head"], self._git("rev-parse", "HEAD"))
+
+    def test_edited_after_deploy_has_no_commit(self):
+        self._stamp("deadbeef", treehash.tree_sha256(self.exp))
+        with open(os.path.join(self.exp, "gate", "runner.py"), "a") as f:
+            f.write("y = 2\n")
+        h = server.harness_commit(self.exp)
+        self.assertIsNone(h["commit"])
+        self.assertEqual(runner._ledger_harness(h), f"tree-sha256:{treehash.tree_sha256(self.exp)}")
 
 
 class HostWatchTest(absltest.TestCase):
