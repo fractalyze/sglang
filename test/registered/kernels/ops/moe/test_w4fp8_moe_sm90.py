@@ -173,7 +173,8 @@ def test_routed_gemm_matches_reference(k, n, tokens_per_expert, weighted):
         topk_weights=topk_weights.view(-1) if weighted else None,
         a_row_divisor=a_row_divisor,
     )
-    dense = dequantize_reference(weights)
+    # FP32 scales keep (q - z) * s unrounded, as the kernel applies s to an FP32 partial.
+    dense = dequantize_reference(weights._replace(scales=weights.scales.float()))
     weighting = topk_weights if weighted else None
     # Against the exact product of the quantised operands: only accumulation order differs.
     expected = _routed_reference(
