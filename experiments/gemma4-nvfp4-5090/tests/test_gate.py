@@ -1,6 +1,8 @@
 import json
 import math
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -8,7 +10,7 @@ from absl.testing import absltest, parameterized
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from gate import config, fidelity, hostwatch, quality, runner, server, sol, stats  # noqa: E402
+from gate import config, fidelity, hostwatch, quality, runner, server, sol, stats, treehash  # noqa: E402
 
 
 def _leg(prefill, decode, w1_decode=2.55, w32_wall=4.0):
@@ -221,6 +223,61 @@ class RefTest(absltest.TestCase):
             os.unlink(f.name)
         self.assertEqual(child["server_args"], ["--a", "--b"])
         self.assertFalse(child["numerics_unchanged"])
+
+
+class HarnessCommitTest(absltest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.repo = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.repo)
+        self.exp = os.path.join(self.repo, "experiments")
+        os.makedirs(os.path.join(self.exp, "gate", "__pycache__"))
+        with open(os.path.join(self.exp, "gate", "runner.py"), "w") as f:
+            f.write("x = 1\n")
+        with open(os.path.join(self.exp, "README"), "w") as f:
+            f.write("readme\n")
+
+    def _git(self, *args):
+        return subprocess.run(["git", "-C", self.repo, "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def _stamp(self, commit, tree):
+        with open(os.path.join(self.exp, treehash.STAMP), "w") as f:
+            json.dump({"commit": commit, "tree_sha256": tree}, f)
+
+    def test_tree_hash_ignores_caches_and_stamp(self):
+        before = treehash.tree_sha256(self.exp)
+        with open(os.path.join(self.exp, "gate", "__pycache__", "runner.cpython-312.pyc"), "w") as f:
+            f.write("bytecode")
+        self._stamp("abc", before)
+        self.assertEqual(treehash.tree_sha256(self.exp), before)
+        with open(os.path.join(self.exp, "gate", "runner.py"), "a") as f:
+            f.write("y = 2\n")
+        self.assertNotEqual(treehash.tree_sha256(self.exp), before)
+
+    def test_clean_tracked_tree_reports_git_head(self):
+        self._git("init", "-q")
+        self._git("add", "experiments/gate/runner.py", "experiments/README")
+        self._git("commit", "-qm", "c")
+        h = server.harness_commit(self.exp)
+        self.assertEqual((h["commit"], h["source"], h["dirty"]), (self._git("rev-parse", "HEAD"), "git", False))
+
+    def test_rsynced_tree_reports_stamp_commit_not_src_head(self):
+        # bs2: experiments/ rsynced untracked onto a checkout of the SGLang base commit.
+        self._git("init", "-q")
+        self._git("commit", "-q", "--allow-empty", "-m", "sglang base")
+        self._stamp("deadbeef", treehash.tree_sha256(self.exp))
+        h = server.harness_commit(self.exp)
+        self.assertEqual((h["commit"], h["source"]), ("deadbeef", "deploy_stamp"))
+        self.assertEqual(h["src_head"], self._git("rev-parse", "HEAD"))
+
+    def test_edited_after_deploy_has_no_commit(self):
+        self._stamp("deadbeef", treehash.tree_sha256(self.exp))
+        with open(os.path.join(self.exp, "gate", "runner.py"), "a") as f:
+            f.write("y = 2\n")
+        h = server.harness_commit(self.exp)
+        self.assertIsNone(h["commit"])
+        self.assertEqual(runner._ledger_harness(h), f"tree-sha256:{treehash.tree_sha256(self.exp)}")
 
 
 class HostWatchTest(absltest.TestCase):

@@ -331,6 +331,7 @@ def reevaluate(run_dir: str) -> Dict:
     os.rename(old, os.path.join(run_dir, f"report.v{n}.json"))
     report = evaluate(meta, legs)
     report["reevaluated_from"] = f"report.v{n}.json"
+    report["reevaluated_by_harness"] = server.harness_commit()
     _write(old, report)
     meta["notes"] = f"{meta['notes']} [re-evaluated: {report['reevaluated_from']} superseded]"
     append_ledger(meta, report, run_dir)
@@ -361,6 +362,11 @@ def save_noise_from(report_path: str) -> Dict:
     return noise
 
 
+def _ledger_harness(harness: Dict) -> str:
+    """The harness commit, or its tree hash when no commit is known to contain the files that ran."""
+    return harness["commit"] or f"tree-sha256:{harness.get('tree_sha256')}"
+
+
 def append_ledger(meta: Dict, report: Dict, run_dir: str) -> None:
     os.makedirs(os.path.dirname(config.LEDGER), exist_ok=True)
     o = report["summary"]["overall"]
@@ -374,8 +380,10 @@ def append_ledger(meta: Dict, report: Dict, run_dir: str) -> None:
         "candidate": meta["candidate"]["name"],
         "control_commit": meta["control"]["commit"],
         "candidate_commit": meta["candidate"]["commit"],
-        "harness_commit": meta["environment"]["harness"]["commit"],
+        "harness_commit": _ledger_harness(meta["environment"]["harness"]),
         "n_pairs": meta["n_pairs"],
+        **({"evaluator_harness_commit": _ledger_harness(report["reevaluated_by_harness"])}
+           if "reevaluated_by_harness" in report else {}),
         "metrics": {k: o[k] for k in ("w8_composite", "w8_prefill_gain", "w8_decode_gain", "w1_tpot_gain",
                                       "w1_tpot_control_ms", "w1_tpot_candidate_ms", "w32_tput_gain",
                                       "w32_tput_control_tok_s", "w32_tput_candidate_tok_s")},
