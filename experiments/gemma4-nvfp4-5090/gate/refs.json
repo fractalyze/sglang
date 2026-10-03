@@ -160,5 +160,33 @@
       "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
     },
     "description": "T4 (W9b, gemma4nv-b3-t4): base4 on commit 1d859709ef with SGLANG_OPT_GEMMA4_FUSED_GLUE=2: sub-step A plus the post-attention norm pair, the router / pre-FF-2 norm pair and the next layer's input norm in the dual-norm epilogue (270 of 392 glue launches per decode step removed; norm sums reordered)."
+  },
+  "base4-spec": {
+    "extends": "base4",
+    "description": "T-SPEC3 (W10, gemma4nv-b2-tspec3, variant of gemma4nv-b2-tspec2b): base4 on commit c99575c4f52f (36aa977541's python tree + the split-KV verify switch; nothing else differs under python/) with T-SPEC2b's speculative stack: MTP assistant drafter k=5 (as base3-mtp5), SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA=1 and --mem-fraction-static 0.78; see trials/T-SPEC3-base4-spec.md.",
+    "commit": "c99575c4f52fee62ed0ebd0276344b059922a2a5",
+    "env": {
+      "SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA": "1"
+    },
+    "server_args": [
+      "--speculative-algorithm",
+      "NEXTN",
+      "--speculative-draft-model-path",
+      "/home/jooman/gemma4nv/models/gemma-4-26B-A4B-it-assistant",
+      "--speculative-draft-model-revision",
+      "main",
+      "--speculative-num-steps",
+      "5",
+      "--speculative-num-draft-tokens",
+      "6",
+      "--speculative-eagle-topk",
+      "1",
+      "--max-running-requests",
+      "48",
+      "--cuda-graph-max-bs-decode",
+      "32",
+      "--mem-fraction-static",
+      "0.78"
+    ]
   }
 }
