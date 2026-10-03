@@ -66,11 +66,33 @@ def summarize_pairs(control: List[Dict[str, float]], candidate: List[Dict[str, f
         g = _gains([c], [k])
         g["skew_vs_overall"] = {m: g[m] / overall[m] - 1.0 for m in GATED_METRICS}
         pairs.append(g)
-    log_sigma = {}
+    log_sigma, ci95 = {}, {}
     for m in GATED_METRICS:
         logs = [math.log(p[m]) for p in pairs]
         log_sigma[m] = _sample_std(logs)
-    return {"overall": overall, "pairs": pairs, "per_pair_log_sigma": log_sigma, "n_pairs": len(pairs)}
+        ci95[m] = pair_ci95(logs)
+    return {"overall": overall, "pairs": pairs, "per_pair_log_sigma": log_sigma, "ci95": ci95, "n_pairs": len(pairs)}
+
+
+# Two-sided 95% Student t quantiles by degrees of freedom; above 30 the normal 1.96 is close enough.
+_T975 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+         11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131, 16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093,
+         20: 2.086, 25: 2.060, 30: 2.042}
+
+
+def _t975(df: int) -> float:
+    if df in _T975:
+        return _T975[df]
+    return _T975[max(k for k in _T975 if k <= df)] if df < 30 else 1.96
+
+
+def pair_ci95(log_gains: Sequence[float]) -> Dict[str, float]:
+    """95% t-interval of the mean per-pair log gain, as gains, and its relative half-width."""
+    if len(log_gains) < 2:
+        return {"low": float("nan"), "high": float("nan"), "half_width": float("nan")}
+    mean = sum(log_gains) / len(log_gains)
+    half = _t975(len(log_gains) - 1) * _sample_std(log_gains) / math.sqrt(len(log_gains))
+    return {"low": math.exp(mean - half), "high": math.exp(mean + half), "half_width": math.expm1(half)}
 
 
 def _sample_std(xs: Sequence[float]) -> float:
@@ -114,9 +136,12 @@ def timing_verdict(summary: Dict, noise: Dict[str, float], decide_on: str = DEFA
         checks[f"{stems[m]}_no_regression"] = overall[m] - 1.0 > -bars[m]
     checks[f"{stems[decide_on]}_no_regression"] = overall[decide_on] - 1.0 > -bars[decide_on]
     checks["enough_pairs"] = summary["n_pairs"] >= config.MIN_PAIRS
+    ci95 = summary.get("ci95", {})
     return {
         "decided_on": decide_on,
         "bars": bars,
+        # Reported, never a check: older verdicts re-evaluate unchanged.
+        "ci95_narrower_than_bar": {m: ci95[m]["half_width"] < bars[m] for m in ci95},
         "noise_calibrated": all(m in noise for m in GATED_METRICS),
         "checks": checks,
         "promote": all(checks.values()),

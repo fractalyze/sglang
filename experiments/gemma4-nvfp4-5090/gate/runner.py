@@ -56,13 +56,19 @@ def environment() -> Dict:
     }
 
 
+def timing_seed(wl: config.Workload, pair_seed: str, rep: int) -> str:
+    if wl.fixed_prompt_seed:
+        return f"{wl.fixed_prompt_seed}/{rep}"
+    return f"{pair_seed}/{wl.name}/{rep}"
+
+
 def _timed_workloads(srv: server.Server, corpus, bos: int, seed: str) -> Dict:
     out = {}
     for wl in config.WORKLOADS:
         reps = []
         for rep in range(wl.reps_per_leg):
             srv.flush_cache()
-            ps = prompts.timing_prompts(corpus, bos, f"{seed}/{wl.name}/{rep}", wl.concurrency, wl.prompt_tokens)
+            ps = prompts.timing_prompts(corpus, bos, timing_seed(wl, seed, rep), wl.concurrency, wl.prompt_tokens)
             reps.append(asyncio.run(client.run_batch(srv.url, ps, wl.decode_tokens)))
         out[wl.name] = reps
     return out
@@ -241,7 +247,8 @@ def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, n
             "fidelity_prompts_digest": fidelity.prompts_digest(), "environment": environment(),
             "checkpoint": checkpoint.verify(),
             "config": {"workloads": [{"name": w.name, "concurrency": w.concurrency, "prompt": w.prompt_tokens,
-                                      "decode": w.decode_tokens, "reps": w.reps_per_leg} for w in config.WORKLOADS]}}
+                                      "decode": w.decode_tokens, "reps": w.reps_per_leg,
+                                      "fixed_prompt_seed": w.fixed_prompt_seed} for w in config.WORKLOADS]}}
     _write(os.path.join(run_dir, "meta.json"), meta)
     refs = {"control": control_ref, "candidate": candidate_ref}
     legs: Dict[str, List[Dict]] = {"control": [], "candidate": []}
