@@ -84,7 +84,8 @@ def _quality_compare(args) -> None:
     res = quality.compare(fidelity.load_json(args.control), fidelity.load_json(args.candidate),
                           args.gsm8k_ci_low_min)
     res["control"], res["candidate"] = args.control, args.candidate
-    fidelity.save_json(os.path.join(os.path.dirname(args.candidate), "quality_compare.json"), res)
+    control_run = os.path.basename(os.path.dirname(os.path.abspath(args.control)))
+    fidelity.save_json(os.path.join(os.path.dirname(args.candidate), f"quality_compare-vs-{control_run}.json"), res)
     print(json.dumps(res, indent=1))
 
 

@@ -78,5 +78,9 @@
     },
     "weight_layout_change": true,
     "description": "T3b stacked on base3 (W9, gemma4nv-b3-t3b, variant of gemma4nv-b2-t3b): base3 on commit 36aa977541 (base3's 1fd77e64b0 + cherry-picks 826d472504, bbbf5e4d46, ed0aefcd40; python/ tree identical to ed0aefcd40) with SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1: both o_proj shapes stored as FP8 E4M3 with per-output-channel scales, decode on the Triton small-M kernel, prefill on cuBLAS over the bf16 upcast."
+  },
+  "base4": {
+    "extends": "base3-t3b",
+    "description": "Pinned base4 (W9): base3 + T3b's FP8 E4M3 weight-only o_proj (commit 36aa977541, SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1), kept on bs3 (gemma4nv-b3-t3b: W8 composite 1.0142, W1 TPOT -4.03%, decode KL 0.025) and adopted on full GSM8K (delta -0.23 pt, paired 95% CI [-0.92, +0.47]) with tool-JSON 100 -> 100."
   }
 }
