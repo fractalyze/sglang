@@ -7,6 +7,7 @@ venv's editable install, so control and candidate run different code from one
 venv. A ref that needs other compiled packages names its own `python`.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -64,16 +65,48 @@ def resolve_commit(commit: str) -> str:
         return _git("rev-parse", "--verify", f"{commit}^{{commit}}")
 
 
-def tree_for(commit: str) -> str:
-    """A pristine detached worktree of `commit` (created once, verified clean every use)."""
+def tree_for(commit: str, overlay: Optional[str] = None) -> str:
+    """A pristine detached worktree of `commit` (created once, verified clean every use).
+
+    With `overlay` (a patch file), the tree is `commit` plus that patch staged, kept in its
+    own directory named by the patch's hash; every use checks that the staged diff is still
+    exactly what applying the patch produced and that nothing else changed.
+    """
     sha = resolve_commit(commit)
-    path = os.path.join(config.TREES_DIR, sha[:12])
+    if overlay is None:
+        path = os.path.join(config.TREES_DIR, sha[:12])
+    else:
+        path = os.path.join(config.TREES_DIR, f"{sha[:12]}+{overlay_digest(overlay)}")
     if not os.path.exists(path):
         os.makedirs(config.TREES_DIR, exist_ok=True)
         _git("worktree", "add", "--detach", path, sha)
-    if _git("rev-parse", "HEAD", cwd=path) != sha or _git("status", "--porcelain", cwd=path):
+        if overlay is not None:
+            _git("apply", "--index", os.path.abspath(overlay), cwd=path)
+            with open(path + ".staged.sha256", "w") as f:
+                f.write(_staged_digest(path))
+    if _git("rev-parse", "HEAD", cwd=path) != sha:
+        raise RuntimeError(f"tree {path} is not at {sha}")
+    # Porcelain lines are "XY path"; an overlay tree may differ from HEAD only in the index (Y blank).
+    status = subprocess.run(["git", "-C", path, "status", "--porcelain"], check=True, capture_output=True,
+                            text=True).stdout.splitlines()
+    if [ln for ln in status if overlay is None or ln[1] != " "]:
         raise RuntimeError(f"tree {path} is not a clean checkout of {sha}")
+    if overlay is not None:
+        with open(path + ".staged.sha256") as f:
+            if f.read() != _staged_digest(path):
+                raise RuntimeError(f"tree {path}: staged overlay changed since it was applied")
     return path
+
+
+def overlay_digest(patch: str) -> str:
+    with open(patch, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()[:12]
+
+
+def _staged_digest(path: str) -> str:
+    diff = subprocess.run(["git", "-C", path, "diff", "--cached", "--binary", "HEAD"], check=True,
+                          capture_output=True).stdout
+    return hashlib.sha256(diff).hexdigest()
 
 
 def harness_commit(here: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) -> Dict:
@@ -107,17 +140,21 @@ def harness_commit(here: str = os.path.dirname(os.path.dirname(os.path.abspath(_
 class Server:
     """One server lifetime for one ref, logging to `log_path`."""
 
-    def __init__(self, ref: Dict, log_path: str, extra_args: Optional[List[str]] = None):
+    def __init__(self, ref: Dict, log_path: str, extra_args: Optional[List[str]] = None,
+                 overlay: Optional[str] = None, extra_env: Optional[Dict[str, str]] = None):
         self.ref = ref
         self.log_path = log_path
         self.extra_args = extra_args or []
+        # Measurement-only additions (gate spec-run's replay hook): never part of a ref.
+        self.overlay = overlay
+        self.extra_env = extra_env or {}
         self.url = f"http://127.0.0.1:{config.PORT}"
         self.proc: Optional[subprocess.Popen] = None
         self._watchdog: Optional[hostwatch.Watchdog] = None
         self._log_file = None
         self.preflight: Optional[Dict] = None
         self.host_summary: Optional[Dict] = None
-        self.tree = tree_for(ref["commit"])
+        self.tree = tree_for(ref["commit"], overlay)
         self.commit = resolve_commit(ref["commit"])
 
     def command(self) -> List[str]:
@@ -140,6 +177,7 @@ class Server:
         env = dict(os.environ)
         env["MAX_JOBS"] = str(config.JIT_MAX_JOBS)
         env.update(self.ref["env"])
+        env.update(self.extra_env)
         env["PYTHONPATH"] = os.path.join(self.tree, "python") + os.pathsep + env.get("PYTHONPATH", "")
         self._log_file = open(self.log_path, "w")
         self.proc = subprocess.Popen(

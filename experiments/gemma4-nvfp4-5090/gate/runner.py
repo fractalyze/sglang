@@ -10,6 +10,8 @@ import subprocess
 import time
 from typing import Dict, List, Optional
 
+import msgspec
+
 from gate import checkpoint, client, config, fidelity, gpu, hostwatch, prompts, server, stats
 
 log = logging.getLogger(__name__)
@@ -56,19 +58,42 @@ def environment() -> Dict:
     }
 
 
-def timing_seed(wl: config.Workload, pair_seed: str, rep: int) -> str:
-    if wl.fixed_prompt_seed:
-        return f"{wl.fixed_prompt_seed}/{rep}"
+class LegMode(msgspec.Struct, frozen=True, kw_only=True):
+    """How a leg differs from a plain `gate run` leg (gate spec-run's replay legs set every field)."""
+
+    # Patch over the ref's tree, and env, for measurement hooks only (gate/spec_replay.patch).
+    overlay: Optional[str] = None
+    env: Dict[str, str] = {}
+    # Workload name -> fixed prompt seed, overriding a workload drawn per pair.
+    fixed_seeds: Dict[str, str] = {}
+    # Free-running acceptance on the hidden set after the timed window.
+    tau_pass: bool = False
+
+
+PLAIN_LEG = LegMode()
+
+
+def timing_seed(wl: config.Workload, pair_seed: str, rep: int, mode: LegMode = PLAIN_LEG) -> str:
+    fixed = mode.fixed_seeds.get(wl.name) or wl.fixed_prompt_seed
+    if fixed:
+        return f"{fixed}/{rep}"
     return f"{pair_seed}/{wl.name}/{rep}"
 
 
-def _timed_workloads(srv: server.Server, corpus, bos: int, seed: str) -> Dict:
+def timed_prompts(corpus, bos: int, pair_seed: str, mode: LegMode = PLAIN_LEG) -> Dict[str, List[List[List[int]]]]:
+    """Workload -> rep -> the prompts that rep times."""
+    return {wl.name: [prompts.timing_prompts(corpus, bos, timing_seed(wl, pair_seed, rep, mode), wl.concurrency,
+                                             wl.prompt_tokens) for rep in range(wl.reps_per_leg)]
+            for wl in config.WORKLOADS}
+
+
+def _timed_workloads(srv: server.Server, corpus, bos: int, seed: str, mode: LegMode = PLAIN_LEG) -> Dict:
     out = {}
+    by_wl = timed_prompts(corpus, bos, seed, mode)
     for wl in config.WORKLOADS:
         reps = []
-        for rep in range(wl.reps_per_leg):
+        for ps in by_wl[wl.name]:
             srv.flush_cache()
-            ps = prompts.timing_prompts(corpus, bos, timing_seed(wl, seed, rep), wl.concurrency, wl.prompt_tokens)
             reps.append(asyncio.run(client.run_batch(srv.url, ps, wl.decode_tokens)))
         out[wl.name] = reps
     return out
@@ -82,12 +107,15 @@ def warm_up(srv: server.Server, corpus, bos: int, seed: str) -> None:
     srv.flush_cache()
 
 
-def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fidelity: bool) -> Dict:
+def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fidelity: bool,
+            mode: LegMode = PLAIN_LEG) -> Dict:
     os.makedirs(leg_dir, exist_ok=True)
     events: List[Dict] = []
     leg = {"ref": ref["name"], "events": events, "started": time.time()}
     leg["gpu_before_launch"] = gpu.wait_quiet(None, events)
-    with server.Server(ref, os.path.join(leg_dir, "server.log")) as srv:
+    with server.Server(ref, os.path.join(leg_dir, "server.log"), overlay=mode.overlay, extra_env=mode.env) as srv:
+        leg["overlay"] = mode.overlay and {"patch": os.path.basename(mode.overlay),
+                                           "sha": server.overlay_digest(mode.overlay), "env": mode.env}
         leg["commit"] = srv.commit
         leg["server_cmd"] = srv.command()
         leg["weights_at_load"] = srv.weight_checksum()
@@ -98,12 +126,14 @@ def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fide
         srv._watchdog.set_phase("timed")
         with gpu.Telemetry(srv.proc.pid) as tel:
             t0 = time.time()
-            leg["workloads"] = _timed_workloads(srv, corpus, bos, pair_seed)
+            leg["workloads"] = _timed_workloads(srv, corpus, bos, pair_seed, mode)
             leg["window_s"] = time.time() - t0
         srv._watchdog.set_phase("post")
         leg["telemetry"] = tel.summary()
         leg["decode_steps_in_window"] = srv.decode_steps_since(offset)
         leg["backends"] = srv.backend_report()
+        if mode.tau_pass:
+            leg["hidden_tau"] = hidden_tau_pass(srv)
         if with_fidelity:
             leg["fidelity_outputs"] = fidelity.run(srv.url)
             leg["fidelity_forced"] = fidelity.run_forced(srv.url, fidelity.load_json(fidelity.REFERENCE_PATH))
@@ -114,16 +144,27 @@ def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fide
     return leg
 
 
+def hidden_tau_pass(srv: server.Server) -> List[Dict]:
+    """Free-running acceptance per hidden prompt (prompt contents never leave the host)."""
+    srv.flush_cache()
+    hidden = fidelity.load_prompts()
+    rows = asyncio.run(client.spec_acceptance(srv.url, [p["input_ids"] for p in hidden], config.TAU_MAX_NEW_TOKENS,
+                                              config.TAU_CONCURRENCY))
+    return [{"id": p["id"], "category": p["category"], "completion_tokens": r["completion_tokens"],
+             "verify_ct": r["verify_ct"], "output_ids": r["output_ids"]} for p, r in zip(hidden, rows)]
+
+
 _LEG_RETRIES = 2
 
 
-def run_leg_with_retries(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fidelity: bool) -> Dict:
+def run_leg_with_retries(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fidelity: bool,
+                         mode: LegMode = PLAIN_LEG) -> Dict:
     """Reruns a leg the host disturbed (watchdog kill, busy-host refusal); earlier attempts are kept."""
     attempts = []
     for attempt in range(_LEG_RETRIES + 1):
         d = leg_dir if attempt == 0 else f"{leg_dir}-retry{attempt}"
         try:
-            leg = run_leg(ref, pair_seed, d, corpus, bos, with_fidelity)
+            leg = run_leg(ref, pair_seed, d, corpus, bos, with_fidelity, mode)
         except (RuntimeError, hostwatch.HostUnsafe) as e:
             attempts.append({"dir": d, "error": repr(e)[:500]})
             continue
@@ -273,16 +314,7 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
     noise = _load_noise()
     timing = stats.timing_verdict(summary, noise, meta.get("decide_on", stats.DEFAULT_DECIDING_METRIC))
     agreement = [timed_output_agreement(c, k) for c, k in zip(control, candidate)]
-    thresholds = fidelity.load_json(fidelity.THRESHOLDS_PATH) if os.path.exists(fidelity.THRESHOLDS_PATH) else None
-    fid = {}
-    if os.path.exists(fidelity.REFERENCE_PATH):
-        reference = fidelity.load_json(fidelity.REFERENCE_PATH)
-        ref_forced = fidelity.load_json(fidelity.REFERENCE_FORCED_PATH)
-        for role, ls in legs.items():
-            cmp = fidelity.compare(reference, ls[0]["fidelity_outputs"])
-            cmp_forced = fidelity.compare_forced(reference, ref_forced, ls[0]["fidelity_forced"])
-            fid[role] = {"compare": cmp, "compare_forced": cmp_forced,
-                         "verdict": fidelity.verdict(cmp, cmp_forced, thresholds) if thresholds else None}
+    fid = fidelity_report(legs)
     args_diff = server_arg_diff(control[0], candidate[0], meta["candidate"].get("server_args", []) +
                                 meta["control"].get("server_args", []))
     w_c, w_k = control[0]["weights_at_load"], candidate[0]["weights_at_load"]
@@ -305,6 +337,10 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
         and meta["checkpoint"]["matches_hf_revision"]
     )
     fid_pass = fid.get("candidate", {}).get("verdict", {}) or {}
+    # Under speculation a numerics change moves timing through acceptance on its own text,
+    # which these paired legs cannot separate (stats.timing_rule); gate spec-run decides it.
+    rule = stats.timing_rule(meta["control"], meta["candidate"])
+    timing_decides = timing["promote"] and rule == stats.PAIRED_RULE
     return {
         "exp_id": meta["exp_id"],
         "control": meta["control"]["name"],
@@ -320,9 +356,25 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
             "integrity_ok": integrity["ok"],
             "fidelity_pass": fid_pass.get("pass"),
             "timing_promote": timing["promote"],
-            "promote": bool(integrity["ok"] and fid_pass.get("pass") and timing["promote"]),
+            "timing_rule": rule,
+            "promote": bool(integrity["ok"] and fid_pass.get("pass") and timing_decides),
         },
     }
+
+
+def fidelity_report(legs: Dict[str, List[Dict]]) -> Dict:
+    """Each arm's pair-0 fidelity passes against the pinned reference, with the verdict."""
+    thresholds = fidelity.load_json(fidelity.THRESHOLDS_PATH) if os.path.exists(fidelity.THRESHOLDS_PATH) else None
+    fid = {}
+    if os.path.exists(fidelity.REFERENCE_PATH):
+        reference = fidelity.load_json(fidelity.REFERENCE_PATH)
+        ref_forced = fidelity.load_json(fidelity.REFERENCE_FORCED_PATH)
+        for role, ls in legs.items():
+            cmp = fidelity.compare(reference, ls[0]["fidelity_outputs"])
+            cmp_forced = fidelity.compare_forced(reference, ref_forced, ls[0]["fidelity_forced"])
+            fid[role] = {"compare": cmp, "compare_forced": cmp_forced,
+                         "verdict": fidelity.verdict(cmp, cmp_forced, thresholds) if thresholds else None}
+    return fid
 
 
 def reevaluate(run_dir: str, decide_on: Optional[str] = None) -> Dict:
