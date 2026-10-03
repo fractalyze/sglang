@@ -202,5 +202,13 @@
     "description": "T-SPEC6b (W12, gemma4nv-b2-tspec6b): base4-spec-fp8head on commit c9b595d5a3 (3d1732c505's python tree + the FP8 weight-only allowlist extended to both qkv_proj shapes, max_m 256 with 32-row M blocks; nothing else under python/ differs). The inherited SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1 now also stores qkv_proj as FP8 E4M3 per output channel; see trials/T-SPEC6b-fp8-qkv-verify.md.",
     "commit": "c9b595d5a36e003459da46b0da9cd6ba7a709a0b",
     "weight_layout_change": true
+  },
+  "base4-spec-fp8head-fp8lmhead": {
+    "extends": "base4-spec-fp8head",
+    "description": "T-SPEC6c (W12, gemma4nv-b2-tspec6c): base4-spec-fp8head on commit dd5361a7bc (3d1732c505's python tree + an FP8 E4M3 per-row copy of the target's tied 262144 x 2816 head in gemma4_mm.py, used for logits batches of at most 48 rows; the per-tile max_m plumbing; T-SPEC6b's qkv entries removed, so o_proj routes as before) with SGLANG_OPT_GEMMA4_FP8_LM_HEAD=1; see trials/T-SPEC6c-fp8-target-lm-head.md.",
+    "commit": "dd5361a7bcb2a15e4e0c5ed343fb4df32dbd43aa",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FP8_LM_HEAD": "1"
+    }
   }
 }
