@@ -391,7 +391,7 @@ def _can_accumulate_into_addend(
     )
 
 
-def fits_triton_small_m_bf16_gemm(
+def _fits_triton_small_m_bf16_gemm(
     *, x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor]
 ) -> bool:
     # Dynamo would guard on the symbolic token dim through the M check.
@@ -567,7 +567,7 @@ class UnquantizedLinearMethod(LinearMethodBase):
                 return bf16_gemm_dispatch(x, layer.weight, bias)
             return _bf16_gemm_dispatch_impl(x, layer.weight, bias)
 
-        elif self._use_triton_small_m_bf16_gemm and fits_triton_small_m_bf16_gemm(
+        elif self._use_triton_small_m_bf16_gemm and _fits_triton_small_m_bf16_gemm(
             x=x, weight=layer.weight, bias=bias
         ):
             return triton_small_m_bf16_gemm(x.view(-1, x.shape[-1]), layer.weight).view(
