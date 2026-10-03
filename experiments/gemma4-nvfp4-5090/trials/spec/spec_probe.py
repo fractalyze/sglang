@@ -70,8 +70,15 @@ def _generate(url: str, ids: List[int], max_new: int, **extra) -> Dict:
 def _accept_stats(metas: List[Dict]) -> Dict:
     toks = sum(m["completion_tokens"] for m in metas)
     verify = sum(m.get("spec_verify_ct", 0) for m in metas)
+    # Index i counts verify rounds that kept i drafts (bonus excluded).
+    hist: List[int] = []
+    for m in metas:
+        for i, c in enumerate(m.get("spec_correct_drafts_histogram") or []):
+            hist.extend([0] * (i + 1 - len(hist)))
+            hist[i] += c
     return {"n": len(metas), "tokens": toks, "verify_ct": verify,
-            "accept_length": round(toks / verify, 3) if verify else None}
+            "accept_length": round(toks / verify, 3) if verify else None,
+            "correct_drafts_histogram": hist}
 
 
 def mode_spec(srv: server.Server, out: Dict, decode_new: int) -> None:
