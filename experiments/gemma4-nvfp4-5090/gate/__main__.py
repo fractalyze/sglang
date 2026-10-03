@@ -192,7 +192,10 @@ def _sol_report(args) -> None:
     sol_res = json.load(open(args.sol))
     report = json.load(open(args.report))
     res = sol_fractions(report, os.path.dirname(args.report), sol_res)
-    fidelity.save_json(os.path.join(os.path.dirname(args.report), "sol_fractions.json"), res)
+    # Tables other than the default write beside it, so a re-report never replaces a recorded one.
+    stem = os.path.splitext(os.path.basename(args.sol))[0]
+    name = "sol_fractions.json" if stem == "sol" else f"sol_fractions.{stem}.json"
+    fidelity.save_json(os.path.join(os.path.dirname(args.report), name), res)
     print(json.dumps(res, indent=1))
 
 
