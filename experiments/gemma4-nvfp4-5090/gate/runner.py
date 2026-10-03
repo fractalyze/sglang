@@ -16,6 +16,9 @@ log = logging.getLogger(__name__)
 
 # server_info keys that legitimately differ between two launches of one config.
 _VOLATILE_SERVER_KEYS = {"random_seed", "version", "internal_states", "max_total_num_tokens", "pid", "startup_time"}
+# Follow from other server-info keys: launch_command restates the args (compared key by key), and
+# max_req_input_len is max_total_num_tokens minus a fixed reserve, so it moves with the KV pool size.
+_DERIVED_SERVER_KEYS = {"launch_command", "max_req_input_len"}
 
 
 def new_exp_id(label: str) -> str:
@@ -153,7 +156,8 @@ def timed_output_agreement(control: Dict, candidate: Dict) -> Dict:
 
 def server_arg_diff(control: Dict, candidate: Dict, declared: List[str]) -> Dict:
     a, b = control["server_info"], candidate["server_info"]
-    diff = sorted(k for k in set(a) | set(b) if k not in _VOLATILE_SERVER_KEYS and a.get(k) != b.get(k))
+    ignored = _VOLATILE_SERVER_KEYS | _DERIVED_SERVER_KEYS
+    diff = sorted(k for k in set(a) | set(b) if k not in ignored and a.get(k) != b.get(k))
     declared_keys = {d.lstrip("-").replace("-", "_") for d in declared if d.startswith("--")}
     undeclared = [k for k in diff if k not in declared_keys]
     return {"differing_keys": diff, "undeclared": undeclared}

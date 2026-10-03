@@ -132,6 +132,14 @@ class RunnerTest(absltest.TestCase):
         self.assertEqual(runner.server_arg_diff(a, b, [])["undeclared"], ["attention_backend"])
         self.assertEqual(runner.server_arg_diff(a, b, ["--attention-backend", "fa3"])["undeclared"], [])
 
+    def test_pool_size_flag_declares_its_derived_keys(self):
+        a = {"server_info": {"mem_fraction_static": 0.718, "max_total_num_tokens": 37081, "max_req_input_len": 37075,
+                             "launch_command": "--port 1"}}
+        b = {"server_info": {"mem_fraction_static": 0.76, "max_total_num_tokens": 51892, "max_req_input_len": 51886,
+                             "launch_command": "--port 1 --mem-fraction-static 0.76"}}
+        diff = runner.server_arg_diff(a, b, ["--mem-fraction-static", "0.76"])
+        self.assertEqual(diff, {"differing_keys": ["mem_fraction_static"], "undeclared": []})
+
 
 class HostWatchTest(absltest.TestCase):
     def _with(self, mem, swap, foreign):
