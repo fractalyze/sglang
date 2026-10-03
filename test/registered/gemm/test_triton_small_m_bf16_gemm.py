@@ -17,7 +17,7 @@ register_cuda_ci(est_time=15, stage="base-b", runner_config="1-gpu-large")
 
 _TUNED_NK = [(2816, 4096), (2816, 8192), (4224, 2816), (2816, 2112)]
 # (N, K) -> largest M routed to the FP8 kernel.
-_FP8_WEIGHT_MAX_M = {(2816, 4096): 32, (2816, 8192): 32}
+_FP8_WEIGHT_MAX_M = {(2816, 4096): 8192, (2816, 8192): 8192}
 _FP8_WEIGHT_NK = list(_FP8_WEIGHT_MAX_M)
 
 
@@ -109,7 +109,8 @@ class TestTritonSmallMBf16Gemm(unittest.TestCase):
             # The scale is the row absmax over E4M3's largest finite value.
             self.assertEqual(w8.float().abs().amax(dim=1).min().item(), 448.0)
             w_deq = w8.float() * scale[:, None]
-            for m in (1, 6, 8, 17, 32):
+            # Covers each M tier's edges, including multi-block M under a BLOCK_M cap.
+            for m in (1, 6, 8, 17, 32, 33, 48, 64, 65, 192, 2048, 2049, 8192):
                 with self.subTest(n=n, k=k, m=m):
                     x = torch.randn(m, k, dtype=torch.bfloat16, device="cuda")
                     y = triton_small_m_fp8_weight_gemm(x, w8, scale)
@@ -123,7 +124,8 @@ class TestTritonSmallMBf16Gemm(unittest.TestCase):
         n, k = _FP8_WEIGHT_NK[0]
         w = torch.randn(n, k, dtype=torch.bfloat16, device="cuda") * 0.02
         decode = torch.randn(8, k, dtype=torch.bfloat16, device="cuda")
-        prefill = torch.randn(1024, k, dtype=torch.bfloat16, device="cuda")
+        verify = torch.randn(48, k, dtype=torch.bfloat16, device="cuda")
+        prefill = torch.randn(8193, k, dtype=torch.bfloat16, device="cuda")
         for enabled in (False, True):
             with (
                 self.subTest(enabled=enabled),
@@ -148,9 +150,12 @@ class TestTritonSmallMBf16Gemm(unittest.TestCase):
                 y = method.apply(layer, decode)
                 self.assertEqual(spy.call_count, 1)
                 _assert_within_bf16_rounding(self, y, decode, w_deq, roundings=1)
-                # Prefill rounds the unscaled GEMM output, then the scaled one.
+                y = method.apply(layer, verify)
+                self.assertEqual(spy.call_count, 2)
+                _assert_within_bf16_rounding(self, y, verify, w_deq, roundings=1)
+                # The upcast route rounds the unscaled GEMM output, then the scaled one.
                 y = method.apply(layer, prefill)
-                self.assertEqual(spy.call_count, 1)
+                self.assertEqual(spy.call_count, 2)
                 _assert_within_bf16_rounding(self, y, prefill, w_deq, roundings=3)
 
     def test_fp8_weight_route_stops_at_each_shapes_max_m(self):

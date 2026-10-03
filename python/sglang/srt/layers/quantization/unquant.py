@@ -424,8 +424,8 @@ def _fp8_weight_only_linear(
     ):
         out = triton_small_m_fp8_weight_gemm(x2d, weight, scale)
         return out.view(*x.shape[:-1], -1)
-    # Prefill is compute-bound, so it keeps cuBLAS on an exact bf16 upcast of the
-    # E4M3 weight; the per-output-channel scale factors out of the K sum.
+    # M above the shape's last tile (unmeasured) keeps cuBLAS on an exact bf16 upcast
+    # of the E4M3 weight; the per-output-channel scale factors out of the K sum.
     out = F.linear(x, weight.to(torch.bfloat16)) * scale
     if bias is not None:
         out = out + bias
