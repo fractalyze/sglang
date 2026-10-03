@@ -191,8 +191,8 @@
   },
   "base4-spec-fp8head": {
     "extends": "base4-spec",
-    "description": "T-SPEC4 (W10, gemma4nv-b2-tspec4): base4-spec on commit 4ebe6175af (c99575c4f52f's tree + the FP8 MTP head; nothing else under python/ differs) with SGLANG_OPT_MTP_FP8_LM_HEAD=1: the MTP assistant's tied 262144 x 1024 head is stored as FP8 E4M3 with per-row scales and draft logits run on the Triton small-M FP8 kernel; the target and its verify are unchanged; see trials/T-SPEC4-mtp-fp8-head.md.",
-    "commit": "4ebe6175af4131461088aab0520d131f2ce40e6d",
+    "description": "T-SPEC4 (W10, gemma4nv-b2-tspec4): base4-spec on commit 262f327c28 (c99575c4f52f's tree + the FP8 MTP head; nothing else under python/ differs) with SGLANG_OPT_MTP_FP8_LM_HEAD=1: the MTP assistant's tied 262144 x 1024 head is stored as FP8 E4M3 with per-row scales and draft logits run on the Triton small-M FP8 kernel; the target and its verify are unchanged; see trials/T-SPEC4-mtp-fp8-head.md.",
+    "commit": "262f327c28f0b9f5fad5596b5f579af87a1ef941",
     "env": {
       "SGLANG_OPT_MTP_FP8_LM_HEAD": "1"
     }
