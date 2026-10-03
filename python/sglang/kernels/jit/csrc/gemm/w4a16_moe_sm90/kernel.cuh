@@ -84,14 +84,16 @@ struct Config {
   // Padded so a warp's column-wise accumulator stores spread over banks.
   static constexpr int kEpilogueStride = kWarpgroupRows + 8;
   static constexpr int kEpilogueBytes = 2 * kTokenBlock * kEpilogueStride * 2;
+  // Per consumer warpgroup: the tile's routed row ids, then their top-k weights.
+  static constexpr int kMetaBytes = 2 * kTokenBlock * 8;
   static constexpr int kBarrierBytes = 2 * kMaxStages * 8;
   // Dynamic smem is only 16B-aligned; the stages are realigned to 1024B in-kernel.
   static constexpr int kAlignSlack = 1024;
 
   static constexpr int kStages =
-      std::min(kMaxStages, (kSmemLimit - kEpilogueBytes - kBarrierBytes - kAlignSlack) / kStageBytes);
+      std::min(kMaxStages, (kSmemLimit - kEpilogueBytes - kMetaBytes - kBarrierBytes - kAlignSlack) / kStageBytes);
   static_assert(kStages >= 3, "token block too wide for a three-stage pipeline");
-  static constexpr int kSmemBytes = kAlignSlack + kStages * kStageBytes + kEpilogueBytes + kBarrierBytes;
+  static constexpr int kSmemBytes = kAlignSlack + kStages * kStageBytes + kEpilogueBytes + kMetaBytes + kBarrierBytes;
 
   static constexpr int kStageTxBytes = kWeightBytes + kScaleBytes + kZeroBytes;
   // One expect_tx arrival plus one cp.async arrival per producer thread.
@@ -145,20 +147,6 @@ __device__ __forceinline__ void named_barrier_sync(int id, int threads) {
   asm volatile("bar.sync %0, %1;\n" ::"r"(id), "r"(threads) : "memory");
 }
 
-struct TileCoord {
-  int m_block;
-  int n_tile;
-  int expert;  // negative: the block belongs to no local expert and is skipped
-};
-
-__device__ __forceinline__ TileCoord tile_coord(const Params& p, int tile, int n_tiles) {
-  TileCoord c;
-  c.m_block = tile / n_tiles;
-  c.n_tile = tile % n_tiles;
-  c.expert = p.expert_ids[c.m_block];
-  return c;
-}
-
 template <int kTokenBlock>
 __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64_t* full, uint64_t* empty) {
   using Cfg = Config<kTokenBlock>;
@@ -174,20 +162,42 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   const int k_tiles = p.k / kTileK;
   const int num_tiles = (*p.num_tokens_post_padded / kTokenBlock) * n_tiles;
 
+  // Global reads a tile needs before its first copy; loaded one tile ahead so
+  // their latency overlaps the previous tile's stages.
+  struct Meta {
+    int expert = -1;  // negative: no local expert, the tile is skipped
+    int ids[kRowsPerThread];
+  };
+  auto load_meta = [&](int tile) {
+    Meta m;
+    if (tile < num_tiles) {
+      const int m_block = tile / n_tiles;
+      m.expert = p.expert_ids[m_block];
+#pragma unroll
+      for (int i = 0; i < kRowsPerThread; ++i) {
+        m.ids[i] = p.sorted_token_ids[m_block * kTokenBlock + first_row + i * kRowStride];
+      }
+    }
+    return m;
+  };
+
   int it = 0;
+  Meta cur = load_meta(blockIdx.x);
   for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
-    const TileCoord c = tile_coord(p, tile, n_tiles);
-    if (c.expert < 0) continue;
+    const Meta next = load_meta(tile + gridDim.x);
+    if (cur.expert < 0) {
+      cur = next;
+      continue;
+    }
 
     const bf16* src[kRowsPerThread];
     bool valid[kRowsPerThread];
 #pragma unroll
     for (int i = 0; i < kRowsPerThread; ++i) {
-      const int id = p.sorted_token_ids[c.m_block * kTokenBlock + first_row + i * kRowStride];
-      valid[i] = id < p.num_rows;
-      src[i] = p.a + int64_t(valid[i] ? id / p.a_row_divisor : 0) * p.k + chunk * 8;
+      valid[i] = cur.ids[i] < p.num_rows;
+      src[i] = p.a + int64_t(valid[i] ? cur.ids[i] / p.a_row_divisor : 0) * p.k + chunk * 8;
     }
-    const int64_t stage_index = (int64_t(c.expert) * n_tiles + c.n_tile) * k_tiles;
+    const int64_t stage_index = (int64_t(cur.expert) * n_tiles + tile % n_tiles) * k_tiles;
 
     for (int kt = 0; kt < k_tiles; ++kt, ++it) {
       const int s = it % Cfg::kStages;
@@ -210,12 +220,13 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
       }
       cp_async_arrive_noinc(&full[s]);
     }
+    cur = next;
   }
 }
 
 template <int kTokenBlock>
 __device__ __forceinline__ void
-consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64_t* empty) {
+consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_t* full, uint64_t* empty) {
   using namespace cute;
   using Cfg = Config<kTokenBlock>;
 
@@ -240,10 +251,36 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64
   const int k_tiles = p.k / kTileK;
   const int num_tiles = (*p.num_tokens_post_padded / kTokenBlock) * n_tiles;
 
+  int32_t* tile_ids = reinterpret_cast<int32_t*>(meta) + wg * 2 * kTokenBlock;
+  float* tile_weights = reinterpret_cast<float*>(tile_ids + kTokenBlock);
+
+  // Thread `tid` < kTokenBlock owns routed row `tid` of the tile; loaded one tile
+  // ahead, and its top-k weight is fetched before the mainloop it is used after.
+  struct Meta {
+    int expert = -1;  // negative: no local expert, the tile is skipped
+    int id = 0;
+  };
+  auto load_meta = [&](int tile) {
+    Meta m;
+    if (tile < num_tiles) {
+      const int m_block = tile / n_tiles;
+      m.expert = p.expert_ids[m_block];
+      if (tid < kTokenBlock) m.id = p.sorted_token_ids[m_block * kTokenBlock + tid];
+    }
+    return m;
+  };
+
   int it = 0;
+  Meta cur = load_meta(blockIdx.x);
   for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
-    const TileCoord c = tile_coord(p, tile, n_tiles);
-    if (c.expert < 0) continue;
+    const Meta next = load_meta(tile + gridDim.x);
+    if (cur.expert < 0) {
+      cur = next;
+      continue;
+    }
+    const bool row_valid = tid < kTokenBlock && cur.id < p.num_rows;
+    float row_weight = row_valid ? 1.0f : 0.0f;
+    if (p.topk_weights != nullptr && row_valid) row_weight = p.topk_weights[cur.id];
 
     // Dequantises stage `s` into `frag_a` and issues its wgmma batch without waiting on it.
     auto issue_stage = [&](auto& frag_a, int s) {
@@ -306,32 +343,33 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64
     warpgroup_fence_operand(acc);
     if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
 
+    if (tid < kTokenBlock) {
+      tile_ids[tid] = row_valid ? cur.id : -1;
+      tile_weights[tid] = row_weight;
+    }
+    named_barrier_sync(1 + wg, 128);
+
     // Transpose through shared memory so each routed row leaves as 16B stores.
-    const int block_base = c.m_block * kTokenBlock;
 #pragma unroll
     for (int i = 0; i < size(acc); ++i) {
       const int row = get<0>(acc_coord(i));
       const int token = get<1>(acc_coord(i));
-      float v = acc(i);
-      if (p.topk_weights != nullptr) {
-        const int id = p.sorted_token_ids[block_base + token];
-        v *= id < p.num_rows ? p.topk_weights[id] : 0.0f;
-      }
-      staging[token * Cfg::kEpilogueStride + row] = bf16(v);
+      staging[token * Cfg::kEpilogueStride + row] = bf16(acc(i) * tile_weights[token]);
     }
     named_barrier_sync(1 + wg, 128);
 
-    const int col = c.n_tile * kTileN + wg * kWarpgroupRows;
+    const int col = (tile % n_tiles) * kTileN + wg * kWarpgroupRows;
     for (int ci = tid; ci < kTokenBlock * kWarpgroupRows / 8; ci += 128) {
       const int token = ci / (kWarpgroupRows / 8);
       const int part = ci % (kWarpgroupRows / 8);
-      const int id = p.sorted_token_ids[block_base + token];
-      if (id < p.num_rows) {
+      const int id = tile_ids[token];
+      if (id >= 0) {
         *reinterpret_cast<uint4*>(p.out + int64_t(id) * p.n + col + part * 8) =
             *reinterpret_cast<const uint4*>(staging + token * Cfg::kEpilogueStride + part * 8);
       }
     }
     named_barrier_sync(1 + wg, 128);
+    cur = next;
   }
 }
 
@@ -339,9 +377,12 @@ template <int kTokenBlock>
 __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __grid_constant__ Params p) {
   using Cfg = Config<kTokenBlock>;
   extern __shared__ uint8_t smem_raw[];
-  uint8_t* stages = reinterpret_cast<uint8_t*>((reinterpret_cast<uintptr_t>(smem_raw) + 1023) & ~uintptr_t{1023});
+  // Offset from smem_raw rather than a rebuilt integer address, so the compiler
+  // keeps these pointers in the shared window and emits LDS, not generic loads.
+  uint8_t* stages = smem_raw + ((1024 - (device::ptx::to_shared(smem_raw) & 1023)) & 1023);
   bf16* epilogue = reinterpret_cast<bf16*>(stages + Cfg::kStages * Cfg::kStageBytes);
-  uint64_t* full = reinterpret_cast<uint64_t*>(reinterpret_cast<uint8_t*>(epilogue) + Cfg::kEpilogueBytes);
+  uint8_t* meta = reinterpret_cast<uint8_t*>(epilogue) + Cfg::kEpilogueBytes;
+  uint64_t* full = reinterpret_cast<uint64_t*>(meta + Cfg::kMetaBytes);
   uint64_t* empty = full + Cfg::kStages;
 
   if (threadIdx.x == 0) {
@@ -358,7 +399,7 @@ __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __gri
     produce<kTokenBlock>(p, stages, full, empty);
   } else {
     cutlass::arch::warpgroup_reg_alloc<232>();
-    consume<kTokenBlock>(p, stages, epilogue, full, empty);
+    consume<kTokenBlock>(p, stages, epilogue, meta, full, empty);
   }
 }
 

@@ -157,20 +157,22 @@ def dequantize_reference(weights: W4A16MoeWeights) -> torch.Tensor:
     return dense.permute(0, 1, 3, 2, 4).reshape(e, nt * TILE_N, kt * TILE_K)
 
 
-# Token-block widths the kernel is instantiated for. wgmma N must be a
-# multiple of 8, and the widest block still fits three pipeline stages in
-# shared memory.
-TOKEN_BLOCKS = (8, 16, 32, 64, 128)
+# Token-block widths the kernel is instantiated for (wgmma N, a multiple of 8).
+# A 128-token block spills registers and fits only four stages; measured slower
+# on H100 than two 64-token blocks even at 64 tokens per expert.
+TOKEN_BLOCKS = (8, 16, 32, 64)
 
 
 def select_token_block(num_tokens: int, top_k: int, num_experts: int) -> int:
-    """Smallest block that holds nearly every expert's routed tokens.
+    """Smallest block that holds most experts' routed tokens.
 
-    Per-expert counts are roughly binomial, so mean + 3 sd keeps almost every
-    expert in one block; a second block would stream that expert's weights again.
+    Per-expert counts are roughly binomial; a block below mean + 1.5 sd sends
+    many experts into a second block that streams their weights again, while a
+    wider one makes every wgmma wider. The margin was picked from an H100 sweep
+    of 4 to 64 tokens per expert; re-sweep when the kernel changes.
     """
     mean = num_tokens * top_k / num_experts
-    target = mean + 3 * math.sqrt(mean)
+    target = mean + 1.5 * math.sqrt(mean)
     for block in TOKEN_BLOCKS:
         if target <= block:
             return block
