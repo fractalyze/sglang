@@ -15,7 +15,7 @@ index 32625c748c..25ad44126f 100644
      SGLANG_SIMULATE_ROUND_ROBIN_EXPERTS = EnvBool(False)
  
 diff --git a/python/sglang/srt/speculative/eagle_worker_common.py b/python/sglang/srt/speculative/eagle_worker_common.py
-index 0c2c530860..154bc438cb 100644
+index 0c2c530860..79cacd9464 100644
 --- a/python/sglang/srt/speculative/eagle_worker_common.py
 +++ b/python/sglang/srt/speculative/eagle_worker_common.py
 @@ -17,6 +17,7 @@ from sglang.srt.model_executor.forward_batch_info import (
@@ -32,7 +32,7 @@ index 0c2c530860..154bc438cb 100644
      verify_input: EagleVerifyInput = batch.spec_info
 +    replay = get_spec_replay(
 +        num_draft_tokens=num_draft_tokens,
-+        num_rows=req_to_token_pool.size,
++        num_rows=req_to_token_pool.req_to_token.shape[0],
 +        device=batch.seq_lens.device,
 +    )
 +    if replay is not None and not batch.forward_mode.is_idle():
@@ -54,7 +54,7 @@ index 0c2c530860..154bc438cb 100644
      clear_unaccepted_c128 = getattr(
          token_to_kv_pool_allocator.get_kvcache(),
 diff --git a/python/sglang/srt/speculative/frozen_kv_mtp_worker_v2.py b/python/sglang/srt/speculative/frozen_kv_mtp_worker_v2.py
-index 4354c9fcba..a43f95dfad 100644
+index 4354c9fcba..04c84b69ff 100644
 --- a/python/sglang/srt/speculative/frozen_kv_mtp_worker_v2.py
 +++ b/python/sglang/srt/speculative/frozen_kv_mtp_worker_v2.py
 @@ -72,6 +72,7 @@ from sglang.srt.speculative.frozen_kv_mtp_utils import (
@@ -71,7 +71,7 @@ index 4354c9fcba..a43f95dfad 100644
  
 +            replay = get_spec_replay(
 +                num_draft_tokens=self.speculative_num_draft_tokens,
-+                num_rows=self.req_to_token_pool.size,
++                num_rows=self.req_to_token_pool.req_to_token.shape[0],
 +                device=self.device,
 +            )
 +            if replay is not None:
