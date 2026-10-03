@@ -221,8 +221,24 @@
       "0.78"
     ]
   },
-  "base6": {
+  "base4-spec-fp8head": {
+    "extends": "base4-spec",
+    "description": "T-SPEC4 (W10, gemma4nv-b2-tspec4): base4-spec on commit 3d1732c505 (c99575c4f52f's tree + the FP8 MTP head; nothing else under python/ differs) with SGLANG_OPT_MTP_FP8_LM_HEAD=1: the MTP assistant's tied 262144 x 1024 head is stored as FP8 E4M3 with per-row scales and draft logits run on the Triton small-M FP8 kernel; the target and its verify are unchanged; see trials/T-SPEC4-mtp-fp8-head.md.",
+    "commit": "3d1732c50525fff8eef827831246c9463ea532a1",
+    "env": {
+      "SGLANG_OPT_MTP_FP8_LM_HEAD": "1"
+    }
+  },
+  "base5-spec-fp8head": {
     "extends": "base5-spec",
-    "description": "Pinned base6 (W11): base5 + T-SPEC5's speculative stack (commit a053c1bd0f = 1d859709ef + c99575c4f52f; MTP assistant drafter k=5 topk 1, SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA=1, --mem-fraction-static 0.78), kept on bs3 (gemma4nv-b3-tspec5); see BASELINE.md base6 section and trials/T-SPEC5-base5-spec.md."
+    "description": "T-SPEC4b (W11, gemma4nv-b3-tspec4b, variant of gemma4nv-b2-tspec4): base5-spec on commit 701947e266 (a053c1bd0f + cherry-picks of 4ebe6175af, 262f327c28, 3d1732c505; under python/ it adds exactly c99575c4f52f..3d1732c505) with SGLANG_OPT_MTP_FP8_LM_HEAD=1: the MTP assistant's tied 262144 x 1024 head stored as FP8 E4M3 with per-row scales, draft logits on the Triton small-M FP8 kernel; target and verify unchanged; see trials/T-SPEC4b-base5-spec-fp8head.md.",
+    "commit": "701947e26619cf23d9d3d42cef4bdda1b08897fd",
+    "env": {
+      "SGLANG_OPT_MTP_FP8_LM_HEAD": "1"
+    }
+  },
+  "base6": {
+    "extends": "base5-spec-fp8head",
+    "description": "Pinned base6 (W11): base5 + T-SPEC5's speculative stack (MTP assistant drafter k=5 topk 1, SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA=1, --mem-fraction-static 0.78) + T-SPEC4b's FP8 MTP head (SGLANG_OPT_MTP_FP8_LM_HEAD=1), commit 701947e266; see BASELINE.md base6 section."
   }
 }

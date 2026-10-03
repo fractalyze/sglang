@@ -21,6 +21,13 @@ import torch
 from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 
+from sglang.kernels.ops.gemm.triton_small_m_bf16_gemm import (
+    MAX_M,
+    quantize_fp8_weight_per_channel,
+    triton_small_m_fp8_vocab_head,
+    use_fp8_vocab_head,
+)
+from sglang.srt.environ import envs
 from sglang.srt.layers.linear import ReplicatedLinear
 from sglang.srt.layers.logits_processor import (
     LogitsMetadata,
@@ -36,6 +43,65 @@ from sglang.srt.speculative.frozen_kv_mtp_info import FrozenKVMTPContext
 from sglang.srt.utils import add_prefix
 
 logger = logging.getLogger(__name__)
+
+
+# Rows quantized at a time, so load never holds an fp32 copy of the whole head.
+_FP8_HEAD_QUANT_CHUNK = 16384
+
+
+class _Fp8VocabHeadMethod:
+    """LogitsProcessor hook: logits from the head's FP8 weight on the small-M kernel."""
+
+    def process_weights_after_loading(self, layer: nn.Module) -> None:
+        # The model loader calls this on every quant_method; the head is final after load_weights.
+        del layer
+
+    def apply(
+        self,
+        layer: _Fp8VocabHead,
+        x: torch.Tensor,
+        bias: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        x2d = x.reshape(-1, x.shape[-1]).to(torch.bfloat16).contiguous()
+        # One launch streams the whole head; its tiles fit shared memory up to MAX_M rows.
+        if x2d.shape[0] <= MAX_M:
+            logits = triton_small_m_fp8_vocab_head(
+                x2d, layer.weight, layer.weight_scale
+            )
+        else:
+            logits = torch.cat(
+                [
+                    triton_small_m_fp8_vocab_head(
+                        rows.contiguous(), layer.weight, layer.weight_scale
+                    )
+                    for rows in x2d.split(MAX_M)
+                ]
+            )
+        if bias is not None:
+            logits = logits + bias
+        return logits.view(*x.shape[:-1], -1)
+
+
+class _Fp8VocabHead(nn.Module):
+    """The assistant's tied head stored as FP8 E4M3 with a per-row scale (SGLANG_OPT_MTP_FP8_LM_HEAD).
+
+    Only draft logits read it, so the target's verify and outputs are unchanged;
+    the head read halves (512 MB -> 256 MB per draft step at 262144 x 1024).
+    """
+
+    def __init__(self, bf16_weight: torch.Tensor):
+        super().__init__()
+        rows = bf16_weight.shape[0]
+        self.weight = torch.empty_like(bf16_weight, dtype=torch.float8_e4m3fn)
+        self.weight_scale = torch.empty(
+            rows, dtype=torch.float32, device=bf16_weight.device
+        )
+        for start in range(0, rows, _FP8_HEAD_QUANT_CHUNK):
+            end = min(start + _FP8_HEAD_QUANT_CHUNK, rows)
+            self.weight[start:end], self.weight_scale[start:end] = (
+                quantize_fp8_weight_per_channel(bf16_weight[start:end])
+            )
+        self.quant_method = _Fp8VocabHeadMethod()
 
 
 def _get_text_config(model_or_config) -> PretrainedConfig:
@@ -379,7 +445,34 @@ class Gemma4AssistantForCausalLM(Gemma4ForCausalLM):
         result = super().load_weights(remap_assistant_weights())
         if self.use_ordered_embeddings:
             self._reorder_embedding_to_centroid_order()
+        elif envs.SGLANG_OPT_MTP_FP8_LM_HEAD.get():
+            self._store_head_as_fp8()
         return result
+
+    @torch.no_grad()
+    def _store_head_as_fp8(self) -> None:
+        """Replace the BF16 head with its FP8 copy and release the BF16 tensor.
+
+        The assistant embeds its inputs with the target's table, so the tied
+        ``embed_tokens`` weight is read only as this head.
+        """
+        weight = self.lm_head.weight
+        if not weight.is_cuda or not use_fp8_vocab_head(*weight.shape):
+            logger.warning(
+                "SGLANG_OPT_MTP_FP8_LM_HEAD ignored: head %s on %s has no FP8 tile.",
+                list(weight.shape),
+                weight.device,
+            )
+            return
+        self.lm_head = _Fp8VocabHead(weight.data)
+        if self.config.tie_word_embeddings:
+            self.model.embed_tokens.weight.data = weight.data.new_empty(0)
+        del weight
+        torch.cuda.empty_cache()
+        logger.info(
+            "Stored the MTP assistant head %s as FP8 E4M3 with per-row scales.",
+            list(self.lm_head.weight.shape),
+        )
 
     @torch.no_grad()
     def _reorder_embedding_to_centroid_order(self) -> None:
