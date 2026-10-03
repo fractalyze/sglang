@@ -32,6 +32,10 @@ _THROTTLE_BITS = {
 }
 
 
+class GpuUnhealthy(RuntimeError):
+    """nvidia-smi cannot read the GPU's own counters (bs3 2026-10-03: "GPU requires reset")."""
+
+
 def _smi(args: List[str]) -> str:
     return subprocess.run(["nvidia-smi", *args], check=True, capture_output=True, text=True).stdout
 
@@ -40,8 +44,11 @@ def gpu_state() -> Dict:
     out = _smi([f"--query-gpu={','.join(_GPU_FIELDS)}", "--format=csv,noheader,nounits"])
     row = next(csv.reader(io.StringIO(out)))
     state = dict(zip(_GPU_FIELDS, (v.strip() for v in row)))
-    state["temperature.gpu"] = int(state["temperature.gpu"])
-    state["utilization.gpu"] = int(state["utilization.gpu"])
+    try:
+        state["temperature.gpu"] = int(state["temperature.gpu"])
+        state["utilization.gpu"] = int(state["utilization.gpu"])
+    except ValueError:
+        raise GpuUnhealthy(f"nvidia-smi cannot read the GPU (needs a reset?): {state}") from None
     return state
 
 
@@ -52,7 +59,8 @@ def compute_processes() -> List[Dict]:
         if not row:
             continue
         pid, name, mem = (v.strip() for v in row)
-        procs.append({"pid": int(pid), "name": name, "used_mib": mem})
+        # A pid nvidia-smi cannot resolve ("[N/A]") is someone's process all the same: never ours.
+        procs.append({"pid": int(pid) if pid.isdigit() else None, "name": name, "used_mib": mem})
     return procs
 
 

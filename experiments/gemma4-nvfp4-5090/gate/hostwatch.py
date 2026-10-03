@@ -91,7 +91,9 @@ def tree_stats(root_pid: int) -> Dict:
 def foreign_gpu_gb(own_root_pid: Optional[int] = None) -> float:
     from gate import gpu
 
-    return sum(float(p["used_mib"]) / 1024 for p in gpu.foreign_processes(own_root_pid))
+    # An unreadable size ("[N/A]") counts as 0 here; wait_quiet still refuses to time beside it.
+    return sum(float(p["used_mib"]) / 1024 for p in gpu.foreign_processes(own_root_pid)
+               if p["used_mib"].replace(".", "", 1).isdigit())
 
 
 def preflight() -> Dict:

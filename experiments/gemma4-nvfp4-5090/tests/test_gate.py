@@ -491,5 +491,27 @@ class SolTest(absltest.TestCase):
         self.assertTrue(solrun.fp8_o_proj_served("base5-spec"))
 
 
+class GpuParseTest(absltest.TestCase):
+    """bs3 2026-10-03: a GPU needing a reset lists '[N/A]' compute rows and N/A counters."""
+
+    def setUp(self):
+        from gate import gpu
+
+        self._gpu, self._orig = gpu, gpu._smi
+
+    def tearDown(self):
+        self._gpu._smi = self._orig
+
+    def test_unresolvable_pid_is_a_foreign_process(self):
+        self._gpu._smi = lambda args: "[N/A], [N/A], [N/A]\n"
+        self.assertEqual(self._gpu.foreign_processes(None), [{"pid": None, "name": "[N/A]", "used_mib": "[N/A]"}])
+        self.assertEqual(hostwatch.foreign_gpu_gb(), 0.0)
+
+    def test_unreadable_counters_raise_gpu_unhealthy(self):
+        self._gpu._smi = lambda args: "2026/10/03 14:57:12.000, 49, 0, 0, [N/A], [N/A], 15, [N/A]\n"
+        with self.assertRaises(self._gpu.GpuUnhealthy):
+            self._gpu.gpu_state()
+
+
 if __name__ == "__main__":
     absltest.main()
