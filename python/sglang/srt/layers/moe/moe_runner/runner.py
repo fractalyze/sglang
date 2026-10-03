@@ -147,6 +147,21 @@ class MoeRunner:
             import sglang.srt.layers.moe.flashinfer_megamoe  # noqa: F401
         elif runner_backend.is_cutlass():
             self.runner_core = None  # CUTLASS uses the direct cutlass_moe_fp4 path
+        elif runner_backend.is_w4a16_sm90():
+            import torch
+
+            if lora_enabled:
+                raise NotImplementedError("w4a16_sm90 does not support LoRA")
+            major, minor = torch.cuda.get_device_capability()
+            if major != 9:
+                raise ValueError(
+                    "--moe-runner-backend w4a16_sm90 requires an SM90 (Hopper) "
+                    f"GPU (wgmma kernels), got sm{major}{minor}."
+                )
+            self.runner_core = None  # w4a16_sm90 only supports the fused path
+            # Import here (not at module top, to avoid a circular import) to
+            # register the w4a16_sm90 fused func before the pool lookup.
+            from sglang.srt.layers.moe.moe_runner import w4a16_sm90  # noqa: F401
         elif runner_backend.is_hpc_ops():
             import torch
 
