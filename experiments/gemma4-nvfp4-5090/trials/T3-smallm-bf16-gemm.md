@@ -1,9 +1,9 @@
 # T3 (gemma4nv-w3-t3): replace the SM80 WMMA fallback for small-M BF16 o_proj and dense MLP
 
-**Status: preregistered, not implemented. Waiting for the coordinator's go before any edit
-under `python/sglang` or kernels.** Top code-level lever of the measured re-rank
-(`analysis/HYPOTHESES.md` R3), chosen over R1/R2 for the first code trial because it carries
-no precision change, a small blast radius, and a cheap config-only probe comes first.
+**Status: kept (W6, 2026-10-03).** Gate run `T3-20261003-092422-build-server-2-fa9e0f`:
+W8 composite 1.0445, W1 TPOT -1.98%, fidelity pass; code `1fd77e64b0` behind
+`SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM`. Details in `REPORT-bs2-w6.md`. The plan and
+prediction below are the frozen registration.
 
 ## Evidence (bs2 profile, `analysis/PROFILE.md` §3)
 
