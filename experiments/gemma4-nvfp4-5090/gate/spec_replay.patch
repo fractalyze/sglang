@@ -54,7 +54,7 @@ index 0c2c530860..154bc438cb 100644
      clear_unaccepted_c128 = getattr(
          token_to_kv_pool_allocator.get_kvcache(),
 diff --git a/python/sglang/srt/speculative/frozen_kv_mtp_worker_v2.py b/python/sglang/srt/speculative/frozen_kv_mtp_worker_v2.py
-index 4354c9fcba..cd5ab81708 100644
+index 4354c9fcba..a43f95dfad 100644
 --- a/python/sglang/srt/speculative/frozen_kv_mtp_worker_v2.py
 +++ b/python/sglang/srt/speculative/frozen_kv_mtp_worker_v2.py
 @@ -72,6 +72,7 @@ from sglang.srt.speculative.frozen_kv_mtp_utils import (
@@ -76,7 +76,7 @@ index 4354c9fcba..cd5ab81708 100644
 +            )
 +            if replay is not None:
 +                replay.register(
-+                    rows=[req.req_pool_idx for req in batch.reqs],
++                    rows=[req.kv.req_pool_idx for req in batch.reqs],
 +                    prompts=[req.origin_input_ids for req in batch.reqs],
 +                )
 +                batch_output.next_token_ids = replay.first_tokens(
