@@ -75,6 +75,37 @@ def test_awq_unpack_order():
     assert unpack_awq_codes(packed).tolist() == [list(range(8))]
 
 
+def test_stage_word_layout_is_the_documented_fragment_map():
+    """Pins where every nibble of a stage lands, independent of any kernel reading it.
+
+    Word ((atom * 2 + half) * 128 + tid) * 4 + slice holds, in nibble slot
+    (0, 4, 1, 5, 2, 6, 3, 7)[v], weight row 64 atom + 16 warp + lane / 4 + 8 v[1]
+    at column 16 (4 half + slice) + 2 (lane % 4) + v[0] + 8 v[2].
+    """
+    rows, cols = torch.meshgrid(
+        torch.arange(TILE_N), torch.arange(TILE_K), indexing="ij"
+    )
+    # A code is 4 bits, so indices up to 127 go through pack_codes one hex digit at a time.
+    digits = [(rows >> 4 * d) & 0xF for d in range(2)]
+    digits += [(cols >> 4 * d) & 0xF for d in range(2)]
+    slot_of_value = torch.tensor([0, 4, 1, 5, 2, 6, 3, 7])
+    unpacked = []
+    for codes in digits:
+        words = pack_codes(codes.to(torch.uint8).unsqueeze(0)).view(-1, 1)
+        unpacked.append((words >> (4 * slot_of_value)) & 0xF)  # [words, 8]
+    packed_row = unpacked[0] + 16 * unpacked[1]
+    packed_col = unpacked[2] + 16 * unpacked[3]
+
+    atom, half, tid, step, v = torch.meshgrid(
+        *(torch.arange(n) for n in (2, 2, 128, 4, 8)), indexing="ij"
+    )
+    warp, lane = tid // 32, tid % 32
+    row = 64 * atom + 16 * warp + lane // 4 + 8 * ((v >> 1) & 1)
+    col = 16 * (4 * half + step) + 2 * (lane % 4) + (v & 1) + 8 * ((v >> 2) & 1)
+    assert torch.equal(packed_row, row.reshape(-1, 8).to(packed_row.dtype))
+    assert torch.equal(packed_col, col.reshape(-1, 8).to(packed_col.dtype))
+
+
 def test_repack_rejects_unsupported_layouts():
     """Unsupported shapes fail when the weights load, not on the first forward."""
     qweight, scales, qzeros = _random_awq(1, 256, 256, "cpu")
