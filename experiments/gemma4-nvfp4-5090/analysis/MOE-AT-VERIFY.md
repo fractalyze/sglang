@@ -120,10 +120,10 @@ Weight bytes per layer at 23.5 experts, against the measured-bandwidth SOL (1.65
 - GEMM2 follows the same layout. With FINALIZE allowed it has 40 tactics: base, base+FINALIZE, then their swap-AB copies.
 - Four GEMM1 tactics fail with "Unsupported tile shape config 128128256".
 
-| case | tuned (as served) | best forced pair | fastest unswapped 128x32 GEMM1 | tuned with FINALIZE |
+| case | tuned (as served) | best forced pair | GEMM1 sweep (GEMM2 fixed at tactic 20): swap-AB 128x32x64B / best unswapped (128x128x128B) / unswapped 128x32x64B | tuned with FINALIZE |
 |---|---:|---:|---:|---:|
-| B=1 verify (M=6), µs per MoE layer | 78.1 | 79.6 (GEMM1 17, GEMM2 37: both swap-AB 128x32x64B) | 160.6 (tactic 7) | 76.2 (-2.5%) |
-| B=8 verify (M=48) | 165.6 | 165.7 (17, 37) | 320.0 (tactic 13 is the slowest; tactic 7 is similar) | 160.4 (-3.1%) |
+| B=1 verify (M=6), µs per MoE layer | 78.1 | 79.6 (GEMM1 17, GEMM2 37: both swap-AB 128x32x64B) | 89.3 / 94.1 / 160.6 | 76.2 (-2.5%) |
+| B=8 verify (M=48) | 165.6 | 165.7 (17, 37) | 179.6 / 185.5 / 303.9 | 160.4 (-3.1%) |
 
 **Padding sweep.** The tuned tactic at 24 active experts with r rows each:
 
@@ -134,7 +134,7 @@ Weight bytes per layer at 23.5 experts, against the measured-bandwidth SOL (1.65
 
 **Verdict: retired at step 0.**
 - **Padding is free.** From 1 to 8 rows per expert the cost moves 1.3%, inside the preregistered 5% falsifier.
-- **No tactic beats the tuned pick by 5%.** The autotuner already chooses swap-AB 128x32 tiles at verify widths, and unswapped tiles cost 2x.
+- **No tactic beats the tuned pick by 5%.** The autotuner already chooses swap-AB 128x32 tiles at verify widths. The best unswapped tile costs about 5 µs more per layer, and the unswapped 128x32 tile costs 71-124 µs more.
 - **§3's premise was wrong.** §3 inferred an unswapped tile from the trace's `Shape<128,32,...>`, but the swapped kernel carries the same CTA shape name. So the 0.37 ms gap to SOL is not padding.
 - **The fc1/fc2 GEMMs are byte-bound at about 79-84% of SOL** under the best tactic FlashInfer has.
 
