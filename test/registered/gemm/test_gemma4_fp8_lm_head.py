@@ -85,7 +85,8 @@ class TestGemma4Fp8LmHead(unittest.TestCase):
         )
         Gemma4ForConditionalGeneration._add_fp8_lm_head(model)
         self.assertIsNotNone(model.fp8_lm_head)
-        self.assertIs(model.fp8_lm_head.bf16_weight, embed.weight.data)
+        # The copy reads the embedding's own storage: no second BF16 table.
+        self.assertEqual(model.fp8_lm_head.bf16_weight.data_ptr(), embed.weight.data_ptr())
         self.assertEqual(embed.weight.dtype, torch.bfloat16)
         self.assertTrue(torch.equal(embed.weight.data, self.w))
         # An untied head has no single table to copy, so the switch leaves it alone.
