@@ -15,13 +15,14 @@ limitations under the License.
 
 // Hopper grouped W4A16 MoE GEMM, swap-AB: out[r, n] = sum_k W[e(r)][n, k] * a[r / div, k].
 //
-// The dequantised weight tile is the wgmma A operand (register-sourced, 64 output
-// rows per consumer warpgroup); the routed tokens of one moe_align block are the
-// wgmma N operand, gathered row by row into 128B-swizzled shared memory. A producer
-// warpgroup streams weights, scales and zeros with bulk async copies and gathers
-// tokens with cp.async; consumers dequantise in registers. Work is persistent over
-// (token block, 128-row tile) pairs, n-tile fastest so concurrent CTAs share the
-// block's tokens in L2.
+// The dequantised weight tile is the wgmma A operand (register-sourced, 64-row
+// atoms; each consumer warpgroup owns one 128-row weight tile, so a CTA covers 256
+// output rows); the routed tokens of one moe_align block are the wgmma N operand,
+// gathered row by row into 128B-swizzled shared memory once for both warpgroups. A
+// producer warpgroup streams weights, scales and zeros with bulk async copies and
+// gathers tokens with cp.async; consumers dequantise in registers. Work is
+// persistent over (token block, 256-row tile) pairs, rows fastest so concurrent
+// CTAs share the block's tokens in L2.
 //
 // The weight layout is produced by sglang/kernels/ops/moe/w4a16_moe_sm90.py.
 
@@ -50,7 +51,10 @@ using bf16 = cute::bfloat16_t;
 // Shared with the Python repack; see W4A16MoeWeights there.
 inline constexpr int kTileN = 128;
 inline constexpr int kTileK = 128;
-inline constexpr int kWarpgroupRows = 64;
+inline constexpr int kAtomRows = 64;  // wgmma M
+// A CTA covers two adjacent weight tiles, one per consumer warpgroup, so the
+// gathered tokens and the per-tile overhead are shared by 256 output rows.
+inline constexpr int kTilesPerCta = 2;
 inline constexpr int kWordsPerStage = kTileN * kTileK / 8;
 
 inline constexpr int kWeightBytes = kWordsPerStage * 4;
@@ -76,13 +80,14 @@ struct Config {
 
   static constexpr int kTokenBytes = kTokenBlock * kTileK * 2;
   // The token tile is the swizzled wgmma B operand and needs 1024B alignment.
-  static constexpr int kTokenOffset = kWeightBytes;
+  // Stage: [weights x2][tokens][scales x2][zeros x2], warpgroup w's at index w.
+  static constexpr int kTokenOffset = kTilesPerCta * kWeightBytes;
   static constexpr int kScaleOffset = kTokenOffset + kTokenBytes;
-  static constexpr int kZeroOffset = kScaleOffset + kScaleBytes;
-  static constexpr int kStageBytes = round_up(kZeroOffset + kZeroBytes, 1024);
+  static constexpr int kZeroOffset = kScaleOffset + kTilesPerCta * kScaleBytes;
+  static constexpr int kStageBytes = round_up(kZeroOffset + kTilesPerCta * kZeroBytes, 1024);
 
   // Padded so a warp's column-wise accumulator stores spread over banks.
-  static constexpr int kEpilogueStride = kWarpgroupRows + 8;
+  static constexpr int kEpilogueStride = kTileN + 8;
   static constexpr int kEpilogueBytes = 2 * kTokenBlock * kEpilogueStride * 2;
   // Per consumer warpgroup: the tile's routed row ids, then their top-k weights.
   static constexpr int kMetaBytes = 2 * kTokenBlock * 8;
@@ -95,7 +100,7 @@ struct Config {
   static_assert(kStages >= 3, "token block too wide for a three-stage pipeline");
   static constexpr int kSmemBytes = kAlignSlack + kStages * kStageBytes + kEpilogueBytes + kMetaBytes + kBarrierBytes;
 
-  static constexpr int kStageTxBytes = kWeightBytes + kScaleBytes + kZeroBytes;
+  static constexpr int kStageTxBytes = kTilesPerCta * (kWeightBytes + kScaleBytes + kZeroBytes);
   // One expect_tx arrival plus one cp.async arrival per producer thread.
   static constexpr int kFullArrivals = 1 + kProducerThreads;
 
@@ -171,8 +176,9 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   constexpr int kRowStride = kProducerThreads / kChunksPerTokenRow;
 
   const int n_tiles = p.n / kTileN;
+  const int n_pairs = n_tiles / kTilesPerCta;
   const int k_tiles = p.k / kTileK;
-  const int num_tiles = (*p.num_tokens_post_padded / kTokenBlock) * n_tiles;
+  const int num_tiles = (*p.num_tokens_post_padded / kTokenBlock) * n_pairs;
 
   // Global reads a tile needs before its first copy; loaded one tile ahead so
   // their latency overlaps the previous tile's stages.
@@ -183,7 +189,7 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   auto load_meta = [&](int tile) {
     Meta m;
     if (tile < num_tiles) {
-      const int m_block = tile / n_tiles;
+      const int m_block = tile / n_pairs;
       m.expert = p.expert_ids[m_block];
 #pragma unroll
       for (int i = 0; i < kRowsPerThread; ++i) {
@@ -209,7 +215,7 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
       valid[i] = cur.ids[i] < p.num_rows;
       src[i] = p.a + int64_t(valid[i] ? cur.ids[i] / p.a_row_divisor : 0) * p.k + chunk * 8;
     }
-    const int64_t stage_index = (int64_t(cur.expert) * n_tiles + tile % n_tiles) * k_tiles;
+    const int64_t stage_index = (int64_t(cur.expert) * n_tiles + tile % n_pairs * kTilesPerCta) * k_tiles;
 
     for (int kt = 0; kt < k_tiles; ++kt, pos.advance(Cfg::kStages)) {
       const int s = pos.stage;
@@ -217,11 +223,14 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
       uint8_t* stage = stages + s * Cfg::kStageBytes;
 
       if (tid == 0) {
-        const int64_t block = stage_index + kt;
         device::ptx::mbar_arrive_expect_tx(&full[s], Cfg::kStageTxBytes);
-        bulk_copy_g2s(stage, p.qweight + block * kWordsPerStage, kWeightBytes, &full[s]);
-        bulk_copy_g2s(stage + Cfg::kScaleOffset, p.scales + block * kTileN, kScaleBytes, &full[s]);
-        bulk_copy_g2s(stage + Cfg::kZeroOffset, p.zeros + block * kTileN, kZeroBytes, &full[s]);
+#pragma unroll
+        for (int w = 0; w < kTilesPerCta; ++w) {
+          const int64_t block = stage_index + w * k_tiles + kt;
+          bulk_copy_g2s(stage + w * kWeightBytes, p.qweight + block * kWordsPerStage, kWeightBytes, &full[s]);
+          bulk_copy_g2s(stage + Cfg::kScaleOffset + w * kScaleBytes, p.scales + block * kTileN, kScaleBytes, &full[s]);
+          bulk_copy_g2s(stage + Cfg::kZeroOffset + w * kZeroBytes, p.zeros + block * kTileN, kZeroBytes, &full[s]);
+        }
       }
 
       auto tokens = cute::make_tensor(
@@ -246,22 +255,24 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   const int tid = threadIdx.x % 128;
   const int warp = tid / 32;
   const int g = tid % 32 / 4;
-  const int row_lo = wg * kWarpgroupRows + warp * 16 + g;
+  const int row_lo = warp * 16 + g;  // within a 64-row atom; the hi row is + 8
 
   typename Cfg::TiledMma tiled_mma;
   auto thr_mma = tiled_mma.get_slice(tid);
   // Only the shape matters: it sizes the register A fragment.
   auto a_shape = make_tensor(
       make_smem_ptr(static_cast<bf16*>(nullptr)), Layout<Shape<_64, Int<kTileK>>, Stride<Int<kTileK>, _1>>{});
-  Tensor frag_a_even = thr_mma.partition_fragment_A(a_shape);  // ((2,2,2), 1, 8)
-  Tensor frag_a_odd = thr_mma.partition_fragment_A(a_shape);
-  Tensor acc = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
+  Tensor frag_a_lo = thr_mma.partition_fragment_A(a_shape);  // ((2,2,2), 1, 8)
+  Tensor frag_a_hi = thr_mma.partition_fragment_A(a_shape);
+  Tensor acc_lo = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
+  Tensor acc_hi = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
   Tensor acc_coord = thr_mma.partition_C(make_identity_tensor(Shape<_64, Int<kTokenBlock>>{}));
 
   bf16* staging = epilogue + wg * kTokenBlock * Cfg::kEpilogueStride;
   const int n_tiles = p.n / kTileN;
+  const int n_pairs = n_tiles / kTilesPerCta;
   const int k_tiles = p.k / kTileK;
-  const int num_tiles = (*p.num_tokens_post_padded / kTokenBlock) * n_tiles;
+  const int num_tiles = (*p.num_tokens_post_padded / kTokenBlock) * n_pairs;
 
   int32_t* tile_ids = reinterpret_cast<int32_t*>(meta) + wg * 2 * kTokenBlock;
   float* tile_weights = reinterpret_cast<float*>(tile_ids + kTokenBlock);
@@ -275,14 +286,55 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   auto load_meta = [&](int tile) {
     Meta m;
     if (tile < num_tiles) {
-      const int m_block = tile / n_tiles;
+      const int m_block = tile / n_pairs;
       m.expert = p.expert_ids[m_block];
       if (tid < kTokenBlock) m.id = p.sorted_token_ids[m_block * kTokenBlock + tid];
     }
     return m;
   };
 
-  int it = 0;  // stage count, for the alternating A fragments
+  // Dequantises 64-row atom `atom` of this warpgroup's weight tile in stage `s`
+  // into `frag_a` and issues its wgmma batch into `acc` without waiting on it.
+  auto issue_atom = [&](auto& frag_a, auto& acc, int s, int atom) {
+    const uint8_t* stage = stages + s * Cfg::kStageBytes;
+    const int row = atom * kAtomRows + row_lo;
+    const __nv_bfloat16* scales = reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset + wg * kScaleBytes);
+    const uint8_t* zeros = stage + Cfg::kZeroOffset + wg * kZeroBytes;
+    const nv_bfloat162 scale_lo = __bfloat162bfloat162(scales[row]);
+    const nv_bfloat162 scale_hi = __bfloat162bfloat162(scales[row + 8]);
+    const nv_bfloat162 zero_lo = biased_zero(zeros[row]);
+    const nv_bfloat162 zero_hi = biased_zero(zeros[row + 8]);
+
+    Tensor frag_a_words = recast<uint32_t>(frag_a);
+    const uint4* words = reinterpret_cast<const uint4*>(stage + wg * kWeightBytes) + atom * 2 * 128 + tid;
+#pragma unroll
+    for (int half = 0; half < 2; ++half) {
+      const uint4 q = words[half * 128];
+      const uint32_t slices[4] = {q.x, q.y, q.z, q.w};
+#pragma unroll
+      for (int j = 0; j < 4; ++j) {
+        uint32_t frag[4];
+        dequant_fragment(slices[j], zero_lo, zero_hi, scale_lo, scale_hi, frag);
+#pragma unroll
+        for (int r = 0; r < 4; ++r) {
+          frag_a_words((half * 4 + j) * 4 + r) = frag[r];
+        }
+      }
+    }
+
+    Tensor tokens = make_tensor(
+        make_smem_ptr(reinterpret_cast<const bf16*>(stage + Cfg::kTokenOffset)), typename Cfg::SmemLayoutTokens{});
+    Tensor frag_b = thr_mma.partition_fragment_B(tokens);  // descriptors, (1, 1, 8)
+
+    warpgroup_fence_operand(frag_a);
+    warpgroup_arrive();
+#pragma unroll
+    for (int k16 = 0; k16 < size<2>(frag_a); ++k16) {
+      cute::gemm(tiled_mma, frag_a(_, _, k16), frag_b(_, _, k16), acc);
+    }
+    warpgroup_commit_batch();
+  };
+
   RingPos pos;
   Meta cur = load_meta(blockIdx.x);
   for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
@@ -295,65 +347,27 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
     float row_weight = row_valid ? 1.0f : 0.0f;
     if (p.topk_weights != nullptr && row_valid) row_weight = p.topk_weights[cur.id];
 
-    // Dequantises stage `s` into `frag_a` and issues its wgmma batch without waiting on it.
-    auto issue_stage = [&](auto& frag_a, int s) {
-      const uint8_t* stage = stages + s * Cfg::kStageBytes;
-      const __nv_bfloat16* scales = reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset);
-      const uint8_t* zeros = stage + Cfg::kZeroOffset;
-      const nv_bfloat162 scale_lo = __bfloat162bfloat162(scales[row_lo]);
-      const nv_bfloat162 scale_hi = __bfloat162bfloat162(scales[row_lo + 8]);
-      const nv_bfloat162 zero_lo = biased_zero(zeros[row_lo]);
-      const nv_bfloat162 zero_hi = biased_zero(zeros[row_lo + 8]);
-
-      Tensor frag_a_words = recast<uint32_t>(frag_a);
-      const uint4* words = reinterpret_cast<const uint4*>(stage) + wg * 2 * 128 + tid;
-#pragma unroll
-      for (int half = 0; half < 2; ++half) {
-        const uint4 q = words[half * 128];
-        const uint32_t slices[4] = {q.x, q.y, q.z, q.w};
-#pragma unroll
-        for (int j = 0; j < 4; ++j) {
-          uint32_t frag[4];
-          dequant_fragment(slices[j], zero_lo, zero_hi, scale_lo, scale_hi, frag);
-#pragma unroll
-          for (int r = 0; r < 4; ++r) {
-            frag_a_words((half * 4 + j) * 4 + r) = frag[r];
-          }
-        }
-      }
-
-      Tensor tokens = make_tensor(
-          make_smem_ptr(reinterpret_cast<const bf16*>(stage + Cfg::kTokenOffset)), typename Cfg::SmemLayoutTokens{});
-      Tensor frag_b = thr_mma.partition_fragment_B(tokens);  // descriptors, (1, 1, 8)
-
-      warpgroup_fence_operand(frag_a);
-      warpgroup_arrive();
-#pragma unroll
-      for (int k16 = 0; k16 < size<2>(frag_a); ++k16) {
-        cute::gemm(tiled_mma, frag_a(_, _, k16), frag_b(_, _, k16), acc);
-      }
-      warpgroup_commit_batch();
-    };
-
-    clear(acc);
-    warpgroup_fence_operand(acc);
-    // One wgmma batch stays in flight while the next stage dequantises, so the
-    // register A fragments alternate and a stage is released one step late.
+    clear(acc_lo);
+    clear(acc_hi);
+    warpgroup_fence_operand(acc_lo);
+    warpgroup_fence_operand(acc_hi);
+    // One wgmma batch stays in flight while the next 64-row atom dequantises, so
+    // each atom has its own A fragment, and a stage is released once the
+    // following stage's first batch is issued.
     int prev_stage = -1;
-    for (int kt = 0; kt < k_tiles; ++kt, ++it, pos.advance(Cfg::kStages)) {
+    for (int kt = 0; kt < k_tiles; ++kt, pos.advance(Cfg::kStages)) {
       const int s = pos.stage;
       device::ptx::mbar_wait_parity(&full[s], pos.phase);
-      if (it & 1) {
-        issue_stage(frag_a_odd, s);
-      } else {
-        issue_stage(frag_a_even, s);
-      }
+      issue_atom(frag_a_lo, acc_lo, s, 0);
       warpgroup_wait<1>();
       if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
+      issue_atom(frag_a_hi, acc_hi, s, 1);
+      warpgroup_wait<1>();
       prev_stage = s;
     }
     warpgroup_wait<0>();
-    warpgroup_fence_operand(acc);
+    warpgroup_fence_operand(acc_lo);
+    warpgroup_fence_operand(acc_hi);
     if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
 
     if (tid < kTokenBlock) {
@@ -364,17 +378,19 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
 
     // Transpose through shared memory so each routed row leaves as 16B stores.
 #pragma unroll
-    for (int i = 0; i < size(acc); ++i) {
+    for (int i = 0; i < size(acc_lo); ++i) {
       const int row = get<0>(acc_coord(i));
       const int token = get<1>(acc_coord(i));
-      staging[token * Cfg::kEpilogueStride + row] = bf16(acc(i) * tile_weights[token]);
+      const float weight = tile_weights[token];
+      staging[token * Cfg::kEpilogueStride + row] = bf16(acc_lo(i) * weight);
+      staging[token * Cfg::kEpilogueStride + kAtomRows + row] = bf16(acc_hi(i) * weight);
     }
     named_barrier_sync(1 + wg, 128);
 
-    const int col = (tile % n_tiles) * kTileN + wg * kWarpgroupRows;
-    for (int ci = tid; ci < kTokenBlock * kWarpgroupRows / 8; ci += 128) {
-      const int token = ci / (kWarpgroupRows / 8);
-      const int part = ci % (kWarpgroupRows / 8);
+    const int col = ((tile % n_pairs) * kTilesPerCta + wg) * kTileN;
+    for (int ci = tid; ci < kTokenBlock * kTileN / 8; ci += 128) {
+      const int token = ci / (kTileN / 8);
+      const int part = ci % (kTileN / 8);
       const int id = tile_ids[token];
       if (id >= 0) {
         *reinterpret_cast<uint4*>(p.out + int64_t(id) * p.n + col + part * 8) =
@@ -457,6 +473,8 @@ struct W4A16MoeSm90Kernel {
     TensorMatcher({1}).with_dtype<int32_t>().with_device(device).verify(num_tokens_post_padded);
     TensorMatcher({-1}).with_dtype<fp32_t>().with_device(device).verify(topk_weights);
 
+    CHECK_HOST(n_tiles.unwrap() % kTilesPerCta == 0)
+        << "w4a16_moe_sm90 needs N divisible by " << kTilesPerCta * kTileN << ", got " << n;
     const int64_t num_rows = out.size(0);
     CHECK_HOST(topk_weights.size(0) == 0 || topk_weights.size(0) == num_rows)
         << "topk_weights must be empty or hold one weight per routed row";
@@ -482,7 +500,7 @@ struct W4A16MoeSm90Kernel {
     int sms = 0;
     RuntimeDeviceCheck(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev.device_id));
     // The tile count lives on the device; a CTA without work exits after setup.
-    const int64_t max_tiles = sorted_token_ids.size(0) / kTokenBlock * n_tiles.unwrap();
+    const int64_t max_tiles = sorted_token_ids.size(0) / kTokenBlock * (n_tiles.unwrap() / kTilesPerCta);
     const int grid = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(sms, max_tiles)));
 
     constexpr auto kernel = w4a16_moe_sm90_kernel<kTokenBlock>;

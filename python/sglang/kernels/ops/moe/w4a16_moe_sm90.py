@@ -226,6 +226,8 @@ def w4a16_moe_sm90_gemm(
     assert a.is_contiguous() and out.is_contiguous()
     assert a.shape[1] == qweight.shape[2] * TILE_K, (a.shape, qweight.shape)
     assert out.shape[1] == qweight.shape[1] * TILE_N, (out.shape, qweight.shape)
+    if out.shape[1] % (2 * TILE_N) != 0:
+        raise ValueError(f"w4a16_moe_sm90 needs N divisible by {2 * TILE_N}")
     assert token_block in TOKEN_BLOCKS, token_block
     assert sorted_token_ids.dtype == torch.int32 and expert_ids.dtype == torch.int32
     if topk_weights is not None:
