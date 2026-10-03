@@ -17,7 +17,7 @@ register_cuda_ci(est_time=15, stage="base-b", runner_config="1-gpu-large")
 
 _TUNED_NK = [(2816, 4096), (2816, 8192), (4224, 2816), (2816, 2112)]
 # (N, K) -> largest routed M: o_proj stops at decode widths, qkv_proj covers MTP verify.
-_FP8_WEIGHT_MAX_M = {(2816, 4096): 32, (2816, 8192): 32, (8192, 2816): 48, (10240, 2816): 48}
+_FP8_WEIGHT_MAX_M = {(2816, 4096): 32, (2816, 8192): 32, (8192, 2816): 256, (10240, 2816): 256}
 _FP8_WEIGHT_NK = list(_FP8_WEIGHT_MAX_M)
 
 
@@ -109,7 +109,10 @@ class TestTritonSmallMBf16Gemm(unittest.TestCase):
             # The scale is the row absmax over E4M3's largest finite value.
             self.assertEqual(w8.float().abs().amax(dim=1).min().item(), 448.0)
             w_deq = w8.float() * scale[:, None]
-            for m in sorted({1, 6, 8, 17, 32, _FP8_WEIGHT_MAX_M[(n, k)]}):
+            # 48 and 200 cross 32-row M blocks on the qkv tiles.
+            for m in sorted({1, 6, 8, 17, 32, 48, 200, _FP8_WEIGHT_MAX_M[(n, k)]}):
+                if m > _FP8_WEIGHT_MAX_M[(n, k)]:
+                    continue
                 with self.subTest(n=n, k=k, m=m):
                     x = torch.randn(m, k, dtype=torch.bfloat16, device="cuda")
                     y = triton_small_m_fp8_weight_gemm(x, w8, scale)
