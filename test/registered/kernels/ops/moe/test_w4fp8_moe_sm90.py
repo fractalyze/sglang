@@ -219,8 +219,12 @@ def _run_awq_moe(backend, layer, hidden_states, topk_ids, topk_weights):
         backend, MoeRunnerConfig(activation="silu", is_gated=True)
     )
     kernel.process_weights_after_loading(layer)
+    # Marlin only checks the logits' token count; routing comes from topk_ids.
+    router_logits = topk_weights.new_zeros(
+        topk_ids.shape[0], layer.w13_qweight.shape[0]
+    )
     topk_output = StandardTopKOutput(
-        topk_weights=topk_weights, topk_ids=topk_ids, router_logits=None
+        topk_weights=topk_weights, topk_ids=topk_ids, router_logits=router_logits
     )
     dispatch_output = StandardDispatchOutput(
         hidden_states=hidden_states, hidden_states_scale=None, topk_output=topk_output

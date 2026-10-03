@@ -262,8 +262,12 @@ def _run_awq_moe(backend, layer, hidden_states, topk_ids, topk_weights):
 
 @pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
 @pytest.mark.parametrize("tokens_per_expert", [1, 8, 16, 32, 128])
-def test_awq_moe_matches_reference_and_marlin(tokens_per_expert):
+def test_awq_moe_matches_reference_and_marlin(tokens_per_expert, monkeypatch):
+    from sglang.srt.layers.moe.moe_runner import w4a16_sm90 as runner
     from sglang.srt.layers.moe.utils import MoeRunnerBackend
+
+    # Keep every size on the w4a16 kernel; the large-M FP8 route has its own test.
+    monkeypatch.setattr(runner, "W4FP8_MIN_TOKENS_PER_EXPERT", float("inf"))
 
     num_experts, top_k, hidden, intermediate = 32, 8, 1024, 256
     num_tokens = max(1, tokens_per_expert * num_experts // top_k)
