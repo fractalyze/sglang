@@ -1,6 +1,6 @@
 # gemma4nv pinned baseline (build-server-3)
 
-Current pinned base: **base4** (section below). The first base is `base`.
+Current pinned base: **base5** (section below). The first base is `base`.
 
 Every number below comes from a gate run json under `/data/jooman/gemma4nv/runs/` on
 build-server-3. Nothing is quoted from a single unpaired run. Compare hosts by delta only.
@@ -10,7 +10,94 @@ build-server-3. Nothing is quoted from a single unpaired run. Compare hosts by d
   - Re-evaluated at c16a12cf5 after `startup_time` was marked volatile; the first report is kept as `report.v1.json`.
 - **Verdict:** integrity OK, fidelity pass, no promotion (as an A/A must).
 
-## base4 (current pinned base, 2026-10-03)
+## base5 (current pinned base, 2026-10-03)
+
+`base5` = `base4` plus T4, kept on bs3 (W9b):
+
+- **Fused decode glue:** SGLang commit `1d859709ef` (base4's `36aa977541` plus the fusion) with
+  `SGLANG_OPT_GEMMA4_FUSED_GLUE=2`, from T4 (`gemma4nv-b3-t4`).
+  - Group A is one Triton kernel per layer: q/k/v RMSNorm, RoPE and the FP8 KV store. It is
+    bit-exact with the unfused path.
+  - The other groups fuse the post-attention norm pair, the router / pre-FF-2 norm pair, and
+    the next input norm, which goes into the dual-norm epilogue.
+  - 270 of 392 glue launches per step are removed.
+  - Decided on the W8 composite: 1.0626 against base4, with W1 TPOT -7.6% and W32 +3.9%.
+  - Adopted on the full GSM8K test split: paired delta +0.08 pt, 95% CI [-0.55, +0.71].
+    Tool-JSON stayed at 100%.
+
+In the vault it is `stack-1d859709e-gemma4nv-base5`, with parent `stack-36aa97754-gemma4nv-base4`.
+
+- **Decision run:** A/A `AA-base5-20261003-123340-build-server-3-e1f9b9`.
+  - 6 clean ABBA pairs.
+  - Harness 0fc50916c (deploy stamp).
+- **Verdict:** integrity OK, fidelity pass, no promotion.
+- **Noise:** `reference/noise.json` now comes from this A/A. base4's file is kept as
+  `reference/noise.base4.json`.
+  - W8 prefill's sigma is 0.61%, so its bar is now 1.84% (3 sigma). Every other bar stays at
+    1%.
+- **Timed-output agreement:** 1.0 in every pair, so the threshold stays at 0.98.
+
+| metric | base5 | base4 | base | definition |
+|---|---|---|---|---|
+| **W8 prefill** | **1.733 s** per rep; batch 291 ms | 1.785 s; 297 ms | 1.740 s | sum of 8 TTFTs |
+| **W8 decode** | **8.100 s** per rep; 7.97 ms per stream-token | 8.678 s; 8.54 ms | 9.442 s; 9.29 ms | sum of 8 (e2e - TTFT) |
+| **W1 TPOT** | **5.167 ms** | 5.598 ms | 6.075 ms | 1 x 1024 x 256 |
+| W1 prefill (TTFT) | 48.3 ms | 49.5 ms | 48.4 ms | |
+| **W32 throughput** | **1616.6 tok/s** (ungated) | 1554.4 | 1020.6 | 32 x 1024 x 128 |
+
+These columns are separate A/As on one host; the gated delta is the paired T4 run.
+
+A/A gains and noise (6 pairs):
+
+| metric | A/A gain | per-pair sigma of ln(gain) | bar |
+|---|---|---|---|
+| W8 composite | 1.00012 | 0.167% | 1.0% |
+| W8 prefill | 1.00042 | 0.612% | 1.84% |
+| W8 decode | 1.00002 | 0.042% | 1.0% |
+| W1 TPOT | 1.00002 | 0.096% | 1.0% |
+| W32 throughput | 0.99995 | 0.102% | 1.0% |
+
+The per-pair W8 composite ranges from 0.9972 to 1.0023.
+
+sol_fraction (`gate sol-report` against the unchanged SOL tables, which still count o_proj as
+BF16):
+
+| workload | achieved decode step | **decode sol_fraction** (base4 / base) | implied BW | prefill sol_fraction (NVFP4/FP8 / as served) |
+|---|---|---|---|---|
+| W8 | 7.97 ms | **0.70** (0.65 / 0.60) | 1249 GB/s | 0.22 / 0.53 |
+| W1 | 5.17 ms | **0.62** (0.57 / 0.52) | 1104 GB/s | 0.20 / 0.40 |
+| W32 | 14.87 ms | **0.55** (0.52 / 0.48) | 981 GB/s | 0.23 / 0.55 |
+
+**Fidelity** (pair 0 control vs the `base` reference):
+
+- Teacher-forced: min top-1 0.922, mean 0.970, KL mean 0.031, p99 0.54 (base4: 0.917, 0.966,
+  0.034, 0.72).
+- Decode-path KL: mean 0.021, p99 0.48, against base4's 0.025 and 0.45. The limits are 0.050
+  and 0.95, so this passes.
+
+**Quality** (full GSM8K, n = 1,319, plus tool-JSON, n = 40, greedy):
+
+| pair | GSM8K | delta | 95% CI | lost / gained | McNemar p | tool-JSON |
+|---|---|---|---|---|---:|---|
+| base4 -> base5 | 96.29 -> 96.36% | +0.08 pt | [-0.55, +0.71] | 8 / 9 | 1.00 | 100 -> 100 |
+
+- The base4 arm is `quality-full-base3-t3b-20261003-105714-build-server-3-b032cc`, which has
+  base4's commit, flags and env.
+- The base5 arm is `quality-full-base4-glue2-20261003-122858-build-server-3-814a7c`.
+
+**Host peaks per phase** (max over the 12 A/A legs, the 12 T4 gate legs, the quality run and the
+`base4-glue2` prebuild):
+
+| phase | min MemAvailable | peak tree RSS | peak load1 | compilers |
+|---|---|---|---|---|
+| weight load | 50.9 GB | 11.0 GB | 6.1 | 0 |
+| autotune / graph capture | 49.8 GB | 6.5 GB | 5.7 | 2 (Triton) |
+| serving / timed | 49.3 GB | 7.0 GB | 5.3 | 2 / 0 |
+
+Swap stayed at 0.14 GB. The new fused Triton kernels compiled in-process, with no nvcc. Peak load
+stayed under 6.5 in every phase.
+
+## base4 (pinned 2026-10-03, superseded by base5)
 
 `base4` = `base3` plus T3b, kept on bs3 (W9):
 

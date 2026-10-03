@@ -2,6 +2,15 @@
 
 Registered before any code exists (W9, 2026-10-03). Control `base4` (base3 + T3b, pinned by W9).
 
+**Status: kept and adopted into base5 (W9b, 2026-10-03).**
+- **Gate** `gemma4nv-b3-t4-20261003-121505-build-server-3-421028` (base4-glue2 vs base4):
+  - W8 composite 1.0626, above the [+1.5, +4.0]% interval;
+  - W1 TPOT -7.6%; W32 +3.9%;
+  - decode KL 0.021 (pass).
+- **Full GSM8K:** +0.08 pt, 95% CI [-0.55, +0.71]; tool-JSON 100 -> 100.
+
+See `REPORT-bs3-w9b.md`.
+
 ## Implementation (W9b, after the go; the frozen registration starts at "Why this, now")
 
 - **Code:** branch `jumanzii/gemma4nv-b3-t4`, commit `1d859709ef` on base4's `36aa977541`.
