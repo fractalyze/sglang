@@ -1,5 +1,7 @@
 # gemma4nv pinned baseline (build-server-3)
 
+Current pinned base: **base3** (section below). The first base is `base`.
+
 Every number below comes from a gate run json under `/data/jooman/gemma4nv/runs/` on
 build-server-3. Nothing is quoted from a single unpaired run. Compare hosts by delta only.
 
@@ -8,7 +10,78 @@ build-server-3. Nothing is quoted from a single unpaired run. Compare hosts by d
   - Re-evaluated at c16a12cf5 after `startup_time` was marked volatile; the first report is kept as `report.v1.json`.
 - **Verdict:** integrity OK, fidelity pass, no promotion (as an A/A must).
 
-## base2 (current pinned base, 2026-10-03)
+## base3 (current pinned base, 2026-10-03)
+
+`base3` = `base2` plus two trials, both kept on bs3:
+
+- **Split-KV 16:** `--triton-attention-num-kv-splits 16`, from T2S (`gemma4nv-b3-t2s`). Decided
+  on W1 TPOT: -1.94% against base2.
+- **Triton small-M BF16 GEMM:** SGLang commit `1fd77e64b0` with
+  `SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM=1`, from T3S (`gemma4nv-b3-t3s`). Decided on the W8
+  composite: 1.0457 against base2 + split-KV 16.
+
+In the vault it is `stack-1fd77e64b-gemma4nv-base3`, with parent
+`stack-a9871012a-gemma4nv-base2`.
+
+- **Decision run:** A/A `AA-base3-20261003-101154-build-server-3-5644da`.
+  - 6 clean ABBA pairs.
+  - Harness de9b44278 (deploy stamp).
+- **Verdict:** integrity OK, fidelity pass, no promotion.
+- **Noise:** `reference/noise.json` now comes from this A/A. The base2 noise file is kept as
+  `reference/noise.base2.json`.
+- **Timed-output agreement:** 1.0 in every pair. The 0.98 hard threshold set from the base2
+  A/A held.
+
+| metric | base3 | base2 | base | definition |
+|---|---|---|---|---|
+| **W8 prefill** | **1.744 s** per rep; batch 291 ms | 1.742 s | 1.740 s | sum of 8 TTFTs |
+| **W8 decode** | **8.900 s** per rep; 8.76 ms per stream-token | 9.427 s; 9.28 ms | 9.442 s; 9.29 ms | sum of 8 (e2e - TTFT) |
+| **W1 TPOT** | **5.833 ms** | 6.066 ms | 6.075 ms | 1 x 1024 x 256 |
+| W1 prefill (TTFT) | 48.0 ms | 48.0 ms | 48.4 ms | |
+| **W32 throughput** | **1551.2 tok/s** (ungated) | 1527.4 | 1020.6 | 32 x 1024 x 128 |
+
+These columns are absolute control-leg numbers from three separate A/A runs on one host. The
+gated deltas are the paired trial runs (T-W32b, T2S, T3S), not differences between these
+columns.
+
+A/A gains and noise (6 pairs):
+
+| metric | A/A gain | per-pair sigma of ln(gain) | bar |
+|---|---|---|---|
+| W8 composite | 0.99970 | 0.039% | 1.0% |
+| W8 prefill | 0.99928 | 0.154% | 1.0% |
+| W8 decode | 0.99984 | 0.032% | 1.0% |
+| W1 TPOT | 0.99961 | 0.044% | 1.0% |
+| W32 throughput | 1.00004 | 0.025% | 1.0% |
+
+The largest per-pair W8 composite deviation is 0.07%.
+
+sol_fraction (`gate sol-report` against the unchanged SOL tables):
+
+| workload | achieved decode step | **decode sol_fraction** (base2 / base) | implied BW | prefill sol_fraction (NVFP4/FP8 / as served) |
+|---|---|---|---|---|
+| W8 | 8.76 ms | **0.63** (0.60 / 0.60) | 1137 GB/s | 0.22 / 0.53 |
+| W1 | 5.83 ms | **0.55** (0.52 / 0.52) | 978 GB/s | 0.21 / 0.40 |
+| W32 | 15.68 ms | **0.52** (0.51 / 0.48) | 930 GB/s | 0.23 / 0.55 |
+
+**Fidelity** (pair 0 control vs the `base` reference):
+
+- Teacher-forced: min top-1 0.917, mean 0.969, KL mean 0.032, p99 0.59. The forced pass is a
+  prefill (M > 32), which neither base3 change touches, so it equals base2's to four digits.
+- Decode-path KL: mean 0.011, p99 0.23, against base2's 0.015 and 0.39. Pass.
+
+**Host peaks per phase** (max over the 12 legs):
+
+| phase | min MemAvailable | peak tree RSS | peak load1 | compilers |
+|---|---|---|---|---|
+| weight load | 51.0 GB | 10.8 GB | 3.0 | 0 |
+| autotune / graph capture | 49.5 GB | 6.5 GB | 2.8 | 2 (Triton) |
+| serving / timed | 49.2 GB | 7.0 GB | 2.4 | 2 / 0 |
+
+`gate prebuild --ref base2-splits16-smallm` stayed under 7.0 GB tree RSS at load 1.0. Its new
+Triton GEMM compiled in-process, with no nvcc.
+
+## base2 (pinned 2026-10-03, superseded by base3)
 
 `base2` = `base` plus `--mem-fraction-static 0.76`, promoted from T-W32b (`gemma4nv-b3-w32b`,
 kept on W32 x1.49 with W8 and W1 neutral and fidelity passing). In the vault it is
