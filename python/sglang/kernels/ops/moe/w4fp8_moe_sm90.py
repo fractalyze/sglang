@@ -56,7 +56,7 @@ def _quantize_activations_kernel(
     x = tl.load(a_ptr + row * k + offsets).to(tl.float32)
     scale = tl.maximum(tl.max(tl.abs(x), axis=1), 1e-10) / E4M3_MAX
     q = tl.clamp(x / scale[:, None], -E4M3_MAX, E4M3_MAX)
-    # Column 8h + 2t + l of each 16 moves to 4t + 2h + l: K_PERMUTE16 as a (h, t) transpose.
+    # K_PERMUTE16 is the transpose of the (h, t) axes of each 16-column block.
     q = tl.reshape(q, (GROUPS_PER_PROGRAM, GROUP // 16, 2, 4, 2))
     q = tl.reshape(tl.permute(q, (0, 1, 3, 2, 4)), (GROUPS_PER_PROGRAM, GROUP))
     tl.store(q_ptr + row * k + offsets, q.to(q_ptr.dtype.element_ty))
@@ -74,7 +74,7 @@ def quantize_activations(a: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     k_groups = k // TILE_K
     q = torch.empty((rows, k), dtype=torch.float8_e4m3fn, device=a.device)
     scales = torch.empty((rows, k_groups), dtype=torch.float32, device=a.device)
-    # Up to eight groups (2 KB of bf16) per program; must divide the row's groups.
+    # Several groups per program amortise the launch; the count must divide the row's groups.
     groups_per_program = math.gcd(k_groups, 8)
     if rows > 0:
         _quantize_activations_kernel[(rows, k_groups // groups_per_program)](
