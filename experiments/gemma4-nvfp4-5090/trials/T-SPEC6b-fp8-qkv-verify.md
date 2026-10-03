@@ -1,5 +1,13 @@
 # T-SPEC6b (gemma4nv-b2-tspec6b): the target's qkv_proj as FP8 weight-only at verify widths
 
+**Status: retired (W12, 2026-10-03).** Gate `T-SPEC6b-20261003-142707-build-server-2-d70081` vs base4-spec-fp8head:
+- W1 TPOT 2.799 → 2.787 ms (-0.45%, gain 1.0045, CI 1.0039-1.0051, bar 1%);
+- W8 composite 0.961;
+- W32 0.947;
+- fidelity pass.
+
+The B=1 verify did shrink, 7.36 → 6.95 ms (`runs/w12-prof-qkvfp8`). But W1-prompt acceptance fell 3.623 → 3.463 (`runs/w12-gs-*`), which ate the saving. The prefill upcast cost W8 prefill 5%. The qkv entries were removed in `dd5361a7bc`. See `REPORT-bs2-w12.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W12 (bs2) after the microbench and the unit tests, before any screen or gate run of the change. The coordinator approved it as the first of two FP8 trials. T-SPEC6c (the target lm_head) waits for this verdict.
 
 ## Change

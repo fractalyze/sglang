@@ -84,7 +84,8 @@ Weight bytes per layer at 23.5 experts, against the measured-bandwidth SOL (1.65
   1. List every tactic FlashInfer's SM120 FP4 MoE runner can build, timing each at 6 and 48 tokens with the routing of §2. That covers swap-AB, FINALIZE and the tile list.
   2. Time the current tactic at 23-24 active experts with 1, 2, 4, 8 and 128 rows each.
   - **Falsified before any work** if the current tactic is within 5% from 1 to 8 rows (padding is free) and no listed tactic beats it by 5%.
-- **Control:** the bs2 reference at the time of the gate (`base4-spec-fp8head`, or T-SPEC6b's candidate if kept).
+- **Control:** the bs2 reference at the time of the gate. Since W12 that is `base4-spec-fp8head-fp8lmhead` (T-SPEC6c).
+- **Acceptance check.** Also report W1-prompt τ: the swap changes the target's K-sum order, and W12 showed target-side numerics changes can cost acceptance (`c-gemma4nv-target-precision-cut-costs-mtp-acceptance`).
 
 | metric (bs2, gate) | predicted |
 |---|---|

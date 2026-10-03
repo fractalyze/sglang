@@ -1,5 +1,13 @@
 # T-SPEC7 (gemma4nv-b2-tspec7): MTP draft depth k=6 on the bs2 reference
 
+**Status: retired (W12, 2026-10-03).** Gate `T-SPEC7-20261003-153035-build-server-2-ca1bf6` vs base4-spec-fp8head-fp8lmhead:
+- W1 TPOT 2.7205 → 2.7284 ms (+0.29%, gain 0.9971);
+- W8 composite 0.979;
+- W32 0.950;
+- fidelity pass.
+
+With the FP8 target head, k=6's W1-prompt τ is only 3.814, against 3.977 on the BF16-head ref the screens used. The `max_m` 64 enabler was reverted in `17ccadd47c`. See `REPORT-bs2-w12.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W12 (bs2), after the k re-sweep screens and before any gate run.
 
 ## Change

@@ -1,5 +1,20 @@
 # T-SPEC6c (gemma4nv-b2-tspec6c): the target's tied LM head as an FP8 copy at verify widths
 
+**Status: kept (W12, 2026-10-03).** Gate `T-SPEC6c-20261003-150155-build-server-2-0cb85a` vs base4-spec-fp8head:
+- W1 TPOT 2.800 → 2.720 ms (-2.85%, gain 1.0293, CI 1.0289-1.0297);
+- W8 composite 1.030;
+- W32 1.001;
+- fidelity pass.
+
+Supporting checks:
+- forced-c1: argmax agreement with the BF16 head on 99.5% of 3,550 positions, KL 0.0004;
+- W1-prompt τ 3.623 → 3.562 (-1.7%, just outside the frozen -1.5 … 0%);
+- full GSM8K +0.08 pt, CI [-0.44, +0.59];
+- tool-JSON 40/40;
+- KV pool 52.5k → 45.1k tokens.
+
+See `REPORT-bs2-w12.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W12 (bs2), after T-SPEC6b's verdict and the unit tests, and before any screen or gate run of the change. The coordinator approved the model-code hook, behind its own default-off switch.
 
 ## Change
