@@ -10,7 +10,7 @@ from absl.testing import absltest, parameterized
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from gate import config, fidelity, hostwatch, quality, runner, server, sol, stats, treehash  # noqa: E402
+from gate import config, fidelity, hostwatch, quality, runner, server, sol, specrule, stats, treehash  # noqa: E402
 
 
 def _leg(prefill, decode, w1_decode=2.55, w32_wall=4.0):
@@ -405,6 +405,184 @@ class HarnessCommitTest(absltest.TestCase):
         h = server.harness_commit(self.exp)
         self.assertIsNone(h["commit"])
         self.assertEqual(runner._ledger_harness(h), f"tree-sha256:{treehash.tree_sha256(self.exp)}")
+
+
+_SPEC = ["--speculative-algorithm", "NEXTN"]
+
+
+def _tau_rows(taus, n_tokens=256):
+    return [{"id": f"p{i}", "completion_tokens": n_tokens, "verify_ct": round(n_tokens / t)} for i, t in enumerate(taus)]
+
+
+class SpecRuleTest(absltest.TestCase):
+    _NOISE = {m: 0.002 for m in stats.GATED_METRICS}
+    _A = {"control": 3, "candidate": 3}
+
+    def test_rule_applies_to_numerics_changes_under_speculation(self):
+        plain, spec = {"server_args": []}, {"server_args": _SPEC}
+        self.assertEqual(stats.timing_rule(plain, plain), stats.PAIRED_RULE)
+        self.assertEqual(stats.timing_rule(spec, {**spec, "numerics_unchanged": True}), stats.PAIRED_RULE)
+        self.assertEqual(stats.timing_rule(spec, spec), stats.SPEC_RULE)
+        self.assertEqual(stats.timing_rule(plain, spec), stats.SPEC_RULE)
+
+    def test_consistent_tau_shift_is_significant_and_one_prompt_is_not(self):
+        base = [3.0, 3.5, 2.8, 4.0, 3.2, 3.6]
+        shifted = stats.tau_ratio(_tau_rows(base), _tau_rows([t * 1.1 for t in base]))
+        self.assertTrue(shifted["significant"])
+        self.assertAlmostEqual(shifted["ratio"], 1.1, delta=0.01)
+        # T3d's shape: one category swings a lot, the rest stay put.
+        lottery = stats.tau_ratio(_tau_rows(base), _tau_rows([base[0] * 2.4] + base[1:]))
+        self.assertGreater(lottery["ratio"], 1.1)
+        self.assertFalse(lottery["significant"])
+
+    def test_tau_ratio_refuses_unpaired_prompts(self):
+        with self.assertRaises(ValueError):
+            stats.tau_ratio(_tau_rows([3, 3]), _tau_rows([3, 3, 3]))
+
+    def test_counted_tau_needs_significance_and_quality_for_a_gain(self):
+        gain = {"significant": True, "ratio": 1.1}
+        loss = {"significant": True, "ratio": 0.9}
+        self.assertEqual(stats.counted_tau_ratio({"significant": False, "ratio": 1.3}, True)["ratio"], 1.0)
+        self.assertEqual(stats.counted_tau_ratio(gain, None)["ratio"], 1.0)
+        self.assertEqual(stats.counted_tau_ratio(gain, True)["ratio"], 1.1)
+        self.assertEqual(stats.counted_tau_ratio(loss, None)["ratio"], 0.9)
+
+    def _replay(self, decode_ratio, jitter=0.0):
+        """Replay summary: candidate decode time = control / decode_ratio, per-pair jitter on W1."""
+        legs_c = [_leg(1, 1.0 * decode_ratio, w1_decode=2.55 * decode_ratio * (1 + j), w32_wall=4.0 * decode_ratio)
+                  for j in (jitter, -jitter, jitter, -jitter)]
+        return stats.summarize_pairs(legs_c, [_leg(1, 1.0)] * 4)
+
+    def test_round_time_must_clear_the_bar_whatever_tau_did(self):
+        # T3d: no round-time change, tau up 10% on every prompt but quality unknown.
+        tau = stats.tau_ratio(_tau_rows([3, 3.5, 4]), _tau_rows([3.3, 3.85, 4.4]))
+        v = stats.spec_verdict(self._replay(1.0), tau, None, self._NOISE, self._A, "w1_tpot_gain")
+        self.assertFalse(v["checks"]["w1_tpot_round_time_clears_bar"])
+        self.assertFalse(v["promote"])
+        # Even a significant tau gain with passing quality cannot carry a flat round time.
+        v = stats.spec_verdict(self._replay(1.0), tau, True, self._NOISE, self._A, "w1_tpot_gain")
+        self.assertGreater(v["decomposed"]["w1_tpot_gain"], 1.05)
+        self.assertFalse(v["promote"])
+
+    def test_round_time_win_promotes_with_insignificant_tau(self):
+        tau = stats.tau_ratio(_tau_rows([3, 3.5, 4]), _tau_rows([2.0, 3.5, 4]))
+        v = stats.spec_verdict(self._replay(1.04, jitter=0.002), tau, None, self._NOISE, self._A, "w1_tpot_gain")
+        self.assertFalse(tau["significant"])
+        self.assertAlmostEqual(v["decomposed"]["w1_tpot_gain"], v["round_time"]["w1_tpot_gain"])
+        self.assertTrue(v["promote"])
+
+    def test_significant_tau_loss_can_block_a_round_time_win(self):
+        tau = stats.tau_ratio(_tau_rows([3, 3.5, 4, 3.2]), _tau_rows([2.7, 3.15, 3.6, 2.88]))
+        v = stats.spec_verdict(self._replay(1.04, jitter=0.002), tau, True, self._NOISE, self._A, "w1_tpot_gain")
+        self.assertTrue(v["checks"]["w1_tpot_round_time_clears_bar"])
+        self.assertFalse(v["checks"]["w1_tpot_decomposed_clears_bar"])
+        self.assertFalse(v["promote"])
+
+    def test_noisy_round_time_does_not_promote(self):
+        tau = stats.tau_ratio(_tau_rows([3, 3.5]), _tau_rows([3, 3.5]))
+        v = stats.spec_verdict(self._replay(1.02, jitter=0.05), tau, None, self._NOISE, self._A, "w1_tpot_gain")
+        self.assertFalse(v["checks"]["w1_tpot_round_time_ci_above_1"])
+        self.assertFalse(v["promote"])
+
+    def test_mode_change_scales_replay_by_tokens_per_round(self):
+        # Plain decode vs MTP replayed at 3 tokens per round, hidden tau 3.3: per-token gain = replay x 3.3 / 3.
+        rows_c = [{"id": f"p{i}", "completion_tokens": 256, "verify_ct": 256} for i in range(4)]
+        tau = stats.tau_ratio(rows_c, _tau_rows([3.2, 3.4, 3.3, 3.3]))
+        a = {"control": 1, "candidate": 3}
+        replay = self._replay(1.5)
+        v = stats.spec_verdict(replay, tau, True, self._NOISE, a, "w8_composite")
+        self.assertTrue(v["mode_change"])
+        self.assertAlmostEqual(v["decomposed"]["w8_decode_gain"], replay["overall"]["w8_decode_gain"] * tau["candidate"] / 3)
+        self.assertTrue(v["promote"])
+        self.assertFalse(stats.spec_verdict(replay, tau, None, self._NOISE, a, "w8_composite")["promote"])
+
+    def test_speculative_arms_must_replay_one_accept_length(self):
+        tau = stats.tau_ratio(_tau_rows([3]), _tau_rows([3]))
+        with self.assertRaises(ValueError):
+            stats.spec_verdict(self._replay(1.0), tau, None, self._NOISE, {"control": 3, "candidate": 4})
+
+
+class ReplayTest(absltest.TestCase):
+    def test_replay_key_matches_the_servers_prompt_key(self):
+        # The server's table (sglang.srt.speculative.spec_replay) files prompts under this hash.
+        with open(specrule.OVERLAY) as f:
+            patch = f.read()
+        self.assertIn('+    return hashlib.sha256(",".join(map(str, input_ids)).encode()).hexdigest()', patch)
+        self.assertEqual(specrule.replay_key([2, 10, 7]), __import__("hashlib").sha256(b"2,10,7").hexdigest())
+
+    def test_replay_text_mismatch_is_flagged_per_stream(self):
+        by_wl = {"W1": [[[2, 5]], [[2, 6]]]}
+        replay = {"continuations": [{"input_ids": [2, 5], "output_ids": [9, 9]},
+                                    {"input_ids": [2, 6], "output_ids": [8, 8]}]}
+        leg = {"workloads": {"W1": [{"streams": [{"output_ids": [9, 9]}]}, {"streams": [{"output_ids": [8, 7]}]}]}}
+        res = specrule.replay_text_exact(leg, replay, by_wl)
+        self.assertEqual((res["ok"], res["mismatched"]), (False, ["W1/1/0"]))
+
+    def test_replay_legs_time_every_workload_on_fixed_prompts(self):
+        mode = specrule.replay_mode("x")
+        for wl in config.WORKLOADS:
+            self.assertEqual(runner.timing_seed(wl, "pair0", 0, mode), runner.timing_seed(wl, "pair1", 0, mode))
+        self.assertNotEqual(runner.timing_seed(config.W32, "pair0", 0), runner.timing_seed(config.W32, "pair1", 0))
+
+
+class OverlayTreeTest(absltest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root)
+        self.src = os.path.join(self.root, "src")
+        os.makedirs(self.src)
+        self._git("init", "-q")
+        with open(os.path.join(self.src, "a.py"), "w") as f:
+            f.write("x = 1\n")
+        self._git("add", "a.py")
+        self._git("commit", "-qm", "c")
+        self.sha = self._git("rev-parse", "HEAD")
+        with open(os.path.join(self.src, "a.py"), "w") as f:
+            f.write("x = 2\n")
+        with open(os.path.join(self.src, "b.py"), "w") as f:
+            f.write("y = 1\n")
+        self._git("add", "-N", "b.py")
+        self.patch = os.path.join(self.root, "hook.patch")
+        with open(self.patch, "w") as f:
+            f.write(self._git("diff") + "\n")
+        self._git("checkout", "--", "a.py")
+        os.remove(os.path.join(self.src, "b.py"))
+        self._git("reset", "-q")
+        old = (config.SRC_REPO, config.TREES_DIR)
+        config.SRC_REPO, config.TREES_DIR = self.src, os.path.join(self.root, "trees")
+        self.addCleanup(lambda: (setattr(config, "SRC_REPO", old[0]), setattr(config, "TREES_DIR", old[1])))
+
+    def _git(self, *args, cwd=None):
+        return subprocess.run(["git", "-C", cwd or self.src, "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def _tree_for(self, overlay=None):
+        # tree_for's defaults bind config.SRC_REPO at import; route its git calls to the temp repo.
+        old = server._git.__kwdefaults__
+        server._git.__kwdefaults__ = {"cwd": self.src}
+        try:
+            return server.tree_for(self.sha, overlay)
+        finally:
+            server._git.__kwdefaults__ = old
+
+    def test_overlay_tree_is_commit_plus_patch_and_separate_from_plain(self):
+        plain, hooked = self._tree_for(), self._tree_for(self.patch)
+        self.assertNotEqual(plain, hooked)
+        self.assertEqual(open(os.path.join(plain, "a.py")).read(), "x = 1\n")
+        self.assertEqual(open(os.path.join(hooked, "a.py")).read(), "x = 2\n")
+        self.assertTrue(os.path.exists(os.path.join(hooked, "b.py")))
+        self.assertEqual(self._tree_for(self.patch), hooked)
+
+    def test_edited_overlay_tree_is_refused(self):
+        hooked = self._tree_for(self.patch)
+        with open(os.path.join(hooked, "a.py"), "w") as f:
+            f.write("x = 3\n")
+        with self.assertRaises(RuntimeError):
+            self._tree_for(self.patch)
+        self._git("add", "a.py", cwd=hooked)
+        with self.assertRaises(RuntimeError):
+            self._tree_for(self.patch)
 
 
 class HostWatchTest(absltest.TestCase):

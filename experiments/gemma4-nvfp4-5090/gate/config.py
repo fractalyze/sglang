@@ -106,3 +106,14 @@ AGREEMENT_MIN_MARGIN = 0.02
 
 QUALITY_TOLERANCE_PT = 1.0
 GSM8K_N = 200
+
+# Spec rule (gate spec-run, W14). Replay legs decode the control's own greedy
+# text with SPEC_REPLAY_ACCEPT_LEN tokens accepted per verify (bonus included),
+# about the control's W8/W32 tau (3.2 / 2.8 on bs2), so both arms verify the
+# same tokens in the same rounds. W32 gets a fixed seed so all its prompts are
+# in the replay file. Tau is measured free-running on the hidden set, one
+# prompt at a time, to a fixed length.
+SPEC_REPLAY_ACCEPT_LEN = 3
+SPEC_REPLAY_W32_SEED = "W32-replay-v1"
+TAU_MAX_NEW_TOKENS = 256
+TAU_CONCURRENCY = 1

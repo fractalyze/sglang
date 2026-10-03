@@ -2,6 +2,9 @@
 
   gate run --control base --candidate <ref> [--pairs 4] [--label L] [--notes N] [--decide-on METRIC]
   gate reevaluate --run <run dir> [--decide-on METRIC]
+  gate spec-run --control base --candidate <ref> [--pairs 4] [--decide-on METRIC] [--quality-compare JSON]
+                                       # the speculative rule: replayed round time x hidden-set tau
+  gate spec-reevaluate --run <spec-run dir> [--quality-compare JSON] [--decide-on METRIC]
   gate calibrate --ref base            # fidelity reference + KL thresholds (once per baseline)
   gate set-noise --report <A/A report.json>
   gate quality --ref <ref> [--gsm8k-n N|all] [--label L] [--set-baseline]
@@ -21,7 +24,7 @@ import os
 import sys
 import time
 
-from gate import config, fidelity, hostwatch, prompts, quality, runner, server, solrun, stats, vllm_ref
+from gate import config, fidelity, hostwatch, prompts, quality, runner, server, solrun, specrule, stats, vllm_ref
 
 PEAKS_PATH = os.path.join(config.REFERENCE_DIR, "peaks.json")
 SOL_DIR = os.path.join(config.REFERENCE_DIR, "sol")
@@ -221,6 +224,19 @@ def main() -> None:
     rv = sub.add_parser("reevaluate")
     rv.add_argument("--run", required=True)
     rv.add_argument("--decide-on", default=None, choices=sorted(stats.DECIDING_METRICS))
+    sp = sub.add_parser("spec-run")
+    sp.add_argument("--control", required=True)
+    sp.add_argument("--candidate", required=True)
+    sp.add_argument("--pairs", type=int, default=config.MIN_PAIRS)
+    sp.add_argument("--label", default=None)
+    sp.add_argument("--notes", default="")
+    sp.add_argument("--decide-on", default=stats.DEFAULT_DECIDING_METRIC, choices=sorted(stats.DECIDING_METRICS))
+    # A paired quality-compare of the two refs; without it a tau gain never counts.
+    sp.add_argument("--quality-compare", default=None)
+    sr2 = sub.add_parser("spec-reevaluate")
+    sr2.add_argument("--run", required=True)
+    sr2.add_argument("--quality-compare", default=None)
+    sr2.add_argument("--decide-on", default=None, choices=sorted(stats.DECIDING_METRICS))
     pb = sub.add_parser("prebuild")
     pb.add_argument("--ref", default="base")
     s = sub.add_parser("sol")
@@ -250,6 +266,15 @@ def main() -> None:
         report = runner.reevaluate(args.run, args.decide_on)
         print(json.dumps({"verdict": report["verdict"], "timing": report["timing"],
                           "integrity": {k: v for k, v in report["integrity"].items() if k != "per_leg"}}, indent=1))
+    elif args.cmd == "spec-run":
+        if args.pairs < config.MIN_PAIRS:
+            sys.exit(f"--pairs must be >= {config.MIN_PAIRS}")
+        report = specrule.run(args.control, args.candidate, args.pairs, args.label or f"spec-{args.candidate}",
+                              args.notes, args.decide_on, args.quality_compare)
+        print(specrule.dumps(specrule.summary_line(report)))
+    elif args.cmd == "spec-reevaluate":
+        report = specrule.reevaluate(args.run, args.quality_compare, args.decide_on)
+        print(specrule.dumps(specrule.summary_line(report)))
     elif args.cmd == "vllm-ref":
         res = vllm_ref.run(os.path.join(config.RUNS_DIR, runner.new_exp_id("vllm-ref")))
         print(json.dumps({"summary": res["summary"], "host": res["host"]}, indent=1))

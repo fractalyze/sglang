@@ -124,3 +124,23 @@ async def forced_batch(url: str, prompts: List[List[int]], continuations: List[L
 
     async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
         return list(await asyncio.gather(*(one(session, p, c) for p, c in zip(prompts, continuations))))
+
+
+async def spec_acceptance(url: str, prompts: List[List[int]], max_new: int, concurrency: int) -> List[Dict]:
+    """Greedy, full length; per prompt the tokens and verify rounds (a plain-decode server reports none: tau 1)."""
+    sem = asyncio.Semaphore(concurrency)
+
+    async def one(session, p):
+        payload = {"input_ids": p, "sampling_params": {"temperature": 0.0, "max_new_tokens": max_new,
+                                                       "ignore_eos": True}}
+        async with sem:
+            async with session.post(f"{url}/generate", json=payload) as resp:
+                resp.raise_for_status()
+                body = await resp.json()
+        meta = body["meta_info"]
+        tokens = meta["completion_tokens"]
+        return {"completion_tokens": tokens, "verify_ct": meta.get("spec_verify_ct") or tokens,
+                "output_ids": body.get("output_ids")}
+
+    async with aiohttp.ClientSession(timeout=_TIMEOUT) as session:
+        return list(await asyncio.gather(*(one(session, p) for p in prompts)))

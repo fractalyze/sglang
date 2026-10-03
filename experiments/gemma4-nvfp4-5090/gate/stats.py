@@ -6,7 +6,7 @@ so a faster candidate has gain > 1.
 """
 
 import math
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from gate import config
 
@@ -146,4 +146,152 @@ def timing_verdict(summary: Dict, noise: Dict[str, float], decide_on: str = DEFA
         "checks": checks,
         "promote": all(checks.values()),
         "no_regression": all(v for k, v in checks.items() if k.endswith("_no_regression")),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Speculative-decoding rule (W14). Under MTP, a candidate that changes the
+# target's numerics changes its greedy text, and the drafter's acceptance (tau)
+# on the new text moves fixed-prompt timing by about +-10% on its own (W13,
+# T3d: W1 -9.1% at unchanged per-round kernel time). The paired CI cannot see
+# it: each arm reproduces its own text exactly. Such a candidate is decided on
+# speedup = round-time ratio x tau ratio, measured separately:
+#   round time: both arms replay the control's text with a fixed accept length
+#               (gate spec-run), so their decode-time ratio is per-round cost;
+#   tau:        free-running on the hidden set, paired per prompt, with a CI.
+# ---------------------------------------------------------------------------
+
+PAIRED_RULE = "paired"
+SPEC_RULE = "spec-decomposed"
+
+
+def is_speculative(ref: Dict) -> bool:
+    return "--speculative-algorithm" in ref.get("server_args", [])
+
+
+def timing_rule(control: Dict, candidate: Dict) -> str:
+    """Which rule decides a ref pair: the paired fixed-prompt timing, or the spec decomposition.
+
+    The paired rule stays for a candidate that declares numerics_unchanged and for pairs
+    with no speculation. Any other pair with speculation in either arm decodes different
+    text per arm, so its timing carries the acceptance on that text.
+    """
+    if candidate.get("numerics_unchanged") or not (is_speculative(control) or is_speculative(candidate)):
+        return PAIRED_RULE
+    return SPEC_RULE
+
+
+def tau_ratio(control: Sequence[Dict], candidate: Sequence[Dict]) -> Dict:
+    """Hidden-set acceptance per arm and the candidate/control ratio, paired by prompt.
+
+    Rows are {"id", "completion_tokens", "verify_ct"}; a non-speculative arm has
+    verify_ct == completion_tokens (tau 1). The point estimate is the ratio of the
+    arms' tokens-per-round over all prompts; the 95% t-interval is over the per-prompt
+    log ratios, so a change carried by a few prompts stays insignificant.
+    """
+    by_id = {r["id"]: r for r in candidate}
+    if set(by_id) != {r["id"] for r in control}:
+        raise ValueError("tau rows must cover the same prompts in both arms")
+
+    def tau(rows):
+        return sum(r["completion_tokens"] for r in rows) / sum(r["verify_ct"] for r in rows)
+
+    logs = [math.log((by_id[c["id"]]["completion_tokens"] / by_id[c["id"]]["verify_ct"])
+                     / (c["completion_tokens"] / c["verify_ct"])) for c in control]
+    ci = pair_ci95(logs)
+    tau_c, tau_k = tau(control), tau(list(by_id.values()))
+    return {"control": tau_c, "candidate": tau_k, "ratio": tau_k / tau_c, "ci95": ci, "n_prompts": len(logs),
+            "significant": not (ci["low"] <= 1.0 <= ci["high"])}
+
+
+def counted_tau_ratio(tau: Dict, quality_pass: Optional[bool]) -> Dict:
+    """The tau ratio the decision multiplies in: 1 unless the change is significant on the hidden set.
+
+    A significant gain also needs passing quality (else it is text the target should not
+    produce); a significant loss always counts.
+    """
+    if not tau["significant"]:
+        return {"ratio": 1.0, "why": "not significant on the hidden set"}
+    if tau["ratio"] > 1.0 and quality_pass is not True:
+        return {"ratio": 1.0, "why": f"significant gain but quality pass is {quality_pass}"}
+    return {"ratio": tau["ratio"], "why": "significant on the hidden set"}
+
+
+def _with_decode(overall: Dict[str, float], decode_factor: float) -> Dict[str, float]:
+    """Gains with every decode-time component multiplied by `decode_factor` (prefill unchanged)."""
+    return {
+        "w8_prefill_gain": overall["w8_prefill_gain"],
+        "w8_decode_gain": overall["w8_decode_gain"] * decode_factor,
+        "w8_composite": composite(overall["w8_prefill_gain"], overall["w8_decode_gain"] * decode_factor),
+        "w1_tpot_gain": overall["w1_tpot_gain"] * decode_factor,
+        "w32_tput_gain": overall["w32_tput_gain"] * decode_factor,
+    }
+
+
+def spec_verdict(replay: Dict, tau: Dict, quality_pass: Optional[bool], noise: Dict[str, float],
+                 accept_len: Dict[str, int], decide_on: str = DEFAULT_DECIDING_METRIC) -> Dict:
+    """Promotion under the spec rule.
+
+    `replay` is summarize_pairs over replay legs: both arms decode the control's text,
+    a speculative arm accepting accept_len[role] tokens per round (1 for a plain-decode
+    arm). Its gains become per-token gains at the hidden-set tau by the factor
+    (tau_k / A_k) / (tau_c / A_c).
+
+    Both arms speculative (same accept length): the factor is the tau ratio, and the
+    round-time component (the replay gains) must clear the bar on its own. The
+    decomposition with the counted tau ratio must clear it too, so a significant tau loss
+    can still block.
+
+    One arm plain decode (a decoding-mode change): acceptance is the mechanism, so there
+    is no round-time-only check. The tau ratio must be significant and quality must pass,
+    and the decomposition must clear the bar.
+
+    W32's replay sums a throughput window, which also scales with tokens per round, so the
+    same factor applies to it.
+    """
+    if decide_on not in DECIDING_METRICS:
+        raise ValueError(f"cannot decide on {decide_on!r}; choose one of {sorted(DECIDING_METRICS)}")
+    mode_change = accept_len["control"] == 1 or accept_len["candidate"] == 1
+    if not mode_change and accept_len["control"] != accept_len["candidate"]:
+        raise ValueError(f"both speculative arms must replay one accept length, got {accept_len}")
+    overall = replay["overall"]
+    counted = counted_tau_ratio(tau, quality_pass)
+    if mode_change:
+        tau_factor = (tau["candidate"] / accept_len["candidate"]) / (tau["control"] / accept_len["control"])
+        if not tau["significant"] or quality_pass is not True:
+            tau_factor = None
+    else:
+        tau_factor = counted["ratio"]
+    decomposed = _with_decode(overall, tau_factor) if tau_factor is not None else None
+    bars = {m: promotion_bar(noise.get(m, 0.0)) for m in GATED_METRICS}
+    stems = DECIDING_METRICS
+    guards = [m for m in DECIDING_METRICS if m != decide_on]
+    checks = {}
+    if mode_change:
+        checks["tau_significant"] = tau["significant"]
+        checks["quality_pass"] = quality_pass is True
+    else:
+        checks[f"{stems[decide_on]}_round_time_clears_bar"] = overall[decide_on] - 1.0 > bars[decide_on]
+        checks[f"{stems[decide_on]}_round_time_ci_above_1"] = replay["ci95"][decide_on]["low"] > 1.0
+        for m in guards:
+            checks[f"{stems[m]}_round_time_no_regression"] = overall[m] - 1.0 > -bars[m]
+    checks[f"{stems[decide_on]}_decomposed_clears_bar"] = (
+        decomposed is not None and decomposed[decide_on] - 1.0 > bars[decide_on])
+    for m in guards:
+        checks[f"{stems[m]}_decomposed_no_regression"] = decomposed is not None and decomposed[m] - 1.0 > -bars[m]
+    checks["enough_pairs"] = replay["n_pairs"] >= config.MIN_PAIRS
+    return {
+        "rule": SPEC_RULE,
+        "decided_on": decide_on,
+        "mode_change": mode_change,
+        "accept_len": accept_len,
+        "round_time": {m: overall[m] for m in GATED_METRICS},
+        "round_time_ci95": replay["ci95"],
+        "tau": tau,
+        "counted_tau": counted if not mode_change else {"factor": tau_factor},
+        "decomposed": decomposed,
+        "bars": bars,
+        "noise_calibrated": all(m in noise for m in GATED_METRICS),
+        "checks": checks,
+        "promote": all(checks.values()),
     }
