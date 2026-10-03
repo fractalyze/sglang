@@ -19,6 +19,12 @@ gate's host-safety path (host.lock, preflight, 24G no-swap scope, watchdog):
   gate-shape -- the gate's own timed workloads (fixed W1 and W8 prompts, W32) once,
              after the gate's warm-up: one unpaired leg, summed as the gate sums it, plus
              acceptance on the W1 prompts. Compares configs on the gate's prompts.
+  forced-c1 -- teacher-forced top-k logprobs on the hidden set at one logits row per
+             forward: one request per reference position (cached prefix + 1 token,
+             max_new_tokens 1). The gate's forced pass reads all positions in one
+             prefill, whose logits batch exceeds a narrow-batch-only head's max M;
+             this mode measures the head that decode and verify use. Rows land in
+             forced_c1.json in the gate's compare_forced format.
   info    -- launch only. Saves /get_server_info, so a candidate's resolved
              args can be diffed against its control with the gate's own check
              before a gate run is spent on an undeclared derived field.
@@ -190,9 +196,28 @@ def mode_gate_shape(srv: server.Server, out: Dict) -> None:
     out["gate_shape"]["w1_accept"] = _accept_stats(metas)
 
 
+def mode_forced_c1(srv: server.Server, out: Dict, out_dir: str) -> None:
+    from gate import fidelity
+
+    reference = fidelity.load_json(fidelity.REFERENCE_PATH)
+    by_id = {p["id"]: p for p in fidelity.load_prompts()}
+    rows = []
+    for ref in reference:
+        srv.flush_cache()
+        prompt, toks = by_id[ref["id"]]["input_ids"], ref["output_ids"]
+        top = [_generate(srv.url, prompt + toks[:i], 1, return_logprob=True,
+                         top_logprobs_num=config.TOP_LOGPROBS,
+                         logprob_start_len=len(prompt) + i)["meta_info"]["output_top_logprobs"][0]
+               for i in range(len(toks))]
+        rows.append({"id": ref["id"], "top_logprobs": [[(lp, tid) for lp, tid, *_ in pos] for pos in top]})
+    fidelity.save_json(os.path.join(out_dir, "forced_c1.json"), rows)
+    cmp = fidelity.compare_forced(reference, fidelity.load_json(fidelity.REFERENCE_FORCED_PATH), rows)
+    out["forced_c1_vs_reference"] = {k: v for k, v in cmp.items() if k != "per_prompt"}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", required=True, choices=("spec", "sweep", "experts", "profile", "info", "gate-shape"))
+    ap.add_argument("--mode", required=True, choices=("spec", "sweep", "experts", "profile", "info", "gate-shape", "forced-c1"))
     ap.add_argument("--ref", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rows", default="1,2,3,4,5,6,8,12,16,24,32,40,48")
@@ -213,6 +238,8 @@ def main() -> None:
             mode_sweep(srv, out, [int(x) for x in args.rows.split(",")])
         elif args.mode == "experts":
             mode_experts(srv, out, args.out, args.decode_new)
+        elif args.mode == "forced-c1":
+            mode_forced_c1(srv, out, args.out)
         elif args.mode == "gate-shape":
             mode_gate_shape(srv, out)
         elif args.mode == "profile":
