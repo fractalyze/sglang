@@ -38,7 +38,8 @@ def replay_mode(replay_path: str) -> runner.LegMode:
         overlay=OVERLAY,
         env={"SGLANG_SIMULATE_ACC_REPLAY_PATH": replay_path,
              "SGLANG_SIMULATE_ACC_REPLAY_LEN": str(config.SPEC_REPLAY_ACCEPT_LEN)},
-        fixed_seeds={"W32": config.SPEC_REPLAY_W32_SEED},
+        fixed_seeds={wl.name: f"{wl.name}-{config.SPEC_REPLAY_SEED_SUFFIX}" for wl in config.WORKLOADS
+                     if not wl.fixed_prompt_seed},
         tau_pass=True,
     )
 
@@ -107,7 +108,7 @@ def run(control_name: str, candidate_name: str, n_pairs: int, label: str, notes:
             "config": {"workloads": [{"name": w.name, "concurrency": w.concurrency, "prompt": w.prompt_tokens,
                                       "decode": w.decode_tokens, "reps": w.reps_per_leg,
                                       "fixed_prompt_seed": w.fixed_prompt_seed} for w in config.WORKLOADS],
-                       "w32_replay_seed": config.SPEC_REPLAY_W32_SEED,
+                       "replay_fixed_seeds": replay_mode("").fixed_seeds,
                        "tau": {"max_new": config.TAU_MAX_NEW_TOKENS, "concurrency": config.TAU_CONCURRENCY}}}
     runner._write(os.path.join(run_dir, "meta.json"), meta)
     refs = {"control": control_ref, "candidate": candidate_ref}

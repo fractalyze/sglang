@@ -522,7 +522,10 @@ class ReplayTest(absltest.TestCase):
         mode = specrule.replay_mode("x")
         for wl in config.WORKLOADS:
             self.assertEqual(runner.timing_seed(wl, "pair0", 0, mode), runner.timing_seed(wl, "pair1", 0, mode))
-        self.assertNotEqual(runner.timing_seed(config.W32, "pair0", 0), runner.timing_seed(config.W32, "pair1", 0))
+        drawn = [wl for wl in config.WORKLOADS if not wl.fixed_prompt_seed]
+        self.assertTrue(drawn)
+        for wl in drawn:
+            self.assertNotEqual(runner.timing_seed(wl, "pair0", 0), runner.timing_seed(wl, "pair1", 0))
 
 
 class OverlayTreeTest(absltest.TestCase):
