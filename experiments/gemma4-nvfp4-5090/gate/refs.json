@@ -72,5 +72,14 @@
     "extends": "smallm-gemm",
     "description": "T3c (W7, gemma4nv-b2-t3c): smallm-gemm (base2 + T3, switch on) on commit 826d472504, whose allowlist adds qkv_proj (sliding and full), the 128-expert router (split-K 8) and the tied lm_head to the Triton small-M BF16 GEMM; see trials/T3c-smallm-qkv-router-lmhead.md.",
     "commit": "826d472504bb59ccaa48053c53e628cce5efe490"
+  },
+  "smallm-gemm-t3b": {
+    "extends": "smallm-gemm",
+    "description": "T3b (W7, gemma4nv-b2-t3b): smallm-gemm (base2 + T3) on commit ed0aefcd40 with SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1, which stores both o_proj shapes as FP8 E4M3 with per-output-channel scales (decode on the Triton small-M kernel, prefill on cuBLAS over the bf16 upcast); changes numerics and the loaded weights; see trials/T3b-fp8-weight-oproj.md.",
+    "commit": "ed0aefcd401c3fa8f17937e0ff09f4d9844c272a",
+    "env": {
+      "SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM": "1"
+    },
+    "weight_layout_change": true
   }
 }
