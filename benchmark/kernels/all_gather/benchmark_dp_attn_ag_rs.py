@@ -39,12 +39,12 @@ import json
 import os
 from typing import Callable, List
 
-# The engine sets CUDA_DEVICE_MAX_CONNECTIONS=8 for every server.
 _CONFIG_ENV = {
     "default": {"NCCL_CUMEM_ENABLE": "0", "NCCL_NVLS_ENABLE": "0"},
     "nvls": {"NCCL_CUMEM_ENABLE": "0", "NCCL_NVLS_ENABLE": "1"},
     "symm": {"NCCL_CUMEM_ENABLE": "1", "NCCL_NVLS_ENABLE": "1"},
 }
+# The engine sets CUDA_DEVICE_MAX_CONNECTIONS=8 for every server.
 _SERVER_ENV = {"CUDA_DEVICE_MAX_CONNECTIONS": "8"}
 
 
