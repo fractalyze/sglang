@@ -473,6 +473,23 @@ class SolTest(absltest.TestCase):
         # step 0: {0,1,5} -> 3; step 1: {2,3} -> 2.
         self.assertEqual(sol.distinct_experts_from_routes([a, b]), {0: 2.5})
 
+    def test_fp8_o_proj_counts_one_byte_per_weight_plus_row_scales(self):
+        tensors = {
+            "model.layers.0.self_attn.o_proj.weight": {"dtype": "BF16", "shape": [2816, 4096], "bytes": 2816 * 4096 * 2},
+            "model.layers.0.self_attn.qkv_proj.weight": {"dtype": "BF16", "shape": [8, 4], "bytes": 64},
+        }
+        self.assertIs(sol.served_tensors(tensors, fp8_o_proj=False), tensors)
+        served = sol.served_tensors(tensors, fp8_o_proj=True)
+        self.assertEqual(served["model.layers.0.self_attn.o_proj.weight"]["bytes"], 2816 * 4096 + 4 * 2816)
+        self.assertEqual(served["model.layers.0.self_attn.qkv_proj.weight"], tensors["model.layers.0.self_attn.qkv_proj.weight"])
+
+    def test_fp8_o_proj_follows_the_ref_env(self):
+        from gate import solrun
+
+        self.assertFalse(solrun.fp8_o_proj_served("base3"))
+        self.assertTrue(solrun.fp8_o_proj_served("base4"))
+        self.assertTrue(solrun.fp8_o_proj_served("base5-spec"))
+
 
 if __name__ == "__main__":
     absltest.main()

@@ -10,7 +10,8 @@
   gate vllm-ref                       # ungated vLLM 0.20 reference on W8/W1/W32
   gate peaks                           # measured DRAM BW, GEMM peaks, launch floor
   gate sol --ref base                  # router recording + SOL tables
-  gate sol-report --report <report.json>
+  gate sol-report --report <report.json> [--sol <sol.json>]
+  gate sol-retable --from <sol.json> --ref base5 --out <sol.json>   # served formats, same router data
 """
 
 import argparse
@@ -182,8 +183,13 @@ def sol_fractions(report: dict, legs_dir: str, sol_res: dict) -> dict:
     return out
 
 
+def _sol_retable(args) -> None:
+    res = solrun.retable(args.from_path, args.ref, args.out, PEAKS_PATH)
+    print(json.dumps({wl: {"decode_step_ms": w["decode"]["sol_step_ms"]} for wl, w in res["workloads"].items()}))
+
+
 def _sol_report(args) -> None:
-    sol_res = json.load(open(os.path.join(SOL_DIR, "sol.json")))
+    sol_res = json.load(open(args.sol))
     report = json.load(open(args.report))
     res = sol_fractions(report, os.path.dirname(args.report), sol_res)
     fidelity.save_json(os.path.join(os.path.dirname(args.report), "sol_fractions.json"), res)
@@ -227,6 +233,11 @@ def main() -> None:
     s.add_argument("--ref", default="base")
     sr = sub.add_parser("sol-report")
     sr.add_argument("--report", required=True)
+    sr.add_argument("--sol", default=os.path.join(SOL_DIR, "sol.json"), help="SOL tables (gate sol / sol-retable output)")
+    st = sub.add_parser("sol-retable")
+    st.add_argument("--from", dest="from_path", required=True, help="an earlier sol.json, for its router data")
+    st.add_argument("--ref", required=True, help="the ref whose served weight formats the tables count")
+    st.add_argument("--out", required=True)
     args = p.parse_args()
 
     if args.cmd == "run":
@@ -259,6 +270,8 @@ def main() -> None:
         _peaks(args)
     elif args.cmd == "sol":
         _sol(args)
+    elif args.cmd == "sol-retable":
+        _sol_retable(args)
     elif args.cmd == "sol-report":
         _sol_report(args)
 

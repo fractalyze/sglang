@@ -43,6 +43,23 @@ def checkpoint_tensors(model_dir: str = config.MODEL_DIR) -> Dict[str, Dict]:
     return out
 
 
+# Refs whose env sets this serve every o_proj as FP8 E4M3 weight-only with an fp32 scale per
+# output row (T3b, base4 on): decode reads those bytes, prefill upcasts to bf16 for cuBLAS.
+FP8_O_PROJ_ENV = "SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM"
+
+
+def served_tensors(tensors: Dict[str, Dict], fp8_o_proj: bool) -> Dict[str, Dict]:
+    """The checkpoint tensors in the format the server keeps in memory."""
+    if not fp8_o_proj:
+        return tensors
+    out = dict(tensors)
+    for name, t in tensors.items():
+        if name.endswith(".self_attn.o_proj.weight") and t["dtype"] == "BF16":
+            n_out, n_in = t["shape"]
+            out[name] = {"dtype": "F8_E4M3", "shape": t["shape"], "bytes": n_out * n_in + 4 * n_out}
+    return out
+
+
 def component_of(name: str) -> str:
     if "vision" in name or "embed_vision" in name or "audio" in name:
         return "vision_unused"
@@ -151,6 +168,7 @@ def prefill_flops(batch: int, prompt: int, tensors: Dict[str, Dict]) -> Dict[str
     expert_params_per_layer = defaultdict(int)
     for name, t in tensors.items():
         comp = component_of(name)
+        # FP8 o_proj counts here too: its prefill runs cuBLAS over the bf16 upcast.
         if comp in ("attention_weights", "dense_mlp", "router") and len(t["shape"]) == 2:
             linear_bf16 += t["shape"][0] * t["shape"][1]
         elif comp == "experts" and name.endswith(".weight"):

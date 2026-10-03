@@ -68,8 +68,12 @@ def measure_router(ref_name: str, out_dir: str) -> Dict[str, Dict[int, float]]:
     return distinct
 
 
-def tables(distinct: Dict[str, Dict[int, float]], kv_elem_bytes: float, peaks: Dict) -> Dict:
-    tensors = sol.checkpoint_tensors()
+def fp8_o_proj_served(ref_name: str) -> bool:
+    return server.load_ref(ref_name)["env"].get(sol.FP8_O_PROJ_ENV) == "1"
+
+
+def tables(distinct: Dict[str, Dict[int, float]], kv_elem_bytes: float, peaks: Dict, fp8_o_proj: bool) -> Dict:
+    tensors = sol.served_tensors(sol.checkpoint_tensors(), fp8_o_proj)
     weights = sol.weight_table(tensors)
     text_weight_bytes = sum(b for c, b in weights["bytes_by_component"].items() if c != "vision_unused")
     shapes = {"W8": (8, 1024, 128, "W8_hidden"), "W1": (1, 1024, 256, "W1_corpus"), "W32": (32, 1024, 128, "W32_corpus")}
@@ -77,7 +81,7 @@ def tables(distinct: Dict[str, Dict[int, float]], kv_elem_bytes: float, peaks: D
     for k, key in (("bf16", "bf16_tflops"), ("fp8", "fp8_tflops"), ("nvfp4", "nvfp4_tflops")):
         if key in peaks.get("gemm", {}):
             peak_tflops[k] = max(peak_tflops[k], peaks["gemm"][key])
-    out = {"weights": weights, "kv_elem_bytes": kv_elem_bytes, "peak_tflops_used": peak_tflops,
+    out = {"weights": weights, "fp8_o_proj": fp8_o_proj, "kv_elem_bytes": kv_elem_bytes, "peak_tflops_used": peak_tflops,
            "dram_gb_s_datasheet": sol.DRAM_BYTES_PER_S / 1e9,
            "dram_gb_s_measured": peaks.get("dram", {}).get("read_gb_s"), "workloads": {}}
     for wl, (b, p, d, router_key) in shapes.items():
@@ -98,7 +102,20 @@ def run(ref_name: str, out_dir: str, peaks_path: str) -> Dict:
     # The baseline KV cache is FP8: the checkpoint's kv_cache_quant_algo, which
     # SGLang's kv_cache_dtype=auto adopts (server log: "dtype: torch.float8_e4m3fn").
     kv_elem_bytes = 1.0
-    result = tables(distinct, kv_elem_bytes, peaks)
+    result = tables(distinct, kv_elem_bytes, peaks, fp8_o_proj_served(ref_name))
+    result["ref"] = ref_name
     with open(os.path.join(out_dir, "sol.json"), "w") as f:
+        json.dump(result, f, indent=1)
+    return result
+
+
+def retable(from_path: str, ref_name: str, out_path: str, peaks_path: str) -> Dict:
+    """Rebuilds the tables for `ref_name`'s served formats from the router data of an earlier run."""
+    prev = json.load(open(from_path))
+    distinct = {k: {int(l): v for l, v in d["by_layer"].items()} for k, d in prev["distinct_experts_by_source"].items()}
+    peaks = json.load(open(peaks_path)) if os.path.exists(peaks_path) else {}
+    result = tables(distinct, prev["kv_elem_bytes"], peaks, fp8_o_proj_served(ref_name))
+    result.update(ref=ref_name, router_data_from=os.path.abspath(from_path))
+    with open(out_path, "w") as f:
         json.dump(result, f, indent=1)
     return result
