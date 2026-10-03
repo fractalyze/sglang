@@ -140,6 +140,32 @@ class RunnerTest(absltest.TestCase):
         diff = runner.server_arg_diff(a, b, ["--mem-fraction-static", "0.76"])
         self.assertEqual(diff, {"differing_keys": ["mem_fraction_static"], "undeclared": []})
 
+    def test_chunk_size_flag_declares_prefill_graph_shape(self):
+        # T1 on bs2: --chunked-prefill-size resizes the prefill cuda-graph config the server reports.
+        graphs = lambda n: {"decode": {"max_bs": 32}, "prefill": {"backend": "disabled", "max_bs": n, "bs": [4, n]}}
+        a = {"server_info": {"chunked_prefill_size": 4096, "cuda_graph_config": graphs(4096),
+                             "launch_command": "--port 1"}}
+        b = {"server_info": {"chunked_prefill_size": 8192, "cuda_graph_config": graphs(8192),
+                             "launch_command": "--port 1 --chunked-prefill-size 8192"}}
+        diff = runner.server_arg_diff(a, b, ["--chunked-prefill-size", "8192"])
+        self.assertEqual(diff["undeclared"], [])
+        self.assertIn("cuda_graph_config.prefill.max_bs", diff["differing_keys"])
+        self.assertEqual(runner.server_arg_diff(a, b, [])["undeclared"], [
+            "chunked_prefill_size", "cuda_graph_config.prefill.bs", "cuda_graph_config.prefill.max_bs",
+            "launch_command:--chunked-prefill-size"])
+
+    def test_derived_path_does_not_cover_siblings(self):
+        a = {"server_info": {"cuda_graph_config": {"decode": {"backend": "full"}, "prefill": {"max_bs": 1}}}}
+        b = {"server_info": {"cuda_graph_config": {"decode": {"backend": "piecewise"}, "prefill": {"max_bs": 2}}}}
+        diff = runner.server_arg_diff(a, b, ["--chunked-prefill-size", "2"])
+        self.assertEqual(diff["undeclared"], ["cuda_graph_config.decode.backend"])
+
+    def test_undeclared_launch_flag_is_flagged(self):
+        a = {"server_info": {"launch_command": "--port 1"}}
+        b = {"server_info": {"launch_command": "--port 1 --enable-foo"}}
+        self.assertEqual(runner.server_arg_diff(a, b, [])["undeclared"], ["launch_command:--enable-foo"])
+        self.assertEqual(runner.server_arg_diff(a, b, ["--enable-foo"])["undeclared"], [])
+
 
 class HostWatchTest(absltest.TestCase):
     def _with(self, mem, swap, foreign):

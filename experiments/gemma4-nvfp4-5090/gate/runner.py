@@ -15,10 +15,18 @@ from gate import checkpoint, client, config, fidelity, gpu, hostwatch, prompts, 
 log = logging.getLogger(__name__)
 
 # server_info keys that legitimately differ between two launches of one config.
-_VOLATILE_SERVER_KEYS = {"random_seed", "version", "internal_states", "max_total_num_tokens", "pid", "startup_time"}
-# Follow from other server-info keys: launch_command restates the args (compared key by key), and
 # max_req_input_len is max_total_num_tokens minus a fixed reserve, so it moves with the KV pool size.
-_DERIVED_SERVER_KEYS = {"launch_command", "max_req_input_len"}
+_VOLATILE_SERVER_KEYS = {"random_seed", "version", "internal_states", "max_total_num_tokens", "max_req_input_len",
+                         "pid", "startup_time"}
+# server_info paths the server resolves from a flag: declaring the flag declares them too. A path
+# covers everything below it (cuda_graph_config.prefill covers .max_bs and .bs).
+_FLAG_DERIVED_PATHS = {
+    "chunked_prefill_size": ("cuda_graph_config.prefill.max_bs", "cuda_graph_config.prefill.bs"),
+    "mem_fraction_static": ("max_running_requests",),
+    "cuda_graph_max_bs_decode": ("cuda_graph_config.decode.max_bs", "cuda_graph_config.decode.bs"),
+    "cuda_graph_max_bs": ("cuda_graph_config.decode.max_bs", "cuda_graph_config.decode.bs",
+                          "cuda_graph_config.prefill.max_bs", "cuda_graph_config.prefill.bs"),
+}
 
 
 def new_exp_id(label: str) -> str:
@@ -154,12 +162,43 @@ def timed_output_agreement(control: Dict, candidate: Dict) -> Dict:
             "n_identical": sum(1 for r in rates if r == 1.0)}
 
 
+def _flatten(d: Dict, prefix: str = "") -> Dict:
+    out = {}
+    for k, v in d.items():
+        path = f"{prefix}{k}"
+        if isinstance(v, dict) and v:
+            out.update(_flatten(v, path + "."))
+        else:
+            out[path] = v
+    return out
+
+
+def _covered(path: str, prefixes) -> bool:
+    return any(path == p or path.startswith(p + ".") for p in prefixes)
+
+
+def _launch_flags(cmd: Optional[str]) -> List[str]:
+    return [t for t in (cmd or "").split() if t.startswith("--")]
+
+
 def server_arg_diff(control: Dict, candidate: Dict, declared: List[str]) -> Dict:
+    """server_info paths that differ between the arms, and those no declared flag accounts for.
+
+    launch_command is not compared as a string: it restates the args, which are compared key by key.
+    Instead each flag in it that the other arm lacks must be declared.
+    """
     a, b = control["server_info"], candidate["server_info"]
-    ignored = _VOLATILE_SERVER_KEYS | _DERIVED_SERVER_KEYS
-    diff = sorted(k for k in set(a) | set(b) if k not in ignored and a.get(k) != b.get(k))
+    fa = _flatten({k: v for k, v in a.items() if k not in _VOLATILE_SERVER_KEYS | {"launch_command"}})
+    fb = _flatten({k: v for k, v in b.items() if k not in _VOLATILE_SERVER_KEYS | {"launch_command"}})
+    diff = sorted(k for k in set(fa) | set(fb) if fa.get(k) != fb.get(k))
     declared_keys = {d.lstrip("-").replace("-", "_") for d in declared if d.startswith("--")}
-    undeclared = [k for k in diff if k not in declared_keys]
+    covered = set(declared_keys)
+    for key in declared_keys:
+        covered.update(_FLAG_DERIVED_PATHS.get(key, ()))
+    undeclared = [k for k in diff if not _covered(k, covered)]
+    flags_a, flags_b = _launch_flags(a.get("launch_command")), _launch_flags(b.get("launch_command"))
+    undeclared += sorted(f"launch_command:{f}" for f in set(flags_a) ^ set(flags_b)
+                         if f.lstrip("-").replace("-", "_") not in declared_keys)
     return {"differing_keys": diff, "undeclared": undeclared}
 
 
