@@ -98,5 +98,9 @@
       "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
     },
     "description": "T4 (W9b, gemma4nv-b3-t4): base4 on commit 1d859709ef with SGLANG_OPT_GEMMA4_FUSED_GLUE=2: sub-step A plus the post-attention norm pair, the router / pre-FF-2 norm pair and the next layer's input norm in the dual-norm epilogue (270 of 392 glue launches per decode step removed; norm sums reordered)."
+  },
+  "base5": {
+    "extends": "base4-glue2",
+    "description": "Pinned base5 (W9b): base4 + T4 fused decode glue (commit 1d859709ef, SGLANG_OPT_GEMMA4_FUSED_GLUE=2), kept on bs3 (gemma4nv-b3-t4: W8 composite 1.0626, W1 TPOT -7.6%, W32 +3.9%, decode KL 0.021) with full-GSM8K delta +0.08 pt (paired 95% CI [-0.55, +0.71]) and tool-JSON 100 -> 100."
   }
 }
