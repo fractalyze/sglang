@@ -69,5 +69,14 @@
   "base3": {
     "extends": "base2-splits16-smallm",
     "description": "Pinned base3 (W5): base2 + split-KV 16 (T2S, kept on W1 TPOT -1.94%) + Triton small-M BF16 GEMM on commit 1fd77e64b0 (T3S, kept on W8 composite 1.0457), both on bs3."
+  },
+  "base3-t3b": {
+    "extends": "base3",
+    "commit": "36aa9775419852445fddd007a75d1c88e96ae098",
+    "env": {
+      "SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM": "1"
+    },
+    "weight_layout_change": true,
+    "description": "T3b stacked on base3 (W9, gemma4nv-b3-t3b, variant of gemma4nv-b2-t3b): base3 on commit 36aa977541 (base3's 1fd77e64b0 + cherry-picks 826d472504, bbbf5e4d46, ed0aefcd40; python/ tree identical to ed0aefcd40) with SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1: both o_proj shapes stored as FP8 E4M3 with per-output-channel scales, decode on the Triton small-M kernel, prefill on cuBLAS over the bf16 upcast."
   }
 }

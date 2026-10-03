@@ -3,10 +3,15 @@
 Run at baseline and on demand for any candidate that changes numerics. A
 candidate fails if either accuracy drops more than QUALITY_TOLERANCE_PT points
 below the baseline's.
+
+`gate quality-compare` pairs two runs item by item. Both arms answer the same
+questions, so the accuracy delta's interval comes from the discordant items
+(adjusted Wald, Agresti-Min 2005: 0.5 added to each cell of the 2x2 table).
 """
 
 import asyncio
 import json
+import math
 import random
 import re
 from typing import Dict, List, Optional
@@ -38,12 +43,14 @@ def gsm8k_answer(text: str) -> Optional[float]:
     return _number(nums[-1]) if nums else None
 
 
-def gsm8k_items() -> List[Dict]:
+def gsm8k_items(n: Optional[int] = config.GSM8K_N) -> List[Dict]:
+    """The first `n` GSM8K test questions; None takes the full test split (1,319)."""
     from datasets import load_dataset
 
     ds = load_dataset("openai/gsm8k", "main", split="test")
-    return [{"question": r["question"], "answer": _number(r["answer"].split("####")[-1].strip())}
-            for r in ds.select(range(config.GSM8K_N))]
+    if n is not None:
+        ds = ds.select(range(n))
+    return [{"question": r["question"], "answer": _number(r["answer"].split("####")[-1].strip())} for r in ds]
 
 
 _TOOLS = [
@@ -123,8 +130,8 @@ def tool_call_correct(got: Optional[Dict], expected: Dict) -> bool:
     return all(_norm(args[k]) == _norm(v) for k, v in expected["arguments"].items())
 
 
-def run(url: str, tokenizer) -> Dict:
-    gsm = gsm8k_items()
+def run(url: str, tokenizer, gsm8k_n: Optional[int] = config.GSM8K_N) -> Dict:
+    gsm = gsm8k_items(gsm8k_n)
     gsm_prompts = [_chat_ids(tokenizer, [{"role": "user", "content": _GSM8K_INSTRUCTION + it["question"]}])
                    for it in gsm]
     gsm_out = asyncio.run(client.generate_text(url, gsm_prompts, max_new=768, concurrency=32))
@@ -135,8 +142,8 @@ def run(url: str, tokenizer) -> Dict:
     tool_out = asyncio.run(client.generate_text(url, tool_prompts, max_new=128, concurrency=32))
     tool_ok = [tool_call_correct(parse_tool_call(o["text"]), it["expected"]) for o, it in zip(tool_out, tools)]
     return {
-        "gsm8k": {"n": len(gsm_ok), "accuracy_pt": 100.0 * sum(gsm_ok) / len(gsm_ok)},
-        "tool_json": {"n": len(tool_ok), "accuracy_pt": 100.0 * sum(tool_ok) / len(tool_ok)},
+        "gsm8k": {"n": len(gsm_ok), "accuracy_pt": 100.0 * sum(gsm_ok) / len(gsm_ok), "correct": gsm_ok},
+        "tool_json": {"n": len(tool_ok), "accuracy_pt": 100.0 * sum(tool_ok) / len(tool_ok), "correct": tool_ok},
         "samples": {
             "gsm8k_failures": [{"i": i, "text": gsm_out[i]["text"][-300:]} for i, ok in enumerate(gsm_ok) if not ok][:10],
             "tool_failures": [{"i": i, "text": tool_out[i]["text"][:300]} for i, ok in enumerate(tool_ok) if not ok][:10],
@@ -145,8 +152,61 @@ def run(url: str, tokenizer) -> Dict:
 
 
 def verdict(candidate: Dict, baseline: Dict) -> Dict:
+    if any(candidate[t]["n"] != baseline[t]["n"] for t in ("gsm8k", "tool_json")):
+        return {"pass": None, "reason": "sample sizes differ from the baseline; use quality-compare"}
     checks = {
         task: candidate[task]["accuracy_pt"] >= baseline[task]["accuracy_pt"] - config.QUALITY_TOLERANCE_PT
         for task in ("gsm8k", "tool_json")
     }
     return {"pass": all(checks.values()), "checks": checks}
+
+
+def paired_delta(control: List[bool], candidate: List[bool], z: float = 1.959964) -> Dict:
+    """Candidate minus control accuracy (points) on the same items, with a 95% interval.
+
+    The interval is the Agresti-Min adjusted Wald interval for a paired difference of
+    proportions: 0.5 is added to each cell of the 2x2 agreement table, which keeps the
+    interval from collapsing to zero width when few items are discordant.
+    """
+    if len(control) != len(candidate) or not control:
+        raise ValueError(f"paired arms need the same non-zero length, got {len(control)} and {len(candidate)}")
+    n = len(control)
+    gained = sum(1 for a, b in zip(control, candidate) if b and not a)
+    lost = sum(1 for a, b in zip(control, candidate) if a and not b)
+    both = sum(1 for a, b in zip(control, candidate) if a and b)
+    n_adj = n + 2.0
+    p_gain, p_lost = (gained + 0.5) / n_adj, (lost + 0.5) / n_adj
+    diff_adj = p_gain - p_lost
+    se = math.sqrt((p_gain + p_lost - diff_adj ** 2) / n_adj)
+    return {
+        "n": n,
+        "control_pt": 100.0 * (both + lost) / n,
+        "candidate_pt": 100.0 * (both + gained) / n,
+        "delta_pt": 100.0 * (gained - lost) / n,
+        "candidate_only_correct": gained,
+        "control_only_correct": lost,
+        "ci95_pt": [100.0 * (diff_adj - z * se), 100.0 * (diff_adj + z * se)],
+        "mcnemar_exact_p": _mcnemar_exact_p(gained, lost),
+    }
+
+
+def _mcnemar_exact_p(b: int, c: int) -> float:
+    """Two-sided exact McNemar p-value: a binomial(b + c, 1/2) test on the discordant items."""
+    m = b + c
+    if m == 0:
+        return 1.0
+    tail = sum(math.comb(m, k) for k in range(min(b, c) + 1)) / 2.0 ** m
+    return min(1.0, 2.0 * tail)
+
+
+def compare(control: Dict, candidate: Dict, gsm8k_ci_low_min_pt: float = -1.0) -> Dict:
+    """Paired quality decision: GSM8K's delta CI lower bound must clear the floor, tool-JSON must not drop."""
+    out = {t: paired_delta(control[t]["correct"], candidate[t]["correct"]) for t in ("gsm8k", "tool_json")}
+    checks = {
+        "gsm8k_ci_low": out["gsm8k"]["ci95_pt"][0] >= gsm8k_ci_low_min_pt,
+        "tool_json_no_drop": out["tool_json"]["delta_pt"] >= 0.0,
+    }
+    out["rule"] = {"gsm8k_ci_low_min_pt": gsm8k_ci_low_min_pt, "tool_json_min_delta_pt": 0.0}
+    out["checks"] = checks
+    out["pass"] = all(checks.values())
+    return out
