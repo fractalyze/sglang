@@ -23,7 +23,8 @@ from gate import config, hostwatch
 log = logging.getLogger(__name__)
 
 REFS_PATH = os.path.join(os.path.dirname(__file__), "refs.json")
-_ALLOWED_KEYS = {"commit", "python", "server_args", "env", "extends", "description", "weight_layout_change"}
+_ALLOWED_KEYS = {"commit", "python", "server_args", "env", "extends", "description", "weight_layout_change",
+                 "numerics_unchanged"}
 
 
 def load_ref(name: str) -> Dict:
@@ -37,7 +38,8 @@ def load_ref(name: str) -> Dict:
         raise ValueError(f"ref {name}: unknown keys {unknown}")
     if "extends" in ref:
         parent = load_ref(ref.pop("extends"))
-        merged = dict(parent)
+        # numerics_unchanged states a ref's own delta to its control, so it is never inherited.
+        merged = {k: v for k, v in parent.items() if k != "numerics_unchanged"}
         merged.update({k: v for k, v in ref.items() if k not in ("server_args", "env")})
         merged["server_args"] = parent.get("server_args", []) + ref.get("server_args", [])
         merged["env"] = {**parent.get("env", {}), **ref.get("env", {})}
@@ -46,6 +48,7 @@ def load_ref(name: str) -> Dict:
     ref.setdefault("python", config.VENV_PYTHON)
     ref.setdefault("env", {})
     ref.setdefault("weight_layout_change", False)
+    ref.setdefault("numerics_unchanged", False)
     return ref
 
 

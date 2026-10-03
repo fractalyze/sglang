@@ -181,6 +181,31 @@ def _launch_flags(cmd: Optional[str]) -> List[str]:
     return [t for t in (cmd or "").split() if t.startswith("--")]
 
 
+def agreement_threshold(aa_pair_means: List[float]) -> float:
+    """Hard timed-output-agreement bar from an A/A run's per-pair agreement means."""
+    n = len(aa_pair_means)
+    mean = sum(aa_pair_means) / n
+    sd = (sum((x - mean) ** 2 for x in aa_pair_means) / (n - 1)) ** 0.5 if n > 1 else 0.0
+    return min(aa_pair_means) - max(config.NOISE_SIGMAS * sd, config.AGREEMENT_MIN_MARGIN)
+
+
+def agreement_check(meta: Dict, agreement: List[Dict], noise: Dict) -> Dict:
+    """Hard for A/A and numerics_unchanged candidates; reported only for the rest (fidelity decides)."""
+    mean = sum(a["mean"] for a in agreement) / len(agreement)
+    hard = meta["control"]["name"] == meta["candidate"]["name"] or bool(meta["candidate"].get("numerics_unchanged"))
+    calib = noise.get("timed_output_agreement")
+    threshold = calib["threshold"] if calib else config.TIMED_OUTPUT_AGREEMENT_MIN
+    return {"hard": hard, "mean": mean, "threshold": threshold, "calibrated_from": calib and calib["from_exp"],
+            "above_threshold": mean >= threshold, "ok": mean >= threshold or not hard}
+
+
+def timed_streams_full_length(leg: Dict, meta: Dict) -> bool:
+    """Every timed stream produced its workload's decode length (the client sets ignore_eos)."""
+    want = {w["name"]: w["decode"] for w in meta["config"]["workloads"]}
+    return all(s["output_tokens"] == want[wl] for wl, reps in leg["workloads"].items() for r in reps
+               for s in r["streams"])
+
+
 def server_arg_diff(control: Dict, candidate: Dict, declared: List[str]) -> Dict:
     """server_info paths that differ between the arms, and those no declared flag accounts for.
 
@@ -258,12 +283,15 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
         "legs_ok": all(l["integrity"]["ok"] for ls in legs.values() for l in ls),
         "per_leg": [{"pair": l["pair"], "role": l["role"], **l["integrity"]} for ls in legs.values() for l in ls],
         "timed_output_agreement_mean": sum(a["mean"] for a in agreement) / len(agreement),
+        "timed_output_agreement_check": agreement_check(meta, agreement, _load_noise_file()),
+        "timed_streams_full_length": all(timed_streams_full_length(l, meta) for ls in legs.values() for l in ls),
         "undeclared_server_arg_diffs": args_diff["undeclared"],
         "weights_match_control": weights_match,
     }
     integrity["ok"] = (
         integrity["legs_ok"]
-        and integrity["timed_output_agreement_mean"] >= config.TIMED_OUTPUT_AGREEMENT_MIN
+        and integrity["timed_output_agreement_check"]["ok"]
+        and integrity["timed_streams_full_length"]
         and not args_diff["undeclared"]
         and (weights_match is not False or meta["candidate"]["weight_layout_change"])
         and meta["checkpoint"]["matches_hf_revision"]
@@ -312,10 +340,12 @@ def reevaluate(run_dir: str) -> Dict:
 NOISE_PATH = os.path.join(config.REFERENCE_DIR, "noise.json")
 
 
+def _load_noise_file() -> Dict:
+    return fidelity.load_json(NOISE_PATH) if os.path.exists(NOISE_PATH) else {}
+
+
 def _load_noise() -> Dict[str, float]:
-    if not os.path.exists(NOISE_PATH):
-        return {}
-    return fidelity.load_json(NOISE_PATH)["per_pair_log_sigma"]
+    return _load_noise_file().get("per_pair_log_sigma", {})
 
 
 def save_noise_from(report_path: str) -> Dict:
@@ -324,6 +354,9 @@ def save_noise_from(report_path: str) -> Dict:
         raise ValueError("noise must come from an A/A run (control == candidate)")
     noise = {"from_exp": report["exp_id"], "per_pair_log_sigma": report["summary"]["per_pair_log_sigma"],
              "bars": {m: stats.promotion_bar(s) for m, s in report["summary"]["per_pair_log_sigma"].items()}}
+    pair_means = [a["mean"] for a in report["timed_output_agreement"]]
+    noise["timed_output_agreement"] = {"from_exp": report["exp_id"], "pair_means": pair_means,
+                                       "threshold": agreement_threshold(pair_means)}
     fidelity.save_json(NOISE_PATH, noise)
     return noise
 

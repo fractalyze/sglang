@@ -1,6 +1,8 @@
+import json
 import math
 import os
 import sys
+import tempfile
 
 from absl.testing import absltest, parameterized
 
@@ -165,6 +167,60 @@ class RunnerTest(absltest.TestCase):
         b = {"server_info": {"launch_command": "--port 1 --enable-foo"}}
         self.assertEqual(runner.server_arg_diff(a, b, [])["undeclared"], ["launch_command:--enable-foo"])
         self.assertEqual(runner.server_arg_diff(a, b, ["--enable-foo"])["undeclared"], [])
+
+
+class AgreementTest(parameterized.TestCase):
+    def _meta(self, candidate="t2", numerics_unchanged=False):
+        return {"control": {"name": "base"}, "candidate": {"name": candidate, "numerics_unchanged": numerics_unchanged},
+                "config": {"workloads": [{"name": "W8", "decode": 128}]}}
+
+    def test_threshold_from_identical_aa_uses_margin(self):
+        self.assertAlmostEqual(runner.agreement_threshold([1.0] * 6), 1.0 - config.AGREEMENT_MIN_MARGIN)
+
+    def test_threshold_widens_with_aa_spread(self):
+        means = [0.9, 1.0, 0.9, 1.0]
+        sd = (sum((x - 0.95) ** 2 for x in means) / 3) ** 0.5
+        self.assertAlmostEqual(runner.agreement_threshold(means), 0.9 - config.NOISE_SIGMAS * sd)
+
+    @parameterized.parameters(
+        # (candidate, numerics_unchanged, mean, ok): T2 on bs2 agreed 0.16 with a pass on teacher-forced fidelity.
+        ("t2", False, 0.16, True),
+        ("t2", True, 0.16, False),
+        ("t2", True, 0.99, True),
+        ("base", False, 0.16, False),
+    )
+    def test_hard_only_for_numerics_unchanged_or_aa(self, candidate, numerics_unchanged, mean, ok):
+        noise = {"timed_output_agreement": {"from_exp": "AA-x", "threshold": 0.98}}
+        check = runner.agreement_check(self._meta(candidate, numerics_unchanged), [{"mean": mean}], noise)
+        self.assertEqual(check["ok"], ok)
+        self.assertEqual(check["above_threshold"], mean >= 0.98)
+
+    def test_uncalibrated_falls_back_to_floor(self):
+        check = runner.agreement_check(self._meta(numerics_unchanged=True), [{"mean": 0.6}], {})
+        self.assertEqual((check["threshold"], check["calibrated_from"], check["ok"]),
+                         (config.TIMED_OUTPUT_AGREEMENT_MIN, None, True))
+
+    def test_short_timed_stream_fails_integrity(self):
+        leg = {"workloads": {"W8": [{"streams": [{"output_tokens": 128}, {"output_tokens": 128}]}]}}
+        self.assertTrue(runner.timed_streams_full_length(leg, self._meta()))
+        leg["workloads"]["W8"][0]["streams"][1]["output_tokens"] = 7
+        self.assertFalse(runner.timed_streams_full_length(leg, self._meta()))
+
+
+class RefTest(absltest.TestCase):
+    def test_numerics_unchanged_is_not_inherited(self):
+        refs = {"base": {"commit": "c", "server_args": ["--a"], "numerics_unchanged": True},
+                "child": {"extends": "base", "server_args": ["--b"]}}
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(refs, f)
+        old, server.REFS_PATH = server.REFS_PATH, f.name
+        try:
+            child = server.load_ref("child")
+        finally:
+            server.REFS_PATH = old
+            os.unlink(f.name)
+        self.assertEqual(child["server_args"], ["--a", "--b"])
+        self.assertFalse(child["numerics_unchanged"])
 
 
 class HostWatchTest(absltest.TestCase):
