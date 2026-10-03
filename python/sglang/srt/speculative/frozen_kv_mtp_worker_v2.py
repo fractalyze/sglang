@@ -72,6 +72,7 @@ from sglang.srt.speculative.frozen_kv_mtp_utils import (
     target_kv_pool_view,
 )
 from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
+from sglang.srt.speculative.spec_replay import get_spec_replay
 from sglang.srt.speculative.spec_utils import (
     draft_pp_context,
     draft_tp_context,
@@ -758,6 +759,20 @@ class FrozenKVMTPWorkerV2(EAGLEWorkerV2):
             batch_output = self.target_worker.forward_batch_generation(
                 batch, capture_hidden_mode=CaptureHiddenMode.FULL
             )
+
+            replay = get_spec_replay(
+                num_draft_tokens=self.speculative_num_draft_tokens,
+                num_rows=self.req_to_token_pool.size,
+                device=self.device,
+            )
+            if replay is not None:
+                replay.register(
+                    rows=[req.req_pool_idx for req in batch.reqs],
+                    prompts=[req.origin_input_ids for req in batch.reqs],
+                )
+                batch_output.next_token_ids = replay.first_tokens(
+                    batch_output.next_token_ids, batch.req_pool_indices, batch.seq_lens
+                )
 
             # Spec_v2 convention: batch.seq_lens = length BEFORE this iter's tokens.
             batch_output.new_seq_lens = batch.seq_lens

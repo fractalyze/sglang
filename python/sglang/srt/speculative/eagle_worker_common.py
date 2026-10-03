@@ -17,6 +17,7 @@ from sglang.srt.model_executor.forward_batch_info import (
     PPProxyTensors,
 )
 from sglang.srt.speculative.eagle_info import EagleDraftInput, EagleVerifyInput
+from sglang.srt.speculative.spec_replay import get_spec_replay
 from sglang.srt.speculative.eagle_utils import (
     TreeMaskMode,
     build_tree_kernel_efficient,
@@ -490,6 +491,15 @@ def run_eagle_verify(
     """
     fwd_stream = torch.get_device_module(device).current_stream()
     verify_input: EagleVerifyInput = batch.spec_info
+    replay = get_spec_replay(
+        num_draft_tokens=num_draft_tokens,
+        num_rows=req_to_token_pool.size,
+        device=batch.seq_lens.device,
+    )
+    if replay is not None and not batch.forward_mode.is_idle():
+        verify_input.draft_token = replay.drafts(
+            verify_input.draft_token, batch.req_pool_indices, batch.seq_lens
+        )
     record_stream_for_v2_verify(batch, verify_input, fwd_stream)
 
     bs = len(batch.seq_lens)
@@ -599,6 +609,10 @@ def run_eagle_verify(
         grammar_mask,
         uno_target_max_top_k=uno_target_max_top_k,
     )
+    if replay is not None and not batch.forward_mode.is_idle():
+        predict, accept_lens, accept_index = replay.accept(
+            predict, accept_lens, accept_index, batch.req_pool_indices, batch.seq_lens
+        )
     new_seq_lens = batch.seq_lens + accept_lens
     clear_unaccepted_c128 = getattr(
         token_to_kv_pool_allocator.get_kvcache(),

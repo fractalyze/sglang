@@ -525,6 +525,11 @@ class Envs:
     SGLANG_SIMULATE_ACC_LEN = EnvFloat(-1)
     SGLANG_SIMULATE_ACC_METHOD = EnvStr("match-expected")
     SGLANG_SIMULATE_ACC_TOKEN_MODE = EnvStr("fixed")
+    # JSON of prompts and the continuation each one replays through speculative
+    # decoding, accepting SGLANG_SIMULATE_ACC_REPLAY_LEN tokens per verify
+    # (bonus included); see speculative/spec_replay.py. Unset: no replay.
+    SGLANG_SIMULATE_ACC_REPLAY_PATH = EnvStr("")
+    SGLANG_SIMULATE_ACC_REPLAY_LEN = EnvInt(3)
     SGLANG_SIMULATE_UNIFORM_EXPERTS = EnvBool(False)
     SGLANG_SIMULATE_ROUND_ROBIN_EXPERTS = EnvBool(False)
 
