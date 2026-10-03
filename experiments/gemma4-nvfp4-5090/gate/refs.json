@@ -81,5 +81,17 @@
       "SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM": "1"
     },
     "weight_layout_change": true
+  },
+  "base2-splits16-smallm": {
+    "extends": "base2-splits16",
+    "commit": "1fd77e64b05a88e4c89e9787e49c122caf3b47c8",
+    "env": {
+      "SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM": "1"
+    },
+    "description": "T3 stacked on base2-splits16 (W5, bs3): commit 1fd77e64b0 with SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM=1 on top of base2 plus split-KV 16."
+  },
+  "base3": {
+    "extends": "base2-splits16-smallm",
+    "description": "Pinned base3 (W5): base2 + split-KV 16 (T2S, kept on W1 TPOT -1.94%) + Triton small-M BF16 GEMM on commit 1fd77e64b0 (T3S, kept on W8 composite 1.0457), both on bs3."
   }
 }

@@ -14,6 +14,11 @@ gate's host-safety path (host.lock, preflight, 24G no-swap scope, watchdog):
              for M in --rows. cost(M rows) for the verify-cost curve.
   experts -- target only with --enable-return-routed-experts. Raw routing
              [tokens, layers, top_k] per stream, saved for verify_cost.py.
+  profile -- torch-profiler trace of --profile-steps decode steps at B=1
+             (W2's start_profile shape), after one warm-up request.
+  info    -- launch only. Saves /get_server_info, so a candidate's resolved
+             args can be diffed against its control with the gate's own check
+             before a gate run is spent on an undeclared derived field.
 
 Run on a gemma4nv host from the deployed experiments dir:
   python -m trials.spec.spec_probe --mode spec --ref smallm-gemm --out DIR -- <extra sglang flags>
@@ -140,13 +145,26 @@ def mode_experts(srv: server.Server, out: Dict, out_dir: str, decode_new: int) -
         out[f"experts_{name}"] = {"streams": len(arrs), "tokens": [int(a.shape[0]) for a in arrs]}
 
 
+def mode_profile(srv: server.Server, out: Dict, out_dir: str, steps: int) -> None:
+    srv.flush_cache()
+    asyncio.run(client.run_batch(srv.url, _timing_prompts("w8-prof-warm", 1), 64))
+    srv.flush_cache()
+    trace_dir = os.path.join(out_dir, "trace_b1")
+    requests.post(f"{srv.url}/start_profile", json=dict(
+        output_dir=trace_dir, num_steps=steps, activities=["CPU", "GPU"], profile_by_stage=True,
+        record_shapes=True, with_stack=False), timeout=60).raise_for_status()
+    res = asyncio.run(client.run_batch(srv.url, _timing_prompts("w8-prof", 1), 96))
+    out["profile"] = {"trace_dir": trace_dir, "stream": res["streams"][0] | {"output_ids": None}}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", required=True, choices=("spec", "sweep", "experts"))
+    ap.add_argument("--mode", required=True, choices=("spec", "sweep", "experts", "profile", "info"))
     ap.add_argument("--ref", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rows", default="1,2,3,4,5,6,8,12,16,24,32,40,48")
     ap.add_argument("--decode-new", type=int, default=256)
+    ap.add_argument("--profile-steps", type=int, default=12)
     ap.add_argument("extra", nargs="*")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
@@ -155,16 +173,19 @@ def main() -> None:
     with hostwatch.host_lock(), server.Server(ref, os.path.join(args.out, "server.log"), args.extra) as srv:
         out["commit"] = srv.commit
         out["preflight"] = srv.preflight
+        out["server_info"] = srv.server_info()
         if args.mode == "spec":
             mode_spec(srv, out, args.decode_new)
         elif args.mode == "sweep":
             mode_sweep(srv, out, [int(x) for x in args.rows.split(",")])
-        else:
+        elif args.mode == "experts":
             mode_experts(srv, out, args.out, args.decode_new)
+        elif args.mode == "profile":
+            mode_profile(srv, out, args.out, args.profile_steps)
     out["host_summary"] = srv.host_summary
     with open(os.path.join(args.out, "probe.json"), "w") as f:
         json.dump(out, f, indent=1)
-    print(json.dumps({k: v for k, v in out.items() if k not in ("preflight", "host_summary")}, indent=1))
+    print(json.dumps({k: v for k, v in out.items() if k not in ("preflight", "host_summary", "server_info")}, indent=1))
 
 
 if __name__ == "__main__":
