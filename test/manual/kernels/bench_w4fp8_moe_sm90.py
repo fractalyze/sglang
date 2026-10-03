@@ -1,4 +1,4 @@
-"""Per-shape large-M AWQ MoE GEMM benchmark on one H100: w4fp8_sm90 vs w4a16_sm90 vs Marlin.
+"""Per-shape large-M AWQ MoE GEMM benchmark on one H100: w4fp8_sm90 vs w4a16_sm90, Marlin and Humming W4A8.
 
 Shapes and weights are those of bench_w4a16_moe_sm90 (DeepSeek-V3.2 at TP8). Each
 row reports the time, the achieved TFLOP/s, and the floor: the larger of the FP8
@@ -43,9 +43,99 @@ from sglang.srt.layers.moe.fused_moe_triton import moe_align_block_size
 
 # H100 SXM5 dense FP8 tensor-core peak.
 PEAK_FP8_FLOPS = 989.4e12 * 2
+# The documented SGLANG_HUMMING_INPUT_QUANT_CONFIG value for FP8 activations.
+HUMMING_W4A8_INPUT_CONFIG = {"dtype": "float8e4m3"}
 
 
-def _legs(*, a_row_divisor, a, out, topk_ids, topk_weights, weights, marlin):
+def _humming_w4a8_legs(*, qweight, scales, qzeros, k, n):
+    """Humming W4A8 on the same AWQ weights, as its MoE runner serves it.
+
+    Returns {gemm type: run(a, out, topk_ids, a_row_divisor)}; each leg includes
+    the input quantisation, and grouped_contiguous gate-up also its token permute.
+    """
+    from humming.config import GemmType
+    from humming.layer import HummingLayer, HummingMethod
+
+    from sglang.kernels.ops.moe.ep_moe_kernels import moe_permute
+
+    layer = HummingLayer(
+        shape_n=n,
+        shape_k=k,
+        weight_config={"quant_method": "awq", "bits": 4, "group_size": GROUP},
+        input_config=dict(HUMMING_W4A8_INPUT_CONFIG),
+        num_experts=NUM_EXPERTS,
+        torch_dtype=torch.bfloat16,
+    ).cuda()
+    layer.load_from_tensors({"qweight": qweight, "scales": scales, "qzeros": qzeros})
+    layer.transform()
+
+    def configs(gemm_type):
+        compute = json.dumps({"use_f16_accum": False, "gemm_type": gemm_type.value})
+        tuning = HummingMethod.get_default_tuning_configs(
+            layer=layer, use_f16_accum=False, gemm_type=gemm_type, sublayer_name=""
+        )
+        return compute, tuning
+
+    def indexed(a, out, topk_ids, a_row_divisor):
+        compute, tuning = configs(GemmType.INDEXED)
+        valid_shape_m = topk_ids.numel()
+        block = next(
+            c["block_shape"][0] for lo, hi, c in tuning if lo < valid_shape_m <= hi
+        )
+        sorted_ids, expert_ids, num_padded = moe_align_block_size(
+            topk_ids, block, NUM_EXPERTS
+        )
+        tuning_str = json.dumps(tuning)
+
+        def run():
+            q, q_scale = HummingMethod.may_quant_input(layer=layer, inputs=a)
+            layer(
+                q,
+                outputs=out,
+                input_scale=q_scale,
+                sorted_ids=sorted_ids,
+                expert_ids=expert_ids,
+                num_tokens_padded=num_padded,
+                top_k=TOP_K if a_row_divisor == TOP_K else 1,
+                valid_shape_m=valid_shape_m,
+                compute_config=compute,
+                tuning_config=tuning_str,
+            )
+
+        return run
+
+    def grouped(a, out, topk_ids, a_row_divisor):
+        compute, tuning = configs(GemmType.GROUPED_CONTIGUOUS)
+        tuning_str = json.dumps(tuning)
+        valid_shape_m = topk_ids.numel()
+        # Down's input is gate-up's output, already in expert order.
+        _, _, expert_offsets = moe_permute(
+            inputs=a[: topk_ids.shape[0]], topk_ids=topk_ids, num_experts=NUM_EXPERTS
+        )
+
+        def run():
+            rows = a
+            if a_row_divisor == TOP_K:
+                rows, _, _ = moe_permute(
+                    inputs=a, topk_ids=topk_ids, num_experts=NUM_EXPERTS
+                )
+            q, q_scale = HummingMethod.may_quant_input(layer=layer, inputs=rows)
+            layer(
+                q,
+                outputs=out,
+                input_scale=q_scale,
+                expert_layout=expert_offsets,
+                valid_shape_m=valid_shape_m,
+                compute_config=compute,
+                tuning_config=tuning_str,
+            )
+
+        return run
+
+    return {"indexed": indexed, "grouped": grouped}
+
+
+def _legs(*, a_row_divisor, a, out, topk_ids, topk_weights, weights, marlin, humming):
     num_tokens = topk_ids.shape[0]
     a_rows = a.shape[0]
     top_k = TOP_K if a_row_divisor == TOP_K else 1
@@ -75,7 +165,7 @@ def _legs(*, a_row_divisor, a, out, topk_ids, topk_weights, weights, marlin):
     w4a16_routing = moe_align_block_size(topk_ids, block, NUM_EXPERTS)
     m_block = _marlin_block(num_tokens)
     m_routing = moe_align_block_size(topk_ids, m_block, NUM_EXPERTS)
-    return {
+    legs = {
         "w4fp8_sm90": fp8_gemm,
         "w4fp8_sm90+quant": fp8_gemm_with_quant,
         "w4a16_sm90": lambda: w4a16_moe_sm90_gemm(
@@ -93,12 +183,18 @@ def _legs(*, a_row_divisor, a, out, topk_ids, topk_weights, weights, marlin):
             a, out, m_routing, topk_weights, m_block, top_k, a_rows
         ),
     }
+    for gemm_type, make in humming.items():
+        legs[f"humming_w4a8_{gemm_type}"] = make(a, out, topk_ids, a_row_divisor)
+    return legs
 
 
 def bench_projection(name, k, n, a_row_divisor, tokens_per_expert, iters, results):
     qweight, scales, qzeros = _random_awq(k, n, seed=k + n)
     weights = repack_awq_moe_weights(qweight, scales, qzeros, GROUP)
     marlin = _marlin_gemm(qweight, scales, qzeros, k, n)
+    humming = _humming_w4a8_legs(
+        qweight=qweight, scales=scales, qzeros=qzeros, k=k, n=n
+    )
 
     for tpe in tokens_per_expert:
         num_tokens = tpe * NUM_EXPERTS // TOP_K
@@ -119,6 +215,7 @@ def bench_projection(name, k, n, a_row_divisor, tokens_per_expert, iters, result
             topk_weights=topk_weights,
             weights=weights,
             marlin=marlin,
+            humming=humming,
         )
         for method, fn in legs.items():
             row = {
