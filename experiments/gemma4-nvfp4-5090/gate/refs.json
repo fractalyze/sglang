@@ -67,5 +67,10 @@
       "--triton-attention-num-kv-splits",
       "16"
     ]
+  },
+  "smallm-gemm-t3c": {
+    "extends": "smallm-gemm",
+    "description": "T3c (W7, gemma4nv-b2-t3c): smallm-gemm (base2 + T3, switch on) on commit 826d472504, whose allowlist adds qkv_proj (sliding and full), the 128-expert router (split-K 8) and the tied lm_head to the Triton small-M BF16 GEMM; see trials/T3c-smallm-qkv-router-lmhead.md.",
+    "commit": "826d472504bb59ccaa48053c53e628cce5efe490"
   }
 }
