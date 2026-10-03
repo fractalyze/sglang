@@ -1,6 +1,48 @@
 # T4 (gemma4nv-b3-t4): fuse the per-layer decode glue (q/k/v norm + RoPE + FP8 KV write, norm pairs)
 
-Registered before any code exists (W9, 2026-10-03). Control `base4` (base3 + T3b, pinned by W9). **Not implemented; waiting for the coordinator's go.**
+Registered before any code exists (W9, 2026-10-03). Control `base4` (base3 + T3b, pinned by W9).
+
+## Implementation (W9b, after the go; the frozen registration starts at "Why this, now")
+
+- **Code:** branch `jumanzii/gemma4nv-b3-t4`, commit `1d859709ef` on base4's `36aa977541`.
+  - Switch `SGLANG_OPT_GEMMA4_FUSED_GLUE` (`Gemma4FusedGlue`: 0 off, 1 = group A, 2 = A-D).
+  - Files: `gemma4_fused_ops.py`, `gemma4_causal.py`, `environ.py`, and two tests. No frozen file.
+  - Gate refs: `base4-glue1` (level 1) and `base4-glue2` (level 2).
+- **Why the tree disables its own RoPE + KV-write fusion:**
+  - `can_fuse = False` with the comment "DISABLED: causes accuracy regression in launch_server
+    path" arrived already disabled in upstream PR #23280 (`2c8357f794`, XPU bring-up of Gemma 4,
+    2026-06-04). The PR body, review comments and tests say nothing more; there is no issue.
+  - The CUDA helper it would call (`create_fused_set_kv_buffer_arg`, `enable_fused_set_kv_buffer`
+    in `models/utils.py`) only supports a bf16 pool, rejects `SWAKVPool`, and asserts that there
+    are no KV scales. It writes at raw `out_cache_loc`. On a hybrid SWA pool that is the wrong
+    slot for the 25 sliding layers, which need the backend's full->SWA-translated
+    `swa_out_cache_loc`. That is a plausible source of the regression, but it is inferred, not
+    documented.
+  - This checkpoint violates all three conditions: FP8 E4M3 KV, a hybrid SWA pool, and
+    (unit) scales. T4 does not reuse that path. Its kernel writes where `TritonAttnBackend`'s
+    own store writes, and any other pool or backend keeps the unfused path, with a one-time
+    warning.
+- **Byte-level KV test:** `test/registered/kernels/ops/layernorm/test_gemma4_fused_qkv_rope_kv.py`,
+  30 cases.
+  - Shapes: sliding (16/8 heads, hd 256) and full (16/2 heads, hd 512, proportional RoPE,
+    separate K and V copies).
+  - M in 1, 8, 22, 32, 300; scale None, 1.0, 0.37; scattered slots stand in for the SWA ring.
+  - Result: q/k/v and every K/V-cache byte are **bit-exact** against the real unfused ops
+    (`gemma_qkv_rmsnorm` -> JIT `rope.cuh` -> `MHATokenToKVPool.set_kv_buffer`).
+  - Bit-exactness needed three matched details: the norm stores bf16 before RoPE; torch's
+    `bf16.div_(fp32 0-dim scale)` casts the scale to bf16 first; and nvcc contracts rope.cuh to
+    `fma(x, cos, -(y*sin))` and `fma(y, cos, x*sin)`.
+  - One semantic difference, at scale != 1 only: the unfused store also divides the k/v
+    activations in place, and the fused kernel leaves them undivided. This checkpoint's scales
+    are 1.0, since it has no `k_scale` tensors.
+  - A profile test pins the four ATen elementwise launches per layer to `set_kv_buffer`'s
+    `div_` + `.to(float8_e4m3fn)` on K and V.
+- **Norm pairs B/C/D** (`test_gemma4_fused_norm_pairs.py`): not bit-exact, because the sums run
+  in a different order than in FlashInfer's kernels.
+  - C and D are within 1 bf16 ulp.
+  - B's residual is within 1 ulp of the larger addend, which can be 2 ulps of a smaller
+    residual.
+  - Differing elements are <= 0.1% for B and <= 1% for C/D.
 
 ## Why this, now
 
