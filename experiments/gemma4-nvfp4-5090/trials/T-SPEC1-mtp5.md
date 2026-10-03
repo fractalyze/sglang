@@ -1,5 +1,13 @@
 # T-SPEC1 (gemma4nv-b2-tspec1): MTP speculative decoding, 5 drafts, at every batch size
 
+**Status: not promoted, parked (W8, 2026-10-03).** Gate `T-SPEC1-20261003-105933-build-server-2-51affe` vs `base3`:
+- W1 TPOT 5.751 → 3.946 ms (-31.4%, deciding, clears the bar);
+- W8 composite 1.259 (guard, passes);
+- W32 -20.3% (guard, fails on KV retraction);
+- fidelity pass, integrity ok.
+
+Every metric landed inside its frozen interval. See `REPORT-bs2-w8.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W8 (bs2) before any gate run. Config only: no `python/sglang` change.
 
 ## Control and candidate
