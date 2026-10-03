@@ -40,6 +40,7 @@ limitations under the License.
 
 #include "fragment.cuh"
 #include <cstdint>
+#include <limits>
 
 namespace sglang {
 
@@ -178,6 +179,10 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   const int tid = threadIdx.x;
   const int chunk = tid % kChunksPerTokenRow;
   const int first_row = tid / kChunksPerTokenRow;
+  // 128B-swizzled K-major rows are 128 bytes, with 16B chunk c of row r stored at
+  // chunk c ^ (r % 8); this thread's rows step by kRowStride, a multiple of 8.
+  static_assert(kTileK == 128 && kRowStride % 8 == 0, "one swizzle phase per thread");
+  const int token_chunk_offset = (chunk ^ (first_row % 8)) * 16;
 
   const int n_tiles = p.n / kTileN;
   const int k_tiles = p.k / kTileK;
@@ -188,13 +193,16 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
     const TileCoord c = tile_coord(p, tile, n_tiles);
     if (c.expert < 0) continue;
 
-    int64_t a_row[kRowsPerThread];
-    bool valid[kRowsPerThread];
+    // 32-bit row indices and a validity mask keep the gather state inside the
+    // producer's register budget; the host checks that row offsets fit in int32.
+    int a_row[kRowsPerThread];
+    uint32_t valid = 0;
 #pragma unroll
     for (int i = 0; i < kRowsPerThread; ++i) {
       const int id = p.sorted_token_ids[c.m_block * kTokenBlock + first_row + i * kRowStride];
-      valid[i] = id < p.num_rows;
-      a_row[i] = valid[i] ? id / p.a_row_divisor : 0;
+      const bool in_range = id < p.num_rows;
+      valid |= uint32_t(in_range) << i;
+      a_row[i] = in_range ? id / p.a_row_divisor : 0;
     }
     const int64_t stage_index = (int64_t(c.expert) * n_tiles + c.n_tile) * k_tiles;
 
@@ -211,15 +219,15 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
         bulk_copy_g2s(stage + Cfg::kZeroOffset, p.zeros + block * kTileN, kZeroBytes, &full[s]);
       }
 
-      auto tokens = cute::make_tensor(
-          cute::make_smem_ptr(reinterpret_cast<e4m3*>(stage + Cfg::kTokenOffset)), typename Cfg::SmemLayoutTokens{});
-      float* token_scales = reinterpret_cast<float*>(stage + Cfg::kTokenScaleOffset);
+      uint8_t* tokens = stage + Cfg::kTokenOffset + first_row * kTileK + token_chunk_offset;
+      float* token_scales = reinterpret_cast<float*>(stage + Cfg::kTokenScaleOffset) + first_row;
+      const e4m3* a = p.a + kt * kTileK + chunk * 16;
 #pragma unroll
       for (int i = 0; i < kRowsPerThread; ++i) {
-        const int row = first_row + i * kRowStride;
-        cp_async_16(&tokens(row, chunk * 16), p.a + a_row[i] * p.k + kt * kTileK + chunk * 16, valid[i]);
+        const bool row_valid = (valid >> i) & 1;
+        cp_async_16(tokens + i * kRowStride * kTileK, a + a_row[i] * p.k, row_valid);
         if (chunk == 0) {
-          cp_async_4(&token_scales[row], p.a_scales + a_row[i] * k_tiles + kt, valid[i]);
+          cp_async_4(token_scales + i * kRowStride, p.a_scales + a_row[i] * k_tiles + kt, row_valid);
         }
       }
       cp_async_arrive_noinc(&full[s]);
@@ -305,12 +313,14 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint64_t* full, uint64
       warpgroup_fence_operand(partial);
       warpgroup_fence_operand(frag_a);
 
-      const __nv_bfloat16* weight_scales =
-          reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset) + wg * kWarpgroupRows;
+      const __nv_bfloat16* weight_scales = reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset);
+      const float scale_lo = __bfloat162float(weight_scales[row_lo]);
+      const float scale_hi = __bfloat162float(weight_scales[row_lo + 8]);
       const float* token_scales = reinterpret_cast<const float*>(stage + Cfg::kTokenScaleOffset);
 #pragma unroll
       for (int i = 0; i < size(acc); ++i) {
-        const float s_w = __bfloat162float(weight_scales[get<0>(acc_coord(i))]);
+        // A thread's accumulator rows are only row_lo and row_lo + 8 of its warpgroup.
+        const float s_w = get<0>(acc_coord(i)) % 16 < 8 ? scale_lo : scale_hi;
         acc(i) += partial(i) * (s_w * token_scales[get<1>(acc_coord(i))]);
       }
       device::ptx::mbar_arrive(&empty[s]);
@@ -349,7 +359,8 @@ template <int kTokenBlock>
 __global__ void __launch_bounds__(kThreads, 1) w4fp8_moe_sm90_kernel(const __grid_constant__ Params p) {
   using Cfg = Config<kTokenBlock>;
   extern __shared__ uint8_t smem_raw[];
-  uint8_t* stages = reinterpret_cast<uint8_t*>((reinterpret_cast<uintptr_t>(smem_raw) + 1023) & ~uintptr_t{1023});
+  // Pointer arithmetic, not an integer round trip, so loads stay in the shared space.
+  uint8_t* stages = smem_raw + ((1024 - device::ptx::to_shared(smem_raw) % 1024) % 1024);
   bf16* epilogue = reinterpret_cast<bf16*>(stages + Cfg::kStages * Cfg::kStageBytes);
   uint64_t* full = reinterpret_cast<uint64_t*>(reinterpret_cast<uint8_t*>(epilogue) + Cfg::kEpilogueBytes);
   uint64_t* empty = full + Cfg::kStages;
@@ -420,6 +431,8 @@ struct W4Fp8MoeSm90Kernel {
     CHECK_HOST(topk_weights.size(0) == 0 || topk_weights.size(0) == num_rows)
         << "topk_weights must be empty or hold one weight per routed row";
     CHECK_HOST(a_row_divisor >= 1) << "a_row_divisor must be positive, got " << a_row_divisor;
+    CHECK_HOST(a_rows.unwrap() * k <= std::numeric_limits<int32_t>::max())
+        << "activation offsets must fit in int32, got " << a_rows.unwrap() << " x " << k;
 
     const Params params{
         static_cast<const e4m3*>(a.data_ptr()),
