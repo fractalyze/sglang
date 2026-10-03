@@ -166,13 +166,14 @@ TOKEN_BLOCKS = (8, 16, 32, 64)
 def select_token_block(num_tokens: int, top_k: int, num_experts: int) -> int:
     """Smallest block that holds most experts' routed tokens.
 
-    Per-expert counts are roughly binomial; a block below mean + 1.5 sd sends
+    Per-expert counts are roughly binomial; a block below mean + 2.5 sd sends
     many experts into a second block that streams their weights again, while a
-    wider one makes every wgmma wider. The margin was picked from an H100 sweep
-    of 4 to 64 tokens per expert; re-sweep when the kernel changes.
+    wider one makes every wgmma wider. The margin minimises gate-up plus down
+    time in an H100 sweep of 4 to 64 tokens per expert; re-sweep when the
+    kernel changes.
     """
     mean = num_tokens * top_k / num_experts
-    target = mean + 1.5 * math.sqrt(mean)
+    target = mean + 2.5 * math.sqrt(mean)
     for block in TOKEN_BLOCKS:
         if target <= block:
             return block
