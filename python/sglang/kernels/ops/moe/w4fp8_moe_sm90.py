@@ -13,6 +13,7 @@ w4a16 bf16 fragment order lines up with the e4m3 fragment the FP8 wgmma reads;
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -46,17 +47,20 @@ def _quantize_activations_kernel(
     k_groups,
     E4M3_MAX: tl.constexpr,
     GROUP: tl.constexpr,
+    GROUPS_PER_PROGRAM: tl.constexpr,
 ):
     row = tl.program_id(0).to(tl.int64)
-    group = tl.program_id(1)
-    f = tl.arange(0, GROUP)
-    col = f % 16
-    src = group * GROUP + f - col + 2 * (col // 4) + col % 2 + 8 * (col % 4 // 2)
-    x = tl.load(a_ptr + row * k + src).to(tl.float32)
-    scale = tl.maximum(tl.max(tl.abs(x)), 1e-10) / E4M3_MAX
-    q = tl.clamp(x / scale, -E4M3_MAX, E4M3_MAX)
-    tl.store(q_ptr + row * k + group * GROUP + f, q.to(q_ptr.dtype.element_ty))
-    tl.store(scales_ptr + row * k_groups + group, scale)
+    first_group = tl.program_id(1) * GROUPS_PER_PROGRAM
+    groups = first_group + tl.arange(0, GROUPS_PER_PROGRAM)
+    offsets = groups[:, None] * GROUP + tl.arange(0, GROUP)[None, :]
+    x = tl.load(a_ptr + row * k + offsets).to(tl.float32)
+    scale = tl.maximum(tl.max(tl.abs(x), axis=1), 1e-10) / E4M3_MAX
+    q = tl.clamp(x / scale[:, None], -E4M3_MAX, E4M3_MAX)
+    # Column 8h + 2t + l of each 16 moves to 4t + 2h + l: K_PERMUTE16 as a (h, t) transpose.
+    q = tl.reshape(q, (GROUPS_PER_PROGRAM, GROUP // 16, 2, 4, 2))
+    q = tl.reshape(tl.permute(q, (0, 1, 3, 2, 4)), (GROUPS_PER_PROGRAM, GROUP))
+    tl.store(q_ptr + row * k + offsets, q.to(q_ptr.dtype.element_ty))
+    tl.store(scales_ptr + row * k_groups + groups, scale)
 
 
 @debug_kernel_api
@@ -67,11 +71,21 @@ def quantize_activations(a: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """
     rows, k = a.shape
     assert a.is_contiguous() and k % TILE_K == 0, a.shape
+    k_groups = k // TILE_K
     q = torch.empty((rows, k), dtype=torch.float8_e4m3fn, device=a.device)
-    scales = torch.empty((rows, k // TILE_K), dtype=torch.float32, device=a.device)
+    scales = torch.empty((rows, k_groups), dtype=torch.float32, device=a.device)
+    # Up to eight groups (2 KB of bf16) per program; must divide the row's groups.
+    groups_per_program = math.gcd(k_groups, 8)
     if rows > 0:
-        _quantize_activations_kernel[(rows, k // TILE_K)](
-            a, q, scales, k, k // TILE_K, E4M3_MAX=_E4M3_MAX, GROUP=TILE_K
+        _quantize_activations_kernel[(rows, k_groups // groups_per_program)](
+            a,
+            q,
+            scales,
+            k,
+            k_groups,
+            E4M3_MAX=_E4M3_MAX,
+            GROUP=TILE_K,
+            GROUPS_PER_PROGRAM=groups_per_program,
         )
     return q, scales
 
