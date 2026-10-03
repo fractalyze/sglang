@@ -47,6 +47,11 @@ _FP8_WEIGHT_TUNED_SHAPES: Dict[Tuple[int, int], _TileConfig] = {
     (2816, 4096): _TileConfig(32, 256, 4),
     (2816, 8192): _TileConfig(32, 256, 4),
 }
+# FP8 E4M3 vocab heads, kept apart so the linear allowlist above never picks them
+# up: Gemma-4-26B-A4B MTP assistant's tied head (SGLANG_OPT_MTP_FP8_LM_HEAD).
+_FP8_HEAD_TUNED_SHAPES: Dict[Tuple[int, int], _TileConfig] = {
+    (262144, 1024): _TileConfig(64, 256, 4),
+}
 _FP8_E4M3_MAX = 448.0
 
 
@@ -123,6 +128,18 @@ def triton_small_m_fp8_weight_gemm(
     """``(x @ weight.T) * scale`` for an E4M3 ``weight`` [N, K] and fp32 ``scale`` [N], M <= MAX_M."""
     n, k = weight.shape
     return _launch(x, weight, scale, _FP8_WEIGHT_TUNED_SHAPES[(n, k)])
+
+
+def use_fp8_vocab_head(n: int, k: int) -> bool:
+    return (n, k) in _FP8_HEAD_TUNED_SHAPES
+
+
+def triton_small_m_fp8_vocab_head(
+    x: torch.Tensor, weight: torch.Tensor, scale: torch.Tensor
+) -> torch.Tensor:
+    """Logits ``(x @ weight.T) * scale`` for an E4M3 vocab head [V, K], M <= MAX_M."""
+    n, k = weight.shape
+    return _launch(x, weight, scale, _FP8_HEAD_TUNED_SHAPES[(n, k)])
 
 
 def _launch(

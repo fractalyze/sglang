@@ -1386,6 +1386,11 @@ class Envs:
     # extend kernel launches one program per (seq, head) at verify, which
     # idles most SMs at small batch on the RTX 5090.
     SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA = EnvBool(False)
+    # Compute the Gemma-4 MTP assistant's draft logits from an FP8 E4M3 copy of
+    # its tied 262144 x 1024 head (per-row scales) on the Triton small-M kernel.
+    # Off by default: it changes draft numerics (acceptance only; verify is
+    # untouched), and the BF16 head read is ~47% of the draft loop on the 5090.
+    SGLANG_OPT_MTP_FP8_LM_HEAD = EnvBool(False)
     SGLANG_NGRAM_FORCE_GREEDY_VERIFY = EnvBool(False)
 
     # ===================================================================
