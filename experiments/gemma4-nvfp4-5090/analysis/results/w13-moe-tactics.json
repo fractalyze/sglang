@@ -1,0 +1,2104 @@
+{
+ "device": "NVIDIA GeForce RTX 5090",
+ "torch": "2.13.0+cu130",
+ "results": [
+  {
+   "case": "verify_B1",
+   "M": 6,
+   "finalize": false,
+   "n_gemm1": 20,
+   "n_gemm2": 20,
+   "tuned_us": 78.13099771738052,
+   "tuned_kernels": [
+    "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+    "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*",
+    "void tensorrt_llm::kernels::cutlass_kernels::computeStridesTmaWarpSpecializedKernel<__nv_fp4_e2m1, __nv_fp4_e2m1, __nv_bfloat16, __nv_bfloat16>(long const*, ten",
+    "void tensorrt_llm::kernels::cutlass_kernels::doActivationKernel<__nv_fp4_e2m1, __nv_bfloat16, __nv_bfloat16, tensorrt_llm::kernels::cutlass_kernels::GLUAdaptor<",
+    "void tensorrt_llm::kernels::cutlass_kernels::expandInputRowsKernel<__nv_bfloat16, __nv_fp4_e2m1, (tensorrt_llm::kernels::cutlass_kernels::TmaWarpSpecializedGrou",
+    "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal",
+    "void tensorrt_llm::kernels::cutlass_kernels::fusedBuildExpertMapsSortFirstTokenKernel<32, 8, 8>(int const*, int*, int*, long*, long, int, int, int, int)"
+   ],
+   "rows": [
+    {
+     "stage": "gemm1",
+     "t1": 0,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 94.14099901914597,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 1,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 94.47699785232544,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 2,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 112.3720034956932,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 3,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 110.22400110960007,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 4,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 5,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 6,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 155.6140035390854,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 7,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 160.56199371814728,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 8,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 106.91399872303009,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 9,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 107.50100016593933,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 10,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 94.06699985265732,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 11,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 94.66399997472763,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 12,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 97.6639986038208,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 13,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 154.88100051879883,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 14,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 15,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 16,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 89.47599679231644,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 17,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 89.30999785661697,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 18,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 90.63100069761276,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 19,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 90.33700078725815,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 89.34400230646133,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 21,
+     "max_abs_vs_tuned": 0.0,
+     "us": 91.01399779319763,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 22,
+     "max_abs_vs_tuned": 0.0,
+     "us": 112.17699944972992,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 23,
+     "max_abs_vs_tuned": 0.0,
+     "us": 97.05500304698944,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 24,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 25,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 26,
+     "max_abs_vs_tuned": 0.0,
+     "us": 149.39799904823303,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 27,
+     "max_abs_vs_tuned": 0.0,
+     "us": 161.75100207328796,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 28,
+     "max_abs_vs_tuned": 0.0,
+     "us": 107.30999708175659,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 29,
+     "max_abs_vs_tuned": 0.0,
+     "us": 113.04999887943268,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 30,
+     "max_abs_vs_tuned": 0.0,
+     "us": 89.49899673461914,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 31,
+     "max_abs_vs_tuned": 0.0,
+     "us": 91.26999974250793,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 32,
+     "max_abs_vs_tuned": 0.0,
+     "us": 88.2359966635704,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 33,
+     "max_abs_vs_tuned": 0.0,
+     "us": 127.39799916744232,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 34,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 35,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 36,
+     "max_abs_vs_tuned": 0.0,
+     "us": 79.74199950695038,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 37,
+     "max_abs_vs_tuned": 0.0,
+     "us": 79.61499691009521,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 38,
+     "max_abs_vs_tuned": 0.0,
+     "us": 81.63599669933319,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 39,
+     "max_abs_vs_tuned": 0.0,
+     "us": 82.1869969367981,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "verify_B1",
+   "M": 6,
+   "finalize": true,
+   "n_gemm1": 20,
+   "n_gemm2": 40,
+   "tuned_us": 76.17499679327011,
+   "tuned_kernels": [
+    "Memset (Device)",
+    "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+    "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*",
+    "void tensorrt_llm::kernels::cutlass_kernels::computeStridesTmaWarpSpecializedKernel<__nv_fp4_e2m1, __nv_fp4_e2m1, __nv_bfloat16, __nv_bfloat16>(long const*, ten",
+    "void tensorrt_llm::kernels::cutlass_kernels::doActivationKernel<__nv_fp4_e2m1, __nv_bfloat16, __nv_bfloat16, tensorrt_llm::kernels::cutlass_kernels::GLUAdaptor<",
+    "void tensorrt_llm::kernels::cutlass_kernels::expandInputRowsKernel<__nv_bfloat16, __nv_fp4_e2m1, (tensorrt_llm::kernels::cutlass_kernels::TmaWarpSpecializedGrou",
+    "void tensorrt_llm::kernels::cutlass_kernels::fusedBuildExpertMapsSortFirstTokenKernel<32, 8, 8>(int const*, int*, int*, long*, long, int, int, int, int)"
+   ],
+   "rows": [
+    {
+     "stage": "gemm1",
+     "t1": 0,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 94.03199702501297,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 1,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 94.76400166749954,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 2,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 112.46799677610397,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 3,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 110.36399751901627,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 4,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 5,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 6,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 154.81600165367126,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 7,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 160.2099984884262,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 8,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 107.18200355768204,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 9,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 107.58300125598907,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 10,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 94.33899819850922,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 11,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 94.68799829483032,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 12,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 97.95600175857544,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 13,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 155.10499477386475,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 14,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 15,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 16,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 89.39799666404724,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 17,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 89.50000256299973,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 18,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 90.81900119781494,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 19,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 90.59000015258789,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 89.64399993419647,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 21,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 91.23200178146362,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 22,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 111.87200248241425,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 23,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 97.46000170707703,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 24,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 25,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 26,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 149.4400054216385,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 27,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 161.9729995727539,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 28,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 107.60500282049179,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 29,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 113.35700005292892,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 30,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 84.78900045156479,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 31,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 86.44700050354004,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 32,
+     "error": "RuntimeError: [TensorRT-LLM][ERROR] Assertion failed: Failed to initialize cutlass TMA WS grouped gemm. Error: Error Internal (/data/jooman/gemma4nv/cache/flashinfer/.cache/flashinfer/0.6.18/120f/generated/cutlass_"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 33,
+     "error": "RuntimeError: [TensorRT-LLM][ERROR] Assertion failed: Failed to initialize cutlass TMA WS grouped gemm. Error: Error Internal (/data/jooman/gemma4nv/cache/flashinfer/.cache/flashinfer/0.6.18/120f/generated/cutlass_"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 34,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 35,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 36,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 146.20999991893768,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 37,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 158.37199985980988,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 38,
+     "max_abs_vs_tuned": 0.0048828125,
+     "us": 103.3720001578331,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 39,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 108.08199644088745,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 40,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 89.85599875450134,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 41,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 91.47199988365173,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 42,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 88.63600343465805,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 43,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 127.2830069065094,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 44,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 45,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 46,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 80.35700023174286,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 47,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 83.95600318908691,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 48,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 82.52699673175812,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 49,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 86.34299784898758,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 50,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 84.757000207901,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 51,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 86.46900206804276,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 52,
+     "max_abs_vs_tuned": 0.0048828125,
+     "us": 84.87299829721451,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 53,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 125.37699937820435,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 54,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 55,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 56,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 76.60699635744095,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 57,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 76.39800012111664,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 58,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 78.00400257110596,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 16,
+     "t2": 59,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 78.2409980893135,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "verify_B8",
+   "M": 48,
+   "finalize": false,
+   "n_gemm1": 20,
+   "n_gemm2": 20,
+   "tuned_us": 165.59499502182007,
+   "tuned_kernels": [
+    "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+    "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*",
+    "void tensorrt_llm::kernels::cutlass_kernels::computeStridesTmaWarpSpecializedKernel<__nv_fp4_e2m1, __nv_fp4_e2m1, __nv_bfloat16, __nv_bfloat16>(long const*, ten",
+    "void tensorrt_llm::kernels::cutlass_kernels::doActivationKernel<__nv_fp4_e2m1, __nv_bfloat16, __nv_bfloat16, tensorrt_llm::kernels::cutlass_kernels::GLUAdaptor<",
+    "void tensorrt_llm::kernels::cutlass_kernels::expandInputRowsKernel<__nv_bfloat16, __nv_fp4_e2m1, (tensorrt_llm::kernels::cutlass_kernels::TmaWarpSpecializedGrou",
+    "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal",
+    "void tensorrt_llm::kernels::cutlass_kernels::fusedBuildExpertMapsSortFirstTokenKernel<64, 8, 8>(int const*, int*, int*, long*, long, int, int, int, int)"
+   ],
+   "rows": [
+    {
+     "stage": "gemm1",
+     "t1": 0,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 185.46199798583984,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 1,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 185.5269968509674,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 2,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 212.44099736213684,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 3,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 220.9009975194931,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 4,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 5,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 6,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 300.3450036048889,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 7,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 303.91600728034973,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 8,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 206.38899505138397,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 9,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 207.89499580860138,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 10,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 185.30799448490143,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 11,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 185.5980008840561,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 12,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 192.72899627685547,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 13,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 319.9859857559204,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 14,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 15,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 16,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 179.98400330543518,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 17,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 179.60000038146973,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 18,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 181.39000236988068,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 19,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 180.56899309158325,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.0,
+     "us": 179.10000681877136,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 21,
+     "max_abs_vs_tuned": 0.0,
+     "us": 178.056001663208,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 22,
+     "max_abs_vs_tuned": 0.0,
+     "us": 210.39900183677673,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 23,
+     "max_abs_vs_tuned": 0.0,
+     "us": 196.73199951648712,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 24,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 25,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 26,
+     "max_abs_vs_tuned": 0.0,
+     "us": 257.36600160598755,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 27,
+     "max_abs_vs_tuned": 0.0,
+     "us": 266.45201444625854,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 28,
+     "max_abs_vs_tuned": 0.0,
+     "us": 197.77700304985046,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 29,
+     "max_abs_vs_tuned": 0.0,
+     "us": 201.337993144989,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 30,
+     "max_abs_vs_tuned": 0.0,
+     "us": 178.8879930973053,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 31,
+     "max_abs_vs_tuned": 0.0,
+     "us": 178.0090034008026,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 32,
+     "max_abs_vs_tuned": 0.0,
+     "us": 179.78300154209137,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 33,
+     "max_abs_vs_tuned": 0.0,
+     "us": 251.9330084323883,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 34,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 35,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 36,
+     "max_abs_vs_tuned": 0.0,
+     "us": 165.95999896526337,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 37,
+     "max_abs_vs_tuned": 0.0,
+     "us": 165.69699347019196,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 38,
+     "max_abs_vs_tuned": 0.0,
+     "us": 168.64000260829926,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 39,
+     "max_abs_vs_tuned": 0.0,
+     "us": 169.10800337791443,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "verify_B8",
+   "M": 48,
+   "finalize": true,
+   "n_gemm1": 20,
+   "n_gemm2": 40,
+   "tuned_us": 160.3900045156479,
+   "tuned_kernels": [
+    "Memset (Device)",
+    "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+    "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*",
+    "void tensorrt_llm::kernels::cutlass_kernels::computeStridesTmaWarpSpecializedKernel<__nv_fp4_e2m1, __nv_fp4_e2m1, __nv_bfloat16, __nv_bfloat16>(long const*, ten",
+    "void tensorrt_llm::kernels::cutlass_kernels::doActivationKernel<__nv_fp4_e2m1, __nv_bfloat16, __nv_bfloat16, tensorrt_llm::kernels::cutlass_kernels::GLUAdaptor<",
+    "void tensorrt_llm::kernels::cutlass_kernels::expandInputRowsKernel<__nv_bfloat16, __nv_fp4_e2m1, (tensorrt_llm::kernels::cutlass_kernels::TmaWarpSpecializedGrou",
+    "void tensorrt_llm::kernels::cutlass_kernels::fusedBuildExpertMapsSortFirstTokenKernel<64, 8, 8>(int const*, int*, int*, long*, long, int, int, int, int)"
+   ],
+   "rows": [
+    {
+     "stage": "gemm1",
+     "t1": 0,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 185.59400737285614,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 1,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 186.00299954414368,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 2,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 211.58799529075623,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 3,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 220.78900039196014,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 4,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 5,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 6,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 302.2960126399994,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 7,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 304.6860098838806,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 8,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 206.8459987640381,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 9,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 207.29300379753113,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 10,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 186.10499799251556,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 11,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 186.03099882602692,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 12,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 192.21200048923492,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 13,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 317.2779977321625,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 14,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 15,
+     "t2": 20,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm1",
+     "t1": 16,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 179.75200712680817,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 17,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 178.93899977207184,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 18,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 181.47499859333038,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm1",
+     "t1": 19,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 181.5290004014969,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 20,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 179.28899824619293,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 21,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 178.16799879074097,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 22,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 210.25900542736053,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 23,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 196.90999388694763,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 24,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 25,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 26,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 257.2900056838989,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 27,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 268.6080038547516,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 28,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 197.69099354743958,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 29,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 201.67499780654907,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 30,
+     "max_abs_vs_tuned": 0.005859375,
+     "us": 172.31899499893188,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 31,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 169.81400549411774,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 32,
+     "error": "RuntimeError: [TensorRT-LLM][ERROR] Assertion failed: Failed to initialize cutlass TMA WS grouped gemm. Error: Error Internal (/data/jooman/gemma4nv/cache/flashinfer/.cache/flashinfer/0.6.18/120f/generated/cutlass_"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 33,
+     "error": "RuntimeError: [TensorRT-LLM][ERROR] Assertion failed: Failed to initialize cutlass TMA WS grouped gemm. Error: Error Internal (/data/jooman/gemma4nv/cache/flashinfer/.cache/flashinfer/0.6.18/120f/generated/cutlass_"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 34,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 35,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 36,
+     "max_abs_vs_tuned": 0.005859375,
+     "us": 254.06500697135925,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 37,
+     "max_abs_vs_tuned": 0.005859375,
+     "us": 264.4129991531372,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 38,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 195.7630068063736,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 39,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 197.6889967918396,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 40,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 178.90499532222748,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 41,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 178.05799841880798,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 42,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 179.76799607276917,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 43,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 251.4129877090454,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 44,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 45,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 46,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 166.1970019340515,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 47,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 165.9179925918579,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 48,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 168.32800209522247,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 49,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 169.50500011444092,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array",
+      "void tensorrt_llm::kernels::cutlass_kernels::finalizeMoeRoutingKernel<__nv_bfloat16, __nv_bfloat16, __nv_bfloat16, (tensorrt_llm::kernels::cutlass_kernels::Scal"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 50,
+     "max_abs_vs_tuned": 0.005859375,
+     "us": 171.74500226974487,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 51,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 170.43200135231018,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 52,
+     "max_abs_vs_tuned": 0.005859375,
+     "us": 177.8009980916977,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 53,
+     "max_abs_vs_tuned": 0.00390625,
+     "us": 255.95098733901978,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 54,
+     "error": "RuntimeError: Unsupported tile shape config 128128256 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 55,
+     "error": "RuntimeError: Unsupported tile shape config 256128128 for MoE gemm. (/data/jooman/gemma4nv/venv/lib/python3.12/site-packages/flashinfer/data/csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/moe_gemm/./moe_gemm"
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 56,
+     "max_abs_vs_tuned": 0.005859375,
+     "us": 163.95199298858643,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 57,
+     "max_abs_vs_tuned": 0.005859375,
+     "us": 160.6920063495636,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 58,
+     "max_abs_vs_tuned": 0.005859375,
+     "us": 165.20200669765472,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    },
+    {
+     "stage": "gemm2",
+     "t1": 17,
+     "t2": 59,
+     "max_abs_vs_tuned": 0.005859375,
+     "us": 163.18699717521667,
+     "kernels": [
+      "_ZN7cutlass13device_kernelINS_4gemm6kernel13GemmUniversalINS1_17GroupProblemShapeIN4cute5tupleIJlllEEEEENS1_10collective13CollectiveMmaINS1_47MainloopSm120Array"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 1,
+   "M": 3,
+   "finalize": false,
+   "tuned_us": 75.35199820995331
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 2,
+   "M": 6,
+   "finalize": false,
+   "tuned_us": 75.80199837684631
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 4,
+   "M": 12,
+   "finalize": false,
+   "tuned_us": 75.6789967417717
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 8,
+   "M": 24,
+   "finalize": false,
+   "tuned_us": 76.36599987745285
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 128,
+   "M": 384,
+   "finalize": false,
+   "tuned_us": 124.90800023078918
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 1,
+   "M": 3,
+   "finalize": true,
+   "tuned_us": 72.03099876642227
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 2,
+   "M": 6,
+   "finalize": true,
+   "tuned_us": 72.23299890756607
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 4,
+   "M": 12,
+   "finalize": true,
+   "tuned_us": 72.09300249814987
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 8,
+   "M": 24,
+   "finalize": true,
+   "tuned_us": 71.64900004863739
+  },
+  {
+   "case": "padding",
+   "rows_per_expert": 128,
+   "M": 384,
+   "finalize": true,
+   "tuned_us": 119.18999999761581
+  }
+ ]
+}

@@ -2,7 +2,7 @@
 
 **Question.** W10's B=1 profile of `base4-spec-fp8head` (k=5) puts 2.28 ms of a ~10.3 ms round in the routed MoE. Where does it go at M = (1 + k) * B, and what is the most promising MoE trial?
 
-**Status:** analysis plus one preregistered trial (T-MOE1). No kernel work without coordinator approval.
+**Status:** analysis plus one preregistered trial (T-MOE1), **retired at step 0 (W13, §6)**. No kernel work without coordinator approval.
 
 ## Sources
 
@@ -104,3 +104,60 @@ Weight bytes per layer at 23.5 experts, against the measured-bandwidth SOL (1.65
 > [!gap] Whether the 5090 runs block-scaled FP4 MMA with FP32 accumulation at the full or half GeForce rate. Step 0 measures the padding's cost directly instead of inferring it.
 
 > [!gap] The B=8 split between fc1 and fc2 is extrapolated from the routing union, not profiled. No B=8 verify trace exists yet.
+
+## 6. T-MOE1 step 0 (W13, bs2): retired, the premise is false
+
+**Script:** `analysis/scripts/moe_tactic_bench.py`. **Results:** `analysis/results/w13-moe-tactics.json`.
+- It calls `flashinfer.fused_moe.cutlass_fused_moe` exactly as SGLang's flashinfer_cutlass runner does: bf16 input, NVFP4 weights, gated GELU.
+- Routing is W8's recorded routing, in verify windows of 6 tokens.
+- Every tactic FlashInfer enumerates is forced through `profile_ids`.
+- Timing: a CUDA graph of 32 calls cycling 16 routings and 2 weight copies, best of 7.
+- The times cover one whole MoE layer: GEMMs plus glue.
+
+**Tactic indices.** These come from FlashInfer 0.6.18 (`get_candidate_configs_sm120`, then `getTmaWarpSpecializedConfigs`):
+- GEMM1 tactics 0-9 are the ten SM120 tiles: 128x128x128B, 128x128x64B, 256x128x64B, 128x256x64B, 128x128x256B, 256x128x128B, 128x32x128B, 128x32x64B, 128x64x128B, 128x64x64B.
+- Tactics 10-19 are the same tiles with `swap_ab`.
+- GEMM2 follows the same layout. With FINALIZE allowed it has 40 tactics: base, base+FINALIZE, then their swap-AB copies.
+- Four GEMM1 tactics fail with "Unsupported tile shape config 128128256".
+
+| case | tuned (as served) | best forced pair | fastest unswapped 128x32 GEMM1 | tuned with FINALIZE |
+|---|---:|---:|---:|---:|
+| B=1 verify (M=6), µs per MoE layer | 78.1 | 79.6 (GEMM1 17, GEMM2 37: both swap-AB 128x32x64B) | 160.6 (tactic 7) | 76.2 (-2.5%) |
+| B=8 verify (M=48) | 165.6 | 165.7 (17, 37) | 320.0 (tactic 13 is the slowest; tactic 7 is similar) | 160.4 (-3.1%) |
+
+**Padding sweep.** The tuned tactic at 24 active experts with r rows each:
+
+| r | 1 | 2 | 4 | 8 | 128 |
+|---|---:|---:|---:|---:|---:|
+| µs, no FINALIZE | 75.4 | 75.8 | 75.7 | 76.4 | 124.9 |
+| µs, FINALIZE | 72.0 | 72.2 | 72.1 | 71.6 | 119.2 |
+
+**Verdict: retired at step 0.**
+- **Padding is free.** From 1 to 8 rows per expert the cost moves 1.3%, inside the preregistered 5% falsifier.
+- **No tactic beats the tuned pick by 5%.** The autotuner already chooses swap-AB 128x32 tiles at verify widths, and unswapped tiles cost 2x.
+- **§3's premise was wrong.** §3 inferred an unswapped tile from the trace's `Shape<128,32,...>`, but the swapped kernel carries the same CTA shape name. So the 0.37 ms gap to SOL is not padding.
+- **The fc1/fc2 GEMMs are byte-bound at about 79-84% of SOL** under the best tactic FlashInfer has.
+
+**FINALIZE fusion was not gated** (coordinator decision).
+- It is the existing `SGLANG_FLASHINFER_MOE_FUSED_FINALIZE=1`, so a config-only lever. It saves 1.9 µs per layer at B=1 and 5.2 µs at B=8.
+- At B=1 that is about 57 µs of a ~9.9 ms round, roughly -0.6% W1 TPOT.
+- At B=8 it is about 156 µs of a ~16 ms round, roughly +0.75% W8 composite.
+- Both are below the gate's 1% bar.
+- Its epilogue scatters the top-8 expert outputs with atomic adds (`sm90_visitor_scatter.hpp`). The token sum then becomes order-nondeterministic and is accumulated in bf16, where `finalizeMoeRoutingKernel` sums in fp32.
+
+## 7. Where the remaining MoE time is, and what a next trial would cost
+
+**B=1 MoE round: 2.33 ms.**
+- **GEMMs, 1.80 ms.** These are at the tactic optimum. The ~0.37 ms to SOL would need a better grouped GEMM than FlashInfer's.
+  - That means kernel work: a CUTLASS SM120 block-scaled grouped GEMM with smaller N tiles, or a Triton `tl.dot_scaled` MoE.
+  - Estimate: 3-5 days, with low confidence of beating 84% of SOL.
+- **Glue, 0.53 ms.** This is the larger and cheaper target: routing/top-k, expert-map sort, stride computation, expand + FP4 quantize, activation, and finalize. Each is a separate launch moving under 100 KB per layer.
+
+| candidate | B=1 saving | cost | needs |
+|---|---|---|---|
+| **G1: fold `computeStrides` + `buildExpertMaps` into the routing kernel** | 0.08-0.12 ms | 1-2 days | touches FlashInfer's runner, so it would be an SGLang-side fork of the prep path |
+| **G2: fuse the GELU-gate into fc1's epilogue** | 0.05-0.10 ms | 2-4 days | a new SM120 TMA-WS epilogue, since the launcher accepts only NONE or FINALIZE |
+| **G3: fuse expand + FP4 quantize into the router** | 0.05-0.08 ms | 1-2 days | none beyond the glue |
+| **G1-G3 together, one persistent prep kernel** | 0.2-0.3 ms, about -2 … -3% W1 TPOT | about a week | kernel-work approval |
+
+None of this is started.
