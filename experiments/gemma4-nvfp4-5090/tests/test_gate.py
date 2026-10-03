@@ -56,6 +56,38 @@ class StatsTest(absltest.TestCase):
         self.assertFalse(v["promote"])
 
 
+class DecideOnTest(absltest.TestCase):
+    noise = {m: 0.002 for m in stats.GATED_METRICS}
+
+    def test_default_rule_keeps_old_check_names(self):
+        s = stats.summarize_pairs([_leg(1, 1.05)] * 4, [_leg(1, 1.0)] * 4)
+        v = stats.timing_verdict(s, self.noise)
+        self.assertEqual(list(v["checks"]), ["w8_composite_clears_bar", "w1_tpot_no_regression", "w8_no_regression",
+                                             "enough_pairs"])
+        self.assertEqual(v["decided_on"], "w8_composite")
+
+    def test_w1_win_with_neutral_w8_promotes_only_when_deciding_on_w1(self):
+        # T2 shape: W1 TPOT -2%, W8 and W32 unchanged.
+        s = stats.summarize_pairs([_leg(1, 1.0, w1_decode=2.55)] * 4, [_leg(1, 1.0, w1_decode=2.50)] * 4)
+        self.assertFalse(stats.timing_verdict(s, self.noise)["promote"])
+        v = stats.timing_verdict(s, self.noise, "w1_tpot_gain")
+        self.assertTrue(v["promote"])
+        self.assertEqual(set(v["checks"]), {"w1_tpot_clears_bar", "w8_no_regression", "w32_tput_no_regression",
+                                            "w1_tpot_no_regression", "enough_pairs"})
+
+    def test_non_default_rule_guards_w32(self):
+        s = stats.summarize_pairs([_leg(1, 1.0, w1_decode=2.55)] * 4,
+                                  [_leg(1, 1.0, w1_decode=2.50, w32_wall=4.2)] * 4)
+        v = stats.timing_verdict(s, self.noise, "w1_tpot_gain")
+        self.assertFalse(v["checks"]["w32_tput_no_regression"])
+        self.assertFalse(v["promote"])
+
+    def test_unknown_metric_is_refused(self):
+        s = stats.summarize_pairs([_leg(1, 1.0)] * 4, [_leg(1, 1.0)] * 4)
+        with self.assertRaises(ValueError):
+            stats.timing_verdict(s, self.noise, "w8_prefill_gain")
+
+
 class FidelityTest(parameterized.TestCase):
     @parameterized.parameters(
         ([1, 2, 3], [1, 2, 3], -1),

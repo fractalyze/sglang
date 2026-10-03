@@ -227,7 +227,8 @@ def server_arg_diff(control: Dict, candidate: Dict, declared: List[str]) -> Dict
     return {"differing_keys": diff, "undeclared": undeclared}
 
 
-def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, notes: str = "") -> Dict:
+def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, notes: str = "",
+             decide_on: str = stats.DEFAULT_DECIDING_METRIC) -> Dict:
     control_ref, candidate_ref = server.load_ref(control_name), server.load_ref(candidate_name)
     exp_id = new_exp_id(label)
     run_dir = os.path.join(config.RUNS_DIR, exp_id)
@@ -236,7 +237,7 @@ def run_gate(control_name: str, candidate_name: str, n_pairs: int, label: str, n
     corpus = prompts.load_corpus(tok)
     nonce = secrets.token_hex(4)
     meta = {"exp_id": exp_id, "control": control_ref, "candidate": candidate_ref, "n_pairs": n_pairs,
-            "notes": notes, "nonce": nonce, "corpus_digest": prompts.corpus_digest(corpus),
+            "notes": notes, "decide_on": decide_on, "nonce": nonce, "corpus_digest": prompts.corpus_digest(corpus),
             "fidelity_prompts_digest": fidelity.prompts_digest(), "environment": environment(),
             "checkpoint": checkpoint.verify(),
             "config": {"workloads": [{"name": w.name, "concurrency": w.concurrency, "prompt": w.prompt_tokens,
@@ -263,7 +264,7 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
     control, candidate = legs["control"], legs["candidate"]
     summary = stats.summarize_pairs([stats.leg_sums(l) for l in control], [stats.leg_sums(l) for l in candidate])
     noise = _load_noise()
-    timing = stats.timing_verdict(summary, noise)
+    timing = stats.timing_verdict(summary, noise, meta.get("decide_on", stats.DEFAULT_DECIDING_METRIC))
     agreement = [timed_output_agreement(c, k) for c, k in zip(control, candidate)]
     thresholds = fidelity.load_json(fidelity.THRESHOLDS_PATH) if os.path.exists(fidelity.THRESHOLDS_PATH) else None
     fid = {}
@@ -317,9 +318,16 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
     }
 
 
-def reevaluate(run_dir: str) -> Dict:
-    """Recomputes a finished run's report from its saved legs (the old report is kept as report.v<n>.json)."""
+def reevaluate(run_dir: str, decide_on: Optional[str] = None) -> Dict:
+    """Recomputes a finished run's report from its saved legs (the old report is kept as report.v<n>.json).
+
+    `decide_on` names the deciding metric of a run that predates --decide-on (its frozen prediction's
+    metric); the run's meta.json is left as it ran, and the report records the override.
+    """
     meta = fidelity.load_json(os.path.join(run_dir, "meta.json"))
+    if decide_on is not None:
+        meta["decide_on_override"] = {"from": meta.get("decide_on", stats.DEFAULT_DECIDING_METRIC), "to": decide_on}
+        meta["decide_on"] = decide_on
     legs: Dict[str, List[Dict]] = {"control": [], "candidate": []}
     for k in range(meta["n_pairs"]):
         for role in ("control", "candidate"):
@@ -332,6 +340,8 @@ def reevaluate(run_dir: str) -> Dict:
     report = evaluate(meta, legs)
     report["reevaluated_from"] = f"report.v{n}.json"
     report["reevaluated_by_harness"] = server.harness_commit()
+    if decide_on is not None:
+        report["decide_on_override"] = meta["decide_on_override"]
     _write(old, report)
     meta["notes"] = f"{meta['notes']} [re-evaluated: {report['reevaluated_from']} superseded]"
     append_ledger(meta, report, run_dir)
@@ -387,6 +397,7 @@ def append_ledger(meta: Dict, report: Dict, run_dir: str) -> None:
         "metrics": {k: o[k] for k in ("w8_composite", "w8_prefill_gain", "w8_decode_gain", "w1_tpot_gain",
                                       "w1_tpot_control_ms", "w1_tpot_candidate_ms", "w32_tput_gain",
                                       "w32_tput_control_tok_s", "w32_tput_candidate_tok_s")},
+        "decided_on": report["timing"]["decided_on"],
         "verdict": report["verdict"],
         "output": os.path.relpath(os.path.join(run_dir, "report.json"), config.ROOT),
         "note": meta["notes"],

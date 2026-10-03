@@ -1,6 +1,7 @@
 """gemma4nv verify gate.
 
-  gate run --control base --candidate <ref> [--pairs 4] [--label L] [--notes N]
+  gate run --control base --candidate <ref> [--pairs 4] [--label L] [--notes N] [--decide-on METRIC]
+  gate reevaluate --run <run dir> [--decide-on METRIC]
   gate calibrate --ref base            # fidelity reference + KL thresholds (once per baseline)
   gate set-noise --report <A/A report.json>
   gate quality --ref <ref> [--set-baseline]
@@ -19,7 +20,7 @@ import os
 import sys
 import time
 
-from gate import config, fidelity, hostwatch, prompts, quality, runner, server, solrun, vllm_ref
+from gate import config, fidelity, hostwatch, prompts, quality, runner, server, solrun, stats, vllm_ref
 
 PEAKS_PATH = os.path.join(config.REFERENCE_DIR, "peaks.json")
 SOL_DIR = os.path.join(config.REFERENCE_DIR, "sol")
@@ -186,6 +187,8 @@ def main() -> None:
     r.add_argument("--pairs", type=int, default=config.MIN_PAIRS)
     r.add_argument("--label", default=None)
     r.add_argument("--notes", default="")
+    # The metric the trial's frozen prediction names; the other workload metrics guard against regression.
+    r.add_argument("--decide-on", default=stats.DEFAULT_DECIDING_METRIC, choices=sorted(stats.DECIDING_METRICS))
     c = sub.add_parser("calibrate")
     c.add_argument("--ref", default="base")
     c.add_argument("--force", action="store_true")
@@ -198,6 +201,7 @@ def main() -> None:
     sub.add_parser("vllm-ref")
     rv = sub.add_parser("reevaluate")
     rv.add_argument("--run", required=True)
+    rv.add_argument("--decide-on", default=None, choices=sorted(stats.DECIDING_METRICS))
     pb = sub.add_parser("prebuild")
     pb.add_argument("--ref", default="base")
     s = sub.add_parser("sol")
@@ -210,7 +214,7 @@ def main() -> None:
         if args.pairs < config.MIN_PAIRS:
             sys.exit(f"--pairs must be >= {config.MIN_PAIRS}")
         label = args.label or ("AA" if args.control == args.candidate else args.candidate)
-        report = runner.run_gate(args.control, args.candidate, args.pairs, label, args.notes)
+        report = runner.run_gate(args.control, args.candidate, args.pairs, label, args.notes, args.decide_on)
         print(json.dumps({"exp_id": report["exp_id"], "overall": report["summary"]["overall"],
                           "per_pair_log_sigma": report["summary"]["per_pair_log_sigma"],
                           "bars": report["timing"]["bars"], "verdict": report["verdict"],
@@ -222,8 +226,8 @@ def main() -> None:
     elif args.cmd == "quality":
         _quality(args)
     elif args.cmd == "reevaluate":
-        report = runner.reevaluate(args.run)
-        print(json.dumps({"verdict": report["verdict"],
+        report = runner.reevaluate(args.run, args.decide_on)
+        print(json.dumps({"verdict": report["verdict"], "timing": report["timing"],
                           "integrity": {k: v for k, v in report["integrity"].items() if k != "per_leg"}}, indent=1))
     elif args.cmd == "vllm-ref":
         res = vllm_ref.run(os.path.join(config.RUNS_DIR, runner.new_exp_id("vllm-ref")))
