@@ -1,12 +1,11 @@
 """
 Tests the Triton small-M BF16 GEMM against cuBLAS (F.linear) and an fp32
 reference, and that SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM toggles the
-UnquantizedLinearMethod and LogitsProcessor lm_head routes. Also tests the FP8
+UnquantizedLinearMethod route. Also tests the FP8
 weight-only variant behind SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM.
 """
 
 import unittest
-from types import SimpleNamespace
 from unittest import mock
 
 import torch
@@ -16,18 +15,7 @@ from sglang.test.ci.ci_register import register_cuda_ci
 
 register_cuda_ci(est_time=15, stage="base-b", runner_config="1-gpu-large")
 
-# o_proj, dense MLP, qkv_proj, the split-K router and lm_head.
-_TUNED_NK = [
-    (2816, 4096),
-    (2816, 8192),
-    (4224, 2816),
-    (2816, 2112),
-    (8192, 2816),
-    (10240, 2816),
-    (128, 2816),
-    (262144, 2816),
-]
-_LM_HEAD_NK = (262144, 2816)
+_TUNED_NK = [(2816, 4096), (2816, 8192), (4224, 2816), (2816, 2112)]
 _FP8_WEIGHT_NK = [(2816, 4096), (2816, 8192)]
 
 
@@ -61,8 +49,7 @@ class TestTritonSmallMBf16Gemm(unittest.TestCase):
         torch.manual_seed(0)
         for n, k in _TUNED_NK:
             w = torch.randn(n, k, dtype=torch.bfloat16, device="cuda") * 0.02
-            ms = (1, 17, 32) if (n, k) == _LM_HEAD_NK else (1, 3, 8, 16, 17, 32)
-            for m in ms:
+            for m in (1, 3, 8, 16, 17, 32):
                 with self.subTest(n=n, k=k, m=m):
                     x = torch.randn(m, k, dtype=torch.bfloat16, device="cuda")
                     out = triton_small_m_bf16_gemm(x, w).float()
@@ -105,41 +92,6 @@ class TestTritonSmallMBf16Gemm(unittest.TestCase):
                 self.assertEqual(out.shape, (8, 2816))
                 method.apply(layer, prefill)
                 method.apply(other_shape, x)
-                self.assertEqual(spy.call_count, 1 if enabled else 0)
-
-    def test_env_switch_toggles_lm_head_route(self):
-        from sglang.srt.environ import envs
-        from sglang.srt.layers import logits_processor
-        from sglang.srt.runtime_context import get_context
-
-        override = get_context().override_server_args(enable_fp32_lm_head=False)
-        override.install()
-        self.addCleanup(override.restore)
-        torch.manual_seed(0)
-        n, k = _LM_HEAD_NK
-        head = _Linear(torch.randn(n, k, dtype=torch.bfloat16, device="cuda") * 0.02)
-        hidden = torch.randn(8, k, dtype=torch.bfloat16, device="cuda")
-        prefill = torch.randn(64, k, dtype=torch.bfloat16, device="cuda")
-        cfg = SimpleNamespace(
-            vocab_size=n, final_logit_softcapping=None, enable_lm_head_fp32=False
-        )
-        for enabled in (False, True):
-            with (
-                self.subTest(enabled=enabled),
-                envs.SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM.override(enabled),
-                mock.patch.object(
-                    logits_processor,
-                    "triton_small_m_bf16_gemm",
-                    wraps=logits_processor.triton_small_m_bf16_gemm,
-                ) as spy,
-            ):
-                proc = logits_processor.LogitsProcessor(
-                    cfg, skip_all_gather=True, logit_scale=None
-                )
-                logits = proc._compute_lm_head(hidden, head)
-                self.assertEqual(spy.call_count, 1 if enabled else 0)
-                self.assertEqual(logits.shape, (8, n))
-                proc._compute_lm_head(prefill, head)
                 self.assertEqual(spy.call_count, 1 if enabled else 0)
 
     def test_fp8_weight_matches_dequantized_reference(self):

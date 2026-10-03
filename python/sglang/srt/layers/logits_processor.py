@@ -25,7 +25,6 @@ from torch import nn
 from sglang.kernels.ops.activation.softcap import (
     softcap_inplace_logits as fused_softcap,
 )
-from sglang.kernels.ops.gemm.triton_small_m_bf16_gemm import triton_small_m_bf16_gemm
 from sglang.srt.beam_search.logits_capture import BeamLogitsCapture
 from sglang.srt.distributed.device_communicators import triton_symm_mem_ag
 from sglang.srt.environ import envs
@@ -50,7 +49,6 @@ from sglang.srt.layers.logprob_processor import (
     get_token_ids_logprobs_raw,
     get_top_logprobs_raw,
 )
-from sglang.srt.layers.quantization.unquant import fits_triton_small_m_bf16_gemm
 from sglang.srt.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from sglang.srt.managers.auxiliary_output import DeviceAuxiliaryOutput
 from sglang.srt.model_executor.forward_batch_info import (
@@ -445,9 +443,6 @@ class LogitsProcessor(nn.Module):
         self.use_tp_lm_head_all_to_all = get_parallel().enable_tp_lm_head_all_to_all
         self.use_fp32_lm_head = get_exec().features.enable_fp32_lm_head or getattr(
             config, "enable_lm_head_fp32", False
-        )
-        self.use_triton_small_m_bf16_gemm = (
-            envs.SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM.get()
         )
         if self.use_attn_tp_group:
             self.attn_tp_size = get_parallel().attn_tp_size
@@ -974,10 +969,6 @@ class LogitsProcessor(nn.Module):
                 logits = torch.matmul(
                     hidden_states.bfloat16(), lm_head.weight.T.bfloat16()
                 )
-            elif self.use_triton_small_m_bf16_gemm and fits_triton_small_m_bf16_gemm(
-                x=hidden_states, weight=lm_head.weight, bias=None
-            ):
-                logits = triton_small_m_bf16_gemm(hidden_states, lm_head.weight)
             else:
                 logits = torch.matmul(
                     hidden_states.to(lm_head.weight.dtype), lm_head.weight.T
