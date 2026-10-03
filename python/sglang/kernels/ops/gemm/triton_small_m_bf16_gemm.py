@@ -50,7 +50,8 @@ _FP8_WEIGHT_TUNED_SHAPES: Dict[Tuple[int, int], _TileConfig] = {
 # FP8 E4M3 vocab heads, kept apart so the linear allowlist above never picks them
 # up: Gemma-4-26B-A4B MTP assistant's tied head (SGLANG_OPT_MTP_FP8_LM_HEAD).
 _FP8_HEAD_TUNED_SHAPES: Dict[Tuple[int, int], _TileConfig] = {
-    (262144, 1024): _TileConfig(64, 256, 4),
+    # Best worst case over M in {1, 8, 32} on the 5090 (186-198 us vs cuBLAS BF16 353-364 us).
+    (262144, 1024): _TileConfig(128, 128, 3),
 }
 _FP8_E4M3_MAX = 448.0
 

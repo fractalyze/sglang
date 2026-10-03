@@ -22,6 +22,7 @@ from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 
 from sglang.kernels.ops.gemm.triton_small_m_bf16_gemm import (
+    MAX_M,
     quantize_fp8_weight_per_channel,
     triton_small_m_fp8_vocab_head,
     use_fp8_vocab_head,
@@ -44,8 +45,6 @@ from sglang.srt.utils import add_prefix
 logger = logging.getLogger(__name__)
 
 
-# Rows per FP8 head launch; one launch streams the whole head once.
-_FP8_HEAD_MAX_ROWS = 64
 # Rows quantized at a time, so load never holds an fp32 copy of the whole head.
 _FP8_HEAD_QUANT_CHUNK = 16384
 
@@ -60,7 +59,8 @@ class _Fp8VocabHeadMethod:
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         x2d = x.reshape(-1, x.shape[-1]).to(torch.bfloat16).contiguous()
-        if x2d.shape[0] <= _FP8_HEAD_MAX_ROWS:
+        # One launch streams the whole head; its tiles fit shared memory up to MAX_M rows.
+        if x2d.shape[0] <= MAX_M:
             logits = triton_small_m_fp8_vocab_head(
                 x2d, layer.weight, layer.weight_scale
             )
@@ -70,7 +70,7 @@ class _Fp8VocabHeadMethod:
                     triton_small_m_fp8_vocab_head(
                         rows.contiguous(), layer.weight, layer.weight_scale
                     )
-                    for rows in x2d.split(_FP8_HEAD_MAX_ROWS)
+                    for rows in x2d.split(MAX_M)
                 ]
             )
         if bias is not None:
