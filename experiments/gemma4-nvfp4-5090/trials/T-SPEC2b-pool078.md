@@ -1,5 +1,14 @@
 # T-SPEC2b (gemma4nv-b2-tspec2b): the MTP + split-KV-verify stack with its KV pool restored, against base3
 
+**Status: kept, promote candidate (W8, 2026-10-03).** Gate `T-SPEC2b-20261003-115404-build-server-2-6c0718` vs `base3`:
+- W1 TPOT 5.752 → 3.118 ms (-45.8%);
+- W8 composite 1.444;
+- W32 +9.3%;
+- fidelity pass, integrity ok;
+- `gate quality` pass (GSM8K 96.0 vs 97.0, at the 1-point edge; tool-JSON 100).
+
+Every metric landed inside its frozen interval. See `REPORT-bs2-w8.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W8 (bs2) before any gate run. Config only.
 
 ## Why this replaces T-SPEC1b

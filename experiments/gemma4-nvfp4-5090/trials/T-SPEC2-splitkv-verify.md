@@ -1,5 +1,13 @@
 # T-SPEC2 (gemma4nv-b2-tspec2): split-KV Triton verify attention for MTP on CUDA
 
+**Status: kept (W8, 2026-10-03).** Gate `T-SPEC2-20261003-113757-build-server-2-ae2f98` vs `base3-mtp5`:
+- W1 TPOT 4.414 → 3.002 ms (-32.0%);
+- W8 composite 1.197;
+- W32 +23.4%;
+- fidelity pass, integrity ok.
+
+Every metric landed inside its frozen interval. See `REPORT-bs2-w8.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W8 (bs2) before any gate run. The code change was approved by the coordinator; the switch defaults off.
 
 ## Control and candidate
