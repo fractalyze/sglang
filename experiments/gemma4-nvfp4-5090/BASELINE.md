@@ -68,6 +68,21 @@ BF16):
 | W1 | 5.17 ms | **0.62** (0.57 / 0.52) | 1104 GB/s | 0.20 / 0.40 |
 | W32 | 14.87 ms | **0.55** (0.52 / 0.48) | 981 GB/s | 0.23 / 0.55 |
 
+sol_fraction against SOL tables v3 (W11), which count o_proj as served from base4 on: FP8 E4M3,
+1 byte per weight plus an fp32 scale per output row (`reference/sol/sol.v3.json`, `gate
+sol-retable --from sol.v2.json --ref base5`, same router data as v2; `sol_fractions.sol.v3.json`
+in each A/A dir). The decode SOL step drops by 0.225 ms (0.40 GB less per step), so the
+fractions drop. Prefill is unchanged: o_proj prefill runs cuBLAS on the bf16 upcast.
+
+| workload | SOL decode step (v2 / v3) | **decode sol_fraction v3** base5 (v2) | base4 v3 (v2) | implied BW (v3) |
+|---|---|---|---|---|
+| W8 | 5.582 / 5.357 ms | **0.672** (0.697) | 0.627 (0.651) | 1204 GB/s |
+| W1 | 3.186 / 2.961 ms | **0.573** (0.616) | 0.529 (0.569) | 1027 GB/s |
+| W32 | 8.240 / 8.015 ms | **0.539** (0.547) | 0.516 (0.524) | 966 GB/s |
+
+The base3-and-earlier rows keep v2: those refs serve o_proj in BF16 (`sol-retable --ref base3`
+reproduces v2's 5.582 ms).
+
 **Fidelity** (pair 0 control vs the `base` reference):
 
 - Teacher-forced: min top-1 0.922, mean 0.970, KL mean 0.031, p99 0.54 (base4: 0.917, 0.966,
@@ -508,6 +523,8 @@ Mean bytes per decode step (GB):
 | **total** | **10.003** | **5.710** | **14.766** |
 
 On this checkpoint, BF16 attention, dense MLP and lm_head make up 4.77 GB of W8's 10.00 GB step (48%), more than the routed experts (43%).
+
+**As served from base4 on (tables v3, `reference/sol/sol.v3.json`).** o_proj is stored as FP8 E4M3 weight-only with an fp32 scale per output row, so attention weights read 1.817 GB instead of 2.220 and the step totals become 9.599 / 5.307 / 14.362 GB (W8 / W1 / W32): SOL steps 5.357 / 2.961 / 8.015 ms. `gate sol` and `gate sol-retable` pick the format from the ref's `SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM`.
 
 | workload | achieved decode step | SOL step | **decode sol_fraction** | implied BW | achieved batch prefill | prefill SOL (NVFP4/FP8 view / as served) | **prefill sol_fraction** (NVFP4/FP8 / as served) |
 |---|---|---|---|---|---|---|---|
