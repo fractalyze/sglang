@@ -53,8 +53,12 @@ class Workload(msgspec.Struct, frozen=True, kw_only=True):
     fixed_prompt_seed: str = ""
 
 
-# W8 is the Yukon gemma track shape and carries the composite score.
-W8 = Workload(name="W8", concurrency=8, prompt_tokens=1024, decode_tokens=128, reps_per_leg=4, gated=True)
+# W8 is the Yukon gemma track shape and carries the composite score. Design v3
+# (W12, 2026-10-03): fixed prompts as W1's v2, because under speculation W8's
+# decode gain also follows acceptance (T-SPEC3 per-pair CI +-2.7% vs a 1% bar).
+# Each of the 4 reps is still 8 distinct windows, so streams route as real traffic.
+W8 = Workload(name="W8", concurrency=8, prompt_tokens=1024, decode_tokens=128, reps_per_leg=4, gated=True,
+              fixed_prompt_seed="W8-fixed-v3")
 # W1 gates single-stream TPOT. Design v2 (W10, 2026-10-03): 24 fixed prompts
 # instead of 3 fresh ones per pair. Under speculative decoding TPOT follows each
 # prompt's acceptance (per-prompt log-gain sigma 0.28 in T-SPEC2b), so fresh

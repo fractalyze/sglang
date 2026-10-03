@@ -105,13 +105,25 @@ def run_leg(ref: Dict, pair_seed: str, leg_dir: str, corpus, bos: int, with_fide
         leg["decode_steps_in_window"] = srv.decode_steps_since(offset)
         leg["backends"] = srv.backend_report()
         if with_fidelity:
-            leg["fidelity_outputs"] = fidelity.run(srv.url)
-            leg["fidelity_forced"] = fidelity.run_forced(srv.url, fidelity.load_json(fidelity.REFERENCE_PATH))
+            leg["fidelity_outputs"], leg["fidelity_forced"] = fidelity_passes(srv)
         leg["weights_at_end"] = srv.weight_checksum()
         leg["host_preflight"] = srv.preflight
     leg["host"] = srv.host_summary
     leg["integrity"] = leg_integrity(leg)
     return leg
+
+
+def fidelity_passes(srv: server.Server):
+    """Free-running then teacher-forced fidelity, with the radix cache flushed between them.
+
+    Without the flush the forced pass reuses the prefix KV the free-running pass wrote. Under
+    speculative decoding that KV came from verify rounds whose shapes follow the drafts, so the
+    forced logprobs measured the drafter as well as the target (W10, T-SPEC4 h18-h20).
+    """
+    outputs = fidelity.run(srv.url)
+    srv.flush_cache()
+    forced = fidelity.run_forced(srv.url, fidelity.load_json(fidelity.REFERENCE_PATH))
+    return outputs, forced
 
 
 _LEG_RETRIES = 2
