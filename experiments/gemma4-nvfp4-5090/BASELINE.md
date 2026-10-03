@@ -315,6 +315,23 @@ Prebuild 1 hit the 24 GB scope limit with the server resident, and systemd stopp
   - The JIT cache persists under `/data/jooman/gemma4nv/cache/flashinfer`.
 - **Watchdog record across every run since then:** 36 CSVs, minimum MemAvailable **28.3 GB**, swap never used. The watchdog killed one SOL recording launch because other tenants' Rust builds pushed load to 55 (our tree held 7 GB). Engines now start only below load 24, and a leg whose window saw load above 24 is rerun.
 
+### W10 on bs2 (speculative stack on base4, 2026-10-03)
+
+Peak tree RSS per phase, from the 2 s watchdog CSVs. Every engine ran alone under `host.lock` in the 24G no-swap scope. No watchdog tripped, swap peaked at 0.88 GB, and no compiler other than Triton's ptxas ran.
+
+| run | min MemAvailable | weight load | autotune | graph capture | serving | peak load |
+|---|---:|---:|---:|---:|---:|---:|
+| prebuild base4 | 44.4 GB | 8.4 GB | 6.1 GB | - | 6.6 GB | 2.0 |
+| prebuild base4-spec | 41.3 GB | 12.5 GB | 6.3 GB | 7.1 GB | 19.5 GB | 2.0 |
+| gate T-SPEC3 (8 legs) | 48.0 GB | 14.7 GB | 6.0 GB | 7.4 GB | 19.5 GB | 1.4 |
+| quality, full GSM8K, base4 / base4-spec | 48.3 GB | 13.7 / 7.9 GB | 6.0 GB | - / 6.3 GB | 6.6 / 19.5 GB | 1.3 |
+| screens and profiles, base4-spec and base4-spec-fp8head | 48.8 GB | 6.9-13.4 GB | 5.9-6.1 GB | 6.3-19.2 GB | 19.5-19.6 GB | 3.5 |
+| FP8-head unit tests and microbench (3 runs) | 52.7 GB | - | - | - | 1.7-2.0 GB | 3.2 |
+
+- **The 19.5 GB serving RSS appears whenever the MTP draft loop is graphed,** as W8 found. It held at 19.6 GB with the FP8 head. It sits 4.4 GB under the scope cap.
+- **Weight-load spikes vary between 6.9 and 14.7 GB from launch to launch** for the same ref. That spread is mmap page-cache attribution, not a change in the model.
+- **Two FP8-head launches failed at load** with a Python error, not a memory event (`runs/contaminated-w10-*-loadfail`, peak 11.4 GB).
+
 ## Baseline numbers (A/A, 6 pairs, control legs)
 
 | metric | value | definition |
