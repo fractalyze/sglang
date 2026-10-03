@@ -156,7 +156,8 @@ the 392 glue launches are 13 per layer.
 - `ac91bfa`: raw imports of `gemma4nv-bs3`, two snapshots.
 - `cd6370fee`: stack base4.
 - `af3b36b`: ledger ref map `base3-t3b`.
-- T4 stub: see section 5.
+- `386636e`: T4 stub, prediction frozen (`gemma4nv-b3-t4`, `no-evidence`: no glue-fusion prior
+  on a launch-bound decode stack).
 - **Open lint:** `c-gemma4nv-sm120-fp8-weight-only-beats-w8a8-at-decode`'s evidence does not
   yet cite `gemma4nv-b3-t3b`, which supports it on base3. A claim's evidence list is written
   only by the claim tooling, so I left it for wm-maintain.
@@ -171,7 +172,9 @@ the 392 glue launches are 13 per layer.
 
 ## Left
 
-- T4 implementation, on the coordinator's go.
+- T4 implementation, on the coordinator's go. The go question was asked as orchestration
+  message `msg_31838e110ae5`; there was no reply after 20 min. Implementing T4 edits `python/sglang`,
+  so it needs a new dispatch.
 - `quality_baseline.json` is still base's n = 200 run. Paired full-set comparisons replace it
   for numerics trials.
 - The SOL tables still model o_proj as BF16. A re-based byte model would lower base4's floor by
