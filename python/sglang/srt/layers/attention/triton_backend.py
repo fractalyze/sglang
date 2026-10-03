@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
 
@@ -217,12 +218,21 @@ class TritonAttnBackend(AttentionBackend):
         self.speculative_num_steps = get_spec().speculative_num_steps
         self.topk = get_spec().speculative_eagle_topk or 0
         # Split-KV verify is bit-equivalent only for a pure-causal chain (topk==1)
-        # and is gfx95-only; else fall back to extend_attention_fwd.
+        # and runs on gfx95, or on CUDA when opted in; else extend_attention_fwd.
+        self.use_verify_splitkv_cuda = (
+            _is_cuda and envs.SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA.get()
+        )
         self.use_verify_splitkv = (
-            is_gfx95_supported()
+            (is_gfx95_supported() or self.use_verify_splitkv_cuda)
             and envs.SGLANG_ENABLE_SPLITKV_VERIFY.get()
             and self.topk == 1
         )
+        if self.use_verify_splitkv_cuda:
+            self.verify_splitkv_fwd = functools.partial(
+                self.verify_splitkv_fwd,
+                allow_sliding_window=True,
+                sm_count=get_device_core_count(model_runner.gpu_id),
+            )
         self.use_mla = model_runner.model_config.attention_arch == AttentionArch.MLA
         # The grouped-head verify kernel is tuned for Kimi-K3 MLA and Qwen3.5
         # GQA with exactly one TP-local KV head.
