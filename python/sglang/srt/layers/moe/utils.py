@@ -170,6 +170,9 @@ class _MoeRunnerBackendPredicates:
     def is_humming(self):
         return self.value == MoeRunnerBackend.HUMMING.value
 
+    def is_w4a16_sm90(self):
+        return self.value == MoeRunnerBackend.W4A16_SM90.value
+
     def is_aiter(self):
         return self.value == MoeRunnerBackend.AITER.value
 
@@ -193,6 +196,7 @@ class MoeRunnerBackend(_MoeRunnerBackendPredicates, Enum):
     CUTLASS = "cutlass"
     MARLIN = "marlin"
     HUMMING = "humming"
+    W4A16_SM90 = "w4a16_sm90"
     EXPERIMENTAL_SGL_MARLIN = "experimental_sgl_marlin"
     AITER = "aiter"
     HPC_OPS = "hpc_ops"

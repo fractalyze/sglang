@@ -46,6 +46,17 @@ register_kernel(
 )
 register_kernel(
     KernelSpec(
+        op="moe.w4a16_moe_sm90_gemm",
+        backend=KernelBackend.JIT,
+        target="sglang.kernels.ops.moe.w4a16_moe_sm90:w4a16_moe_sm90_gemm",
+        capabilities=frozenset(
+            {CapabilityRequirement.cuda(min_sm=(9, 0), max_sm=(9, 0))}
+        ),
+        description="Grouped AWQ W4A16 MoE GEMM over moe_align blocks (Hopper wgmma).",
+    )
+)
+register_kernel(
+    KernelSpec(
         op="moe.topk_softmax",
         backend=KernelBackend.AOT,
         target="sgl_kernel:topk_softmax",
