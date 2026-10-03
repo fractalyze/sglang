@@ -12,6 +12,7 @@ if [ -n "$(git -C "$here" status --porcelain -- .)" ]; then
 fi
 commit="$(git -C "$here" rev-parse HEAD)"
 tree="$(cd "$here" && python3 -m gate.treehash .)"
+ssh "$host" "mkdir -p '$dest'"
 rsync -a --delete --exclude __pycache__ --exclude '*.pyc' --exclude .DS_Store --exclude DEPLOY.json \
   "$here/" "$host:$dest/"
 printf '{"commit": "%s", "branch": "%s", "tree_sha256": "%s", "deployed_at": "%s"}\n' \
