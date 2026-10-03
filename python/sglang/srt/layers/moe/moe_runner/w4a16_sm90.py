@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from typing import TYPE_CHECKING
 
 import torch
@@ -8,6 +9,11 @@ from sglang.kernels.ops.moe.w4a16_moe_sm90 import (
     W4A16MoeWeights,
     select_token_block,
     w4a16_moe_sm90_gemm,
+)
+from sglang.kernels.ops.moe.w4fp8_moe_sm90 import TOKEN_BLOCK as W4FP8_TOKEN_BLOCK
+from sglang.kernels.ops.moe.w4fp8_moe_sm90 import (
+    quantize_activations,
+    w4fp8_moe_sm90_gemm,
 )
 from sglang.srt.layers.moe.moe_runner.base import (
     MoeQuantInfo,
@@ -40,6 +46,18 @@ def _standard_topk(topk_output):
     return topk_output.topk_ids, topk_output.topk_weights
 
 
+# Mean routed rows per expert from which the FP8 large-M kernel runs. Chosen so
+# DP-gathered prefill chunks take it and EAGLE decode batches stay on w4a16;
+# re-tune from bench_w4a16_moe_sm90's crossover.
+W4FP8_MIN_TOKENS_PER_EXPERT = 128
+
+
+def _w4fp8_gemm(*, a: torch.Tensor, **kwargs) -> None:
+    """w4fp8_moe_sm90_gemm on bf16 activations, quantised per token and AWQ group."""
+    a_q, a_scales = quantize_activations(a)
+    w4fp8_moe_sm90_gemm(a=a_q, a_scales=a_scales, **kwargs)
+
+
 @register_fused_func("none", "w4a16_sm90")
 def fused_experts_none_to_w4a16_sm90(
     dispatch_output: StandardDispatchOutput,
@@ -63,9 +81,14 @@ def fused_experts_none_to_w4a16_sm90(
     num_experts = quant_info.w13.qweight.shape[0]
     intermediate_size = quant_info.w2.qweight.shape[2] * 128
 
-    token_block = select_token_block(
-        num_tokens=num_tokens, top_k=top_k, num_experts=num_experts
-    )
+    if num_tokens * top_k / num_experts >= W4FP8_MIN_TOKENS_PER_EXPERT:
+        token_block = W4FP8_TOKEN_BLOCK
+        gemm = _w4fp8_gemm
+    else:
+        token_block = select_token_block(
+            num_tokens=num_tokens, top_k=top_k, num_experts=num_experts
+        )
+        gemm = functools.partial(w4a16_moe_sm90_gemm, token_block=token_block)
     sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
         topk_ids, token_block, num_experts
     )
@@ -73,12 +96,11 @@ def fused_experts_none_to_w4a16_sm90(
         sorted_token_ids=sorted_token_ids,
         expert_ids=expert_ids,
         num_tokens_post_padded=num_tokens_post_padded,
-        token_block=token_block,
     )
 
     num_rows = num_tokens * top_k
     gate_up = hidden_states.new_empty((num_rows, 2 * intermediate_size))
-    w4a16_moe_sm90_gemm(
+    gemm(
         a=hidden_states,
         out=gate_up,
         weights=quant_info.w13,
@@ -91,7 +113,7 @@ def fused_experts_none_to_w4a16_sm90(
 
     # Rows routed to no local expert are never written, and the top-k sum reads them.
     down = hidden_states.new_zeros((num_rows, hidden_states.shape[1]))
-    w4a16_moe_sm90_gemm(
+    gemm(
         a=activated,
         out=down,
         weights=quant_info.w2,
