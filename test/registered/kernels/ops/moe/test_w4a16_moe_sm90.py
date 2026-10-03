@@ -243,12 +243,10 @@ def _moe_reference(hidden_states, dense13, dense2, topk_ids, topk_weights):
 def _assert_close_to_moe_reference(actual, expected):
     """Within four bf16 ulps of the output's largest magnitude, element-wise.
 
-    Both backends round the gate-up activations and the down partial sums to
-    bf16, so an element's error tracks the magnitude of the terms the down GEMM
-    and the top-k sum combine, not the element itself; a small output can carry
-    the rounding of large partials. bf16 spacing is at most 2^-7 of a value.
-    Marlin adds its partial sums with bf16 atomics in a run-dependent order and
-    stays within about 1.1% of max|expected| across repeats; this bound is 3.1%.
+    The layer rounds the gate-up activations and the down partial sums to bf16,
+    so an element's error tracks the magnitude of the terms the down GEMM and the
+    top-k sum combine, not the element itself; a small output can carry the
+    rounding of large partials. bf16 spacing is at most 2^-7 of a value.
     """
     atol = 4 * 2**-7 * expected.abs().max().item()
     torch.testing.assert_close(actual.float(), expected, rtol=0, atol=atol)
@@ -282,7 +280,13 @@ def _run_awq_moe(backend, layer, hidden_states, topk_ids, topk_weights):
 
 @pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
 @pytest.mark.parametrize("tokens_per_expert", [1, 8, 16, 32, 128])
-def test_awq_moe_matches_reference_like_marlin(tokens_per_expert):
+def test_awq_moe_layer_matches_reference_deterministically(tokens_per_expert):
+    """The served AWQ layer matches the dense reference, bit-identically per run.
+
+    Marlin is not the oracle here: on SM90 it reduces with bf16 atomics in a
+    run-dependent order and its output varies between identical runs. This
+    kernel has no atomics, so a run-to-run difference means a race.
+    """
     from sglang.srt.layers.moe.utils import MoeRunnerBackend
 
     num_experts, top_k, hidden, intermediate = 32, 8, 1024, 256
@@ -293,20 +297,20 @@ def test_awq_moe_matches_reference_like_marlin(tokens_per_expert):
         torch.randn(num_tokens, hidden, device="cuda", generator=gen) * 0.5
     ).to(torch.bfloat16)
 
-    layer, dense13, dense2 = _awq_layer(num_experts, hidden, intermediate, "cuda")
-    ours = _run_awq_moe(
-        MoeRunnerBackend.W4A16_SM90, layer, hidden_states, topk_ids, topk_weights
-    )
+    _, dense13, dense2 = _awq_layer(num_experts, hidden, intermediate, "cuda")
     expected = _moe_reference(hidden_states, dense13, dense2, topk_ids, topk_weights)
-    _assert_close_to_moe_reference(ours, expected)
-
-    # Marlin is the backend this replaces; it must meet the same bound, which
-    # also checks that the bound is not tighter than an accepted backend.
-    marlin_layer, _, _ = _awq_layer(num_experts, hidden, intermediate, "cuda")
-    marlin = _run_awq_moe(
-        MoeRunnerBackend.MARLIN, marlin_layer, hidden_states, topk_ids, topk_weights
-    )
-    _assert_close_to_moe_reference(marlin, expected)
+    outputs = [
+        _run_awq_moe(
+            MoeRunnerBackend.W4A16_SM90,
+            _awq_layer(num_experts, hidden, intermediate, "cuda")[0],
+            hidden_states,
+            topk_ids,
+            topk_weights,
+        )
+        for _ in range(2)
+    ]
+    _assert_close_to_moe_reference(outputs[0], expected)
+    assert torch.equal(outputs[0], outputs[1])
 
 
 if __name__ == "__main__":
