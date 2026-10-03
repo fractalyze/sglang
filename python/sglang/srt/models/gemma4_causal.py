@@ -26,11 +26,17 @@ from transformers import (
 
 from sglang.kernels.ops.layernorm.gemma4_fused_ops import (
     gemma4_fused_routing,
+    gemma_dual_output_rmsnorm,
     gemma_dual_rmsnorm_residual_scalar,
+    gemma_dual_rmsnorm_residual_scalar_next_norm,
+    gemma_qkv_norm_rope_store_kv,
     gemma_qkv_rmsnorm,
+    gemma_rmsnorm_add_rmsnorm,
     gemma_rmsnorm_residual_scalar,
     gemma_routing_post_topk,
 )
+from sglang.srt.environ import Gemma4FusedGlue, envs
+from sglang.srt.layers.attention.triton_backend import TritonAttnBackend
 from sglang.srt.layers.layernorm import Gemma4RMSNorm, RMSNorm
 from sglang.srt.layers.linear import (
     QKVParallelLinear,
@@ -46,7 +52,13 @@ from sglang.srt.layers.radix_attention import RadixAttention
 from sglang.srt.layers.rotary_embedding import get_rope
 from sglang.srt.layers.utils import PPMissingLayer, get_layer_id
 from sglang.srt.layers.vocab_parallel_embedding import ParallelLMHead
+from sglang.srt.mem_cache.memory_pool import MHATokenToKVPool
+from sglang.srt.mem_cache.swa_memory_pool import SWAKVPool
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTensors
+from sglang.srt.model_executor.forward_context import (
+    get_attn_backend,
+    get_token_to_kv_pool,
+)
 from sglang.srt.model_loader.weight_utils import (
     default_weight_loader,
     maybe_remap_kv_scale_name,
@@ -189,6 +201,12 @@ class Gemma4Router(nn.Module):
         self.norm.weight.data.copy_(fused)
         self._scale_fused = True
 
+    def folded_norm_weight(self) -> torch.Tensor:
+        """The norm weight with scale * root_size folded in, for a caller that fuses the norm."""
+        if not self._scale_fused:
+            self.fuse_scale()
+        return self.norm.weight
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Returns raw router logits [T, E]."""
         if not self._scale_fused:
@@ -285,6 +303,40 @@ class Gemma4MoE(nn.Module):
         topk_output = self.topk(hidden_states, router_logits)
         hidden_states = self.experts(hidden_states, topk_output)
         return hidden_states.view(num_tokens, hidden_dim)
+
+
+def _fused_kv_write_target(
+    layer_id: int, forward_batch: ForwardBatch
+) -> Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    """(k_cache, v_cache, loc) for gemma_qkv_norm_rope_store_kv, or None to stay unfused.
+
+    Writes where TritonAttnBackend's own store would: a hybrid pool's sliding layers at the
+    backend's per-forward swa_out_cache_loc, every other layer at out_cache_loc. Only the
+    static NHD FP8 pool qualifies; any other pool or backend keeps the unfused path.
+    """
+    backend = get_attn_backend()
+    if not isinstance(backend, TritonAttnBackend) or backend.dcp_size > 1:
+        return None
+    meta = backend.forward_metadata
+    if meta is None or meta.out_cache_loc_full_physical is not None:
+        return None
+    pool = get_token_to_kv_pool()
+    sub_pool, loc = pool, forward_batch.out_cache_loc
+    if isinstance(pool, SWAKVPool):
+        _, is_swa_layer = pool.layers_mapping[layer_id]
+        sub_pool = pool.swa_kv_pool if is_swa_layer else pool.full_kv_pool
+        if is_swa_layer:
+            loc = meta.swa_out_cache_loc
+    if (
+        type(sub_pool) is not MHATokenToKVPool
+        or sub_pool.dtype != torch.float8_e4m3fn
+        or sub_pool.use_hnd
+        or sub_pool.kv_cache_layout != "nhd"
+        or sub_pool.is_quantized_kv_cache
+        or loc is None
+    ):
+        return None
+    return pool.get_key_buffer(layer_id), pool.get_value_buffer(layer_id), loc
 
 
 class Gemma4Attention(nn.Module):
@@ -404,6 +456,9 @@ class Gemma4Attention(nn.Module):
             is_neox_style=True,
         )
 
+        self.fused_glue = envs.SGLANG_OPT_GEMMA4_FUSED_GLUE.get()
+        self._logged_fused_kv_fallback = False
+
         self.attn = RadixAttention(
             self.num_heads,
             self.head_dim,
@@ -427,6 +482,25 @@ class Gemma4Attention(nn.Module):
     ):
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+        if (
+            self.fused_glue >= Gemma4FusedGlue.QKV_ROPE_KV
+            and not self.is_kv_shared_layer
+            and self.q_norm.scale_shift == 0.0
+            and self.k_norm.scale_shift == 0.0
+            and not self.v_norm.with_scale
+        ):
+            target = _fused_kv_write_target(self.attn.layer_id, forward_batch)
+            if target is not None:
+                return self._forward_fused_qkv_rope_kv(
+                    q, k, v, positions, target, forward_batch
+                )
+            if not self._logged_fused_kv_fallback:
+                logger.warning(
+                    "Gemma4 layer %d: fused q/k/v norm + RoPE + KV store unavailable for this "
+                    "KV pool or attention backend; running unfused.",
+                    self.attn.layer_id,
+                )
+                self._logged_fused_kv_fallback = True
 
         # Fused Q/K/V RMSNorm: replaces three separate norm kernels with one.
         # Preconditions for the fused path: tensors on CUDA or XPU (the kernel
@@ -523,6 +597,39 @@ class Gemma4Attention(nn.Module):
             attn_output = attn_output.flatten(-2, -1)
         output, _ = self.o_proj(attn_output)
 
+        return output
+
+    def _forward_fused_qkv_rope_kv(self, q, k, v, positions, target, forward_batch):
+        """The unfused q/k/v norm, RoPE and FP8 KV-cache store in one kernel (same bytes)."""
+        k_cache, v_cache, loc = target
+        gemma_qkv_norm_rope_store_kv(
+            q,
+            k,
+            v,
+            self.q_norm.weight.data,
+            self.k_norm.weight.data,
+            self.rotary_emb.cos_sin_cache,
+            positions,
+            loc,
+            k_cache,
+            v_cache,
+            self.attn.k_scale,
+            self.attn.v_scale,
+            num_q_heads=self.num_heads,
+            num_kv_heads=self.num_kv_heads,
+            head_dim=self.head_dim,
+            eps=self.q_norm.eps,
+        )
+        attn_output = self.attn(
+            q.unflatten(-1, (self.num_heads, self.head_dim)),
+            k.unflatten(-1, (self.num_kv_heads, self.head_dim)),
+            v.unflatten(-1, (self.num_kv_heads, self.head_dim)),
+            forward_batch=forward_batch,
+            save_kv_cache=False,
+        )
+        if attn_output.dim() == 3:
+            attn_output = attn_output.flatten(-2, -1)
+        output, _ = self.o_proj(attn_output)
         return output
 
 
@@ -650,6 +757,9 @@ class Gemma4DecoderLayer(nn.Module):
         self.register_buffer("layer_scalar", torch.ones(1), persistent=True)
         self.has_ple = self.hidden_size_per_layer_input > 0
         self.prefix = prefix
+        self.fuse_norm_pairs = (
+            envs.SGLANG_OPT_GEMMA4_FUSED_GLUE.get() >= Gemma4FusedGlue.ALL
+        )
 
     def forward(
         self,
@@ -657,10 +767,15 @@ class Gemma4DecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         per_layer_input: torch.Tensor,
         forward_batch: ForwardBatch,
+        normed_input: Optional[torch.Tensor] = None,
+        next_input_norm: Optional[RMSNorm] = None,
         **kwargs,
-    ) -> tuple[
-        torch.FloatTensor, Optional[tuple[torch.FloatTensor, torch.FloatTensor]]
-    ]:
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Returns (hidden_states, next_input_norm(hidden_states) if it was fused, else None).
+
+        normed_input is this layer's input_layernorm(hidden_states), already computed by the
+        previous layer's fused epilogue.
+        """
         # Gemma4 residual pattern following JAX implementation:
         # 1. input_norm(x) -> attn -> post_attn_norm -> ADD residual
         # 2. pre_ff_norm -> mlp -> post_ff_norm -> ADD residual
@@ -673,20 +788,37 @@ class Gemma4DecoderLayer(nn.Module):
         residual = hidden_states
 
         # Apply input layernorm
-        hidden_states = self.input_layernorm(hidden_states)
+        if normed_input is not None:
+            hidden_states = normed_input
+        else:
+            hidden_states = self.input_layernorm(hidden_states)
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
             forward_batch=forward_batch,
         )
-        hidden_states = self.post_attention_layernorm(hidden_states)
 
-        if self.enable_moe_block:
+        if self.enable_moe_block and self.fuse_norm_pairs and hidden_states.dim() == 2:
+            # post_attn_norm, then (hidden_states + residual -> residual; pre_ff_norm), one kernel.
+            hidden_states, residual = gemma_rmsnorm_add_rmsnorm(
+                hidden_states,
+                self.post_attention_layernorm.weight.data,
+                residual,
+                self.pre_feedforward_layernorm.weight.data,
+                self.post_attention_layernorm.variance_epsilon,
+                self.pre_feedforward_layernorm.variance_epsilon,
+            )
+        elif self.enable_moe_block:
+            hidden_states = self.post_attention_layernorm(hidden_states)
             # Fuse: hidden_states + residual -> residual; pre_ff_norm(residual) -> hidden_states
             # Also need raw (unfused) residual for router and pre_ff_norm_2
             hidden_states, residual = self.pre_feedforward_layernorm(
                 hidden_states, residual
             )
+        else:
+            hidden_states = self.post_attention_layernorm(hidden_states)
+
+        if self.enable_moe_block:
             # For MoE: router and pre_ff_norm_2 need the unfused residual
             # (which is now updated to post_attn_out + old_residual)
             moe_input = residual
@@ -695,8 +827,19 @@ class Gemma4DecoderLayer(nn.Module):
             hidden_states_1 = self.mlp(hidden_states)
 
             # MoE branch: router sees residual (= post_attn_out + old_residual)
-            router_logits = self.router(moe_input)
-            hidden_states_2 = self.pre_feedforward_layernorm_2(moe_input)
+            if self.fuse_norm_pairs and moe_input.dim() == 2:
+                # The router's norm and pre_ff_norm_2 normalize the same row: one read, two outputs.
+                router_input, hidden_states_2 = gemma_dual_output_rmsnorm(
+                    moe_input,
+                    self.router.folded_norm_weight(),
+                    self.pre_feedforward_layernorm_2.weight.data,
+                    self.router.norm.eps,
+                    self.pre_feedforward_layernorm_2.variance_epsilon,
+                )
+                router_logits, _ = self.router.proj(router_input)
+            else:
+                router_logits = self.router(moe_input)
+                hidden_states_2 = self.pre_feedforward_layernorm_2(moe_input)
             hidden_states_2 = self.moe(hidden_states_2, router_logits)
 
             # Fused: (rmsnorm(rmsnorm(h1,w1) + rmsnorm(h2,w2), w3) + residual) * scalar
@@ -708,6 +851,21 @@ class Gemma4DecoderLayer(nn.Module):
                 norm1 = self.post_feedforward_layernorm_1
                 norm2 = self.post_feedforward_layernorm_2
                 norm3 = self.post_feedforward_layernorm
+                if next_input_norm is not None:
+                    return gemma_dual_rmsnorm_residual_scalar_next_norm(
+                        hidden_states_1,
+                        norm1.weight.data,
+                        hidden_states_2,
+                        norm2.weight.data,
+                        norm3.weight.data,
+                        residual,
+                        self.layer_scalar,
+                        next_input_norm.weight.data,
+                        norm1.variance_epsilon,
+                        norm2.variance_epsilon,
+                        norm3.variance_epsilon,
+                        next_input_norm.variance_epsilon,
+                    )
                 hidden_states = gemma_dual_rmsnorm_residual_scalar(
                     hidden_states_1,
                     norm1.weight.data,
@@ -988,6 +1146,13 @@ class Gemma4TextModel(PreTrainedModel):
 
         aux_hidden_states = []
         num_layers = self.config.num_hidden_layers
+        # Each layer's fused epilogue may also produce the next input norm (the final norm
+        # after the last layer); only on a single pipeline stage, which owns both ends.
+        fuse_next_norm = (
+            envs.SGLANG_OPT_GEMMA4_FUSED_GLUE.get() >= Gemma4FusedGlue.ALL
+            and self.pp_group.world_size == 1
+        )
+        normed_input = None
 
         for layer_idx in range(self.start_layer, self.end_layer):
             if layer_idx in self.layers_to_capture:
@@ -998,16 +1163,24 @@ class Gemma4TextModel(PreTrainedModel):
             else:
                 per_layer_input = None
             layer = self.layers[layer_idx]
-            layer_outputs = layer(
+            next_input_norm = None
+            if fuse_next_norm:
+                next_input_norm = (
+                    self.layers[layer_idx + 1].input_layernorm
+                    if layer_idx + 1 < self.end_layer
+                    else self.norm
+                )
+            # The residual is fused inside the layer; the second output is the next input
+            # norm when the layer's epilogue computed it, else None.
+            hidden_states, normed_input = layer(
                 positions=positions,
                 hidden_states=hidden_states,
                 per_layer_input=per_layer_input,
                 forward_batch=forward_batch,
+                normed_input=normed_input,
+                next_input_norm=next_input_norm,
                 **kwargs,
             )
-            hidden_states = layer_outputs[0]
-            # Gemma4DecoderLayer.forward always returns (hidden_states, None);
-            # the residual is fused inside the layer, so nothing to thread.
 
         if not self.pp_group.is_last_rank:
             # cuda_graph_runner allocates a fixed PP-proxy schema of
@@ -1030,7 +1203,10 @@ class Gemma4TextModel(PreTrainedModel):
         if num_layers in self.layers_to_capture:
             aux_hidden_states.append(hidden_states)
 
-        hidden_states = self.norm(hidden_states)
+        if normed_input is not None:
+            hidden_states = normed_input
+        else:
+            hidden_states = self.norm(hidden_states)
 
         if len(aux_hidden_states) == 0:
             return hidden_states

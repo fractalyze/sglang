@@ -254,6 +254,17 @@ class DsparkFoldedSampling(IntEnum):
     FORCE = 2
 
 
+class Gemma4FusedGlue(IntEnum):
+    """How much of Gemma4's per-layer decode glue runs fused (each level includes the lower)."""
+
+    OFF = 0
+    # q/k/v RMSNorm + RoPE + FP8 KV-cache store in one kernel (KV bytes bit-identical).
+    QKV_ROPE_KV = 1
+    # Also the post-attention norm pair, the router / pre-FF-2 norm pair and the
+    # next layer's input norm folded into the dual-norm epilogue (reorders norm sums).
+    ALL = 2
+
+
 class Envs:
     # Organization principles for this registry:
     # - Put every field in exactly one topical section. Prefer an existing
@@ -1158,6 +1169,8 @@ class Envs:
     # Store allowlisted BF16 linears as FP8 E4M3 weights with per-channel scales
     # (changes numerics); decode runs the Triton small-M kernel, prefill dequantizes.
     SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM = EnvBool(False)
+    # Fuse Gemma4's per-layer decode glue kernels; see Gemma4FusedGlue for the levels.
+    SGLANG_OPT_GEMMA4_FUSED_GLUE = EnvInt(Gemma4FusedGlue.OFF)
     SGLANG_DEEPGEMM_STANDARD_LAYOUT = EnvStr("auto")
     SGLANG_DEEPGEMM_MASKED_MEMORY_BUDGET_FRACTION = EnvFloat(0.25)
     # Cap the DeepGEMM masked grouped-GEMM per-expert padded capacity at
