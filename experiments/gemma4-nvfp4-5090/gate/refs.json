@@ -123,5 +123,13 @@
     "env": {
       "SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA": "1"
     }
+  },
+  "base3-mtp5-svk-m078": {
+    "extends": "base3-mtp5-svk",
+    "description": "T-SPEC2b (W8, gemma4nv-b2-tspec2b): base3-mtp5-svk with --mem-fraction-static 0.78, the smallest probed fraction whose sliding KV pool (38.9k tokens) holds W32's 36.9k with the MTP drafter loaded; leaves 5.67 GB free after graph capture vs base3's 5.22 GB; see trials/T-SPEC2b-pool078.md.",
+    "server_args": [
+      "--mem-fraction-static",
+      "0.78"
+    ]
   }
 }
