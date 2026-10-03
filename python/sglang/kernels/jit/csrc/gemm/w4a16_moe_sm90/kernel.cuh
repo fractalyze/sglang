@@ -325,7 +325,7 @@ template <int kTokenBlock>
 __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __grid_constant__ Params p) {
   using Cfg = Config<kTokenBlock>;
   extern __shared__ uint8_t smem_raw[];
-  uint8_t* stages = reinterpret_cast<uint8_t*>(round_up(reinterpret_cast<uintptr_t>(smem_raw), 1024));
+  uint8_t* stages = reinterpret_cast<uint8_t*>((reinterpret_cast<uintptr_t>(smem_raw) + 1023) & ~uintptr_t{1023});
   bf16* epilogue = reinterpret_cast<bf16*>(stages + Cfg::kStages * Cfg::kStageBytes);
   uint64_t* full = reinterpret_cast<uint64_t*>(reinterpret_cast<uint8_t*>(epilogue) + Cfg::kEpilogueBytes);
   uint64_t* empty = full + Cfg::kStages;
