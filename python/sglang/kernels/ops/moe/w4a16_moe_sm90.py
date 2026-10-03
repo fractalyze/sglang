@@ -233,6 +233,10 @@ def w4a16_moe_sm90_gemm(
         sorted_token_ids,
         expert_ids,
         num_tokens_post_padded,
-        topk_weights if topk_weights is not None else out.new_empty(0),
+        (
+            topk_weights
+            if topk_weights is not None
+            else torch.empty(0, dtype=torch.float32, device=out.device)
+        ),
         a_row_divisor,
     )
