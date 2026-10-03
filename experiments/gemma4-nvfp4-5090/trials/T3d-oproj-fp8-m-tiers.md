@@ -1,6 +1,18 @@
 # T3d (gemma4nv-b2-t3d): the FP8 o_proj on the Triton GEMM above 32 rows, in M tiers
 
-**Status: registered (W13, 2026-10-03).** Frozen before any gate run, after the microbench and the unit tests.
+**Status: retired (W13, 2026-10-03).** Gate `T3d-20261003-165907-build-server-2-521351` vs base4-spec-fp8head-fp8lmhead:
+
+| metric | gain | 95% CI |
+|---|---:|---|
+| W8 composite (deciding) | 1.0046 | 1.0004-1.0087 |
+| W1 TPOT | 1.100 (2.732 → 2.484 ms) | |
+| W32 | 1.023 | 0.948-1.104 |
+
+- **Fidelity passed** and integrity held.
+- **The W8 composite is below the 1% bar,** and the prediction (+2.5 … +6%) is falsified.
+- **The W1 and W32 moves are acceptance on divergent greedy text, not speed.** B=1 per-round kernel time is unchanged: verify 6.406 vs 6.411 ms. See `REPORT-bs2-w13.md`.
+
+Below is the frozen registration.
 
 ## Change
 
