@@ -1155,6 +1155,9 @@ class Envs:
     # Route allowlisted small-M (decode) BF16 linears to a Triton GEMM instead of
     # cuBLAS, whose SM120 choice is an SM80 WMMA fallback at 0.55-0.65 of DRAM BW.
     SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM = EnvBool(False)
+    # Store allowlisted BF16 linears as FP8 E4M3 weights with per-channel scales
+    # (changes numerics); decode runs the Triton small-M kernel, prefill dequantizes.
+    SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM = EnvBool(False)
     SGLANG_DEEPGEMM_STANDARD_LAYOUT = EnvStr("auto")
     SGLANG_DEEPGEMM_MASKED_MEMORY_BUDGET_FRACTION = EnvFloat(0.25)
     # Cap the DeepGEMM masked grouped-GEMM per-expert padded capacity at
