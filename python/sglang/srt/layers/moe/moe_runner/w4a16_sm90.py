@@ -46,9 +46,9 @@ def _standard_topk(topk_output):
     return topk_output.topk_ids, topk_output.topk_weights
 
 
-# Mean routed rows per expert from which the FP8 large-M kernel runs. Chosen so
-# DP-gathered prefill chunks take it and EAGLE decode batches stay on w4a16;
-# re-tune from bench_w4a16_moe_sm90's crossover.
+# Mean routed rows per expert from which the FP8 large-M kernel runs. Set above
+# bench_w4fp8_moe_sm90's crossover so DP-gathered prefill chunks take it while
+# EAGLE decode batches keep w4a16 numerics.
 W4FP8_MIN_TOKENS_PER_EXPERT = 128
 
 
