@@ -115,5 +115,13 @@
       "--cuda-graph-max-bs-decode",
       "32"
     ]
+  },
+  "base3-mtp5-svk": {
+    "extends": "base3-mtp5",
+    "description": "T-SPEC2 (W8, gemma4nv-b2-tspec2): base3-mtp5 (T-SPEC1, MTP k=5) on commit c99575c4f52f with SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA=1, which runs Triton TARGET_VERIFY attention through the split-KV verify kernel (occupancy split count, sliding-window layers, tiled stage 2) instead of extend_attention_fwd's one program per (seq, head); see trials/T-SPEC2-splitkv-verify.md.",
+    "commit": "c99575c4f52fee62ed0ebd0276344b059922a2a5",
+    "env": {
+      "SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA": "1"
+    }
   }
 }
