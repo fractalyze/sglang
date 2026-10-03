@@ -767,7 +767,7 @@ class FrozenKVMTPWorkerV2(EAGLEWorkerV2):
             )
             if replay is not None:
                 replay.register(
-                    rows=[req.req_pool_idx for req in batch.reqs],
+                    rows=[req.kv.req_pool_idx for req in batch.reqs],
                     prompts=[req.origin_input_ids for req in batch.reqs],
                 )
                 batch_output.next_token_ids = replay.first_tokens(
