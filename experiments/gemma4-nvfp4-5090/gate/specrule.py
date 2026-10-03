@@ -45,8 +45,21 @@ def replay_mode(replay_path: str) -> runner.LegMode:
 
 
 def record(ref: Dict, run_dir: str, corpus, bos: int) -> str:
-    """The control's free-running outputs on every replayed prompt, written as the replay file."""
-    rec_dir = os.path.join(run_dir, "record")
+    """The control's free-running outputs on every replayed prompt, written as the replay file.
+
+    Retried as a disturbed leg is: a co-tenant can take the GPU between the quiet check and weight load.
+    """
+    errors = []
+    for attempt in range(runner._LEG_RETRIES + 1):
+        try:
+            return _record_once(ref, run_dir, os.path.join(run_dir, "record" if attempt == 0 else f"record-retry{attempt}"),
+                                corpus, bos)
+        except (RuntimeError, hostwatch.HostUnsafe) as e:
+            errors.append(repr(e)[:500])
+    raise RuntimeError(f"record failed {len(errors)} times: {errors}")
+
+
+def _record_once(ref: Dict, run_dir: str, rec_dir: str, corpus, bos: int) -> str:
     os.makedirs(rec_dir)
     by_wl = runner.timed_prompts(corpus, bos, "record", replay_mode(""))
     events: List[Dict] = []
@@ -114,7 +127,10 @@ def run(control_name: str, candidate_name: str, n_pairs: int, label: str, notes:
     refs = {"control": control_ref, "candidate": candidate_ref}
     legs: Dict[str, List[Dict]] = {"control": [], "candidate": []}
     with hostwatch.host_lock():
-        mode = replay_mode(record(control_ref, run_dir, corpus, tok.bos_token_id))
+        replay_path = record(control_ref, run_dir, corpus, tok.bos_token_id)
+        mode = replay_mode(replay_path)
+        replay = fidelity.load_json(replay_path)
+        by_wl = runner.timed_prompts(corpus, tok.bos_token_id, "", mode)
         for k, order in enumerate(runner.abba_order(n_pairs)):
             for role in order:
                 leg_dir = os.path.join(run_dir, f"pair{k}-{role}")
@@ -123,6 +139,10 @@ def run(control_name: str, candidate_name: str, n_pairs: int, label: str, notes:
                 leg["pair"], leg["role"] = k, role
                 runner._write(os.path.join(leg_dir, "leg.json"), leg)
                 legs[role].append(leg)
+                exact = replay_text_exact(leg, replay, by_wl)
+                if not exact["ok"]:
+                    # Every later leg would replay the same broken text; stop before spending them.
+                    raise RuntimeError(f"{leg_dir}: timed text is not the replay: {exact}")
     report = evaluate(meta, legs, run_dir, corpus, tok.bos_token_id)
     runner._write(os.path.join(run_dir, "report.json"), report)
     runner.append_ledger(meta, report, run_dir)
