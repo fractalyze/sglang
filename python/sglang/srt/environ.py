@@ -1391,6 +1391,11 @@ class Envs:
     # Off by default: it changes draft numerics (acceptance only; verify is
     # untouched), and the BF16 head read is ~47% of the draft loop on the 5090.
     SGLANG_OPT_MTP_FP8_LM_HEAD = EnvBool(False)
+    # Compute the Gemma-4 target's logits from an FP8 E4M3 copy of its tied
+    # 262144 x 2816 head (per-row scales) for batches of at most 48 rows (MTP
+    # verify up to B=8); wider batches keep the BF16 embedding. Off by default:
+    # it changes target numerics and adds the 740 MB copy.
+    SGLANG_OPT_GEMMA4_FP8_LM_HEAD = EnvBool(False)
     SGLANG_NGRAM_FORCE_GREEDY_VERIFY = EnvBool(False)
 
     # ===================================================================
