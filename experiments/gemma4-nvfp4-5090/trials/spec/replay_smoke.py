@@ -14,11 +14,28 @@ import json
 import math
 import os
 
-from gate import client, config, hostwatch, prompts, server, specrule
+from gate import client, config, gpu, hostwatch, prompts, server, specrule
 
 
 def _decode(srv, ps, n):
     return asyncio.run(client.spec_acceptance(srv.url, ps, n, concurrency=len(ps)))
+
+
+def _lifetime(ref, log_path, prompt_sets, env=None, attempts=6):
+    """Decodes each (name, prompts, max_new, one_at_a_time) set in one server lifetime.
+
+    Retried like a gate leg: bs2's co-tenant can take the GPU between the quiet check and weight load.
+    """
+    errors = []
+    for attempt in range(attempts):
+        gpu.wait_quiet(None, [])
+        try:
+            with server.Server(ref, f"{log_path}.{attempt}", overlay=specrule.OVERLAY, extra_env=env) as srv:
+                return {name: ([_decode(srv, [p], n)[0] for p in ps] if single else _decode(srv, ps, n))
+                        for name, ps, n, single in prompt_sets}
+        except (RuntimeError, hostwatch.HostUnsafe) as e:
+            errors.append(repr(e)[:300])
+    raise RuntimeError(f"{log_path}: {errors}")
 
 
 def main() -> None:
@@ -37,17 +54,14 @@ def main() -> None:
     out = {"ref": args.ref, "accept_len": config.SPEC_REPLAY_ACCEPT_LEN}
     replay_path = os.path.join(args.out, "replay.json")
     with hostwatch.host_lock():
-        with server.Server(ref, os.path.join(args.out, "record.log"), overlay=specrule.OVERLAY) as srv:
-            rec = {"W1": [_decode(srv, [p], 256)[0] for p in w1], "W8": _decode(srv, w8, 128),
-                   "outside": _decode(srv, outside, 256)}
+        sets = [("W1", w1, 256, True), ("W8", w8, 128, False), ("outside", outside, 256, False)]
+        rec = _lifetime(ref, os.path.join(args.out, "record.log"), sets)
         entries = [{"input_ids": p, "output_ids": r["output_ids"]} for p, r in zip(w1 + w8, rec["W1"] + rec["W8"])]
         with open(replay_path, "w") as f:
             json.dump({"continuations": entries}, f)
         env = {"SGLANG_SIMULATE_ACC_REPLAY_PATH": replay_path,
                "SGLANG_SIMULATE_ACC_REPLAY_LEN": str(config.SPEC_REPLAY_ACCEPT_LEN)}
-        with server.Server(ref, os.path.join(args.out, "replay.log"), overlay=specrule.OVERLAY, extra_env=env) as srv:
-            rep = {"W1": [_decode(srv, [p], 256)[0] for p in w1], "W8": _decode(srv, w8, 128),
-                   "outside": _decode(srv, outside, 256)}
+        rep = _lifetime(ref, os.path.join(args.out, "replay.log"), sets, env)
     a = config.SPEC_REPLAY_ACCEPT_LEN
     checks = {}
     for wl, n in (("W1", 256), ("W8", 128)):
