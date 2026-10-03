@@ -11,6 +11,14 @@ import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
 from sglang.kernels.fused_op import BaseFusedOp
+from sglang.kernels.ops.gemm.triton_small_m_bf16_gemm import (
+    MAX_M as TRITON_SMALL_M_MAX_M,
+    quantize_fp8_weight_per_channel,
+    triton_small_m_bf16_gemm,
+    triton_small_m_fp8_weight_gemm,
+    use_fp8_weight_only,
+    use_triton_small_m_bf16_gemm,
+)
 from sglang.srt.batch_invariant_ops import is_batch_invariant_mode_enabled
 from sglang.srt.environ import envs
 from sglang.srt.layers.amx_utils import (
@@ -383,6 +391,47 @@ def _can_accumulate_into_addend(
     )
 
 
+def _fits_triton_small_m_bf16_gemm(
+    *, x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor]
+) -> bool:
+    # Dynamo would guard on the symbolic token dim through the M check.
+    if torch.compiler.is_compiling() or is_batch_invariant_mode_enabled():
+        return False
+    if bias is not None or not x.is_cuda or not x.is_contiguous():
+        return False
+    if x.dtype != torch.bfloat16 or weight.dtype != torch.bfloat16:
+        return False
+    if not weight.is_contiguous() or weight.requires_grad or x.requires_grad:
+        return False
+    m = x.numel() // x.shape[-1]
+    return use_triton_small_m_bf16_gemm(m, weight.shape[0], weight.shape[1])
+
+
+def _fp8_weight_only_linear(
+    *,
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    scale: torch.Tensor,
+    bias: Optional[torch.Tensor],
+) -> torch.Tensor:
+    x2d = x.reshape(-1, x.shape[-1])
+    if (
+        bias is None
+        and x2d.shape[0] <= TRITON_SMALL_M_MAX_M
+        and x2d.dtype == torch.bfloat16
+        and x2d.is_contiguous()
+        and not torch.compiler.is_compiling()
+    ):
+        out = triton_small_m_fp8_weight_gemm(x2d, weight, scale)
+        return out.view(*x.shape[:-1], -1)
+    # Prefill is compute-bound, so it keeps cuBLAS on an exact bf16 upcast of the
+    # E4M3 weight; the per-output-channel scale factors out of the K sum.
+    out = F.linear(x, weight.to(torch.bfloat16)) * scale
+    if bias is not None:
+        out = out + bias
+    return out.to(x.dtype)
+
+
 def get_bf16_gemm_backend() -> Bf16GemmBackend:
     global _BF16_GEMM_BACKEND
     if _BF16_GEMM_BACKEND is None:
@@ -431,6 +480,14 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
 class UnquantizedLinearMethod(LinearMethodBase):
     """Linear method without quantization."""
 
+    def __init__(self):
+        self._use_triton_small_m_bf16_gemm = (
+            _is_cuda and envs.SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM.get()
+        )
+        self._use_fp8_weight_only = (
+            _is_cuda and envs.SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM.get()
+        )
+
     def create_weights(
         self,
         layer: torch.nn.Module,
@@ -456,6 +513,14 @@ class UnquantizedLinearMethod(LinearMethodBase):
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         if _is_cpu and _is_cpu_amx_available:
             _amx_process_weight_after_loading(layer, ["weight"])
+        if (
+            self._use_fp8_weight_only
+            and layer.weight.dtype == torch.bfloat16
+            and use_fp8_weight_only(*layer.weight.shape)
+        ):
+            weight_fp8, scale = quantize_fp8_weight_per_channel(layer.weight.data)
+            layer.weight = Parameter(weight_fp8, requires_grad=False)
+            layer.weight_scale = Parameter(scale, requires_grad=False)
 
     def apply(
         self,
@@ -480,6 +545,11 @@ class UnquantizedLinearMethod(LinearMethodBase):
         elif _use_aiter and type(layer.weight.data) is torch.Tensor:
             return tgemm.mm(x, layer.weight, bias, otype=x.dtype)
 
+        elif layer.weight.dtype == torch.float8_e4m3fn and self._use_fp8_weight_only:
+            return _fp8_weight_only_linear(
+                x=x, weight=layer.weight, scale=layer.weight_scale, bias=bias
+            )
+
         elif (
             get_bf16_gemm_backend().is_cutedsl()
             and x.is_cuda
@@ -496,6 +566,13 @@ class UnquantizedLinearMethod(LinearMethodBase):
                 # keeping the per-shape kernel choice.
                 return bf16_gemm_dispatch(x, layer.weight, bias)
             return _bf16_gemm_dispatch_impl(x, layer.weight, bias)
+
+        elif self._use_triton_small_m_bf16_gemm and _fits_triton_small_m_bf16_gemm(
+            x=x, weight=layer.weight, bias=bias
+        ):
+            return triton_small_m_bf16_gemm(x.view(-1, x.shape[-1]), layer.weight).view(
+                *x.shape[:-1], -1
+            )
 
         return F.linear(x, layer.weight, bias)
 

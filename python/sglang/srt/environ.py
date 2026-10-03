@@ -1152,6 +1152,12 @@ class Envs:
     # Enable the allowlisted low-M BF16 Split-K GEMM path on Blackwell. Shapes
     # outside the measured allowlist continue to use CuTe DSL/cuBLAS.
     SGLANG_ENABLE_BF16_SPLITK_GEMM = EnvBool(True)
+    # Route allowlisted small-M (decode) BF16 linears to a Triton GEMM instead of
+    # cuBLAS, whose SM120 choice is an SM80 WMMA fallback at 0.55-0.65 of DRAM BW.
+    SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM = EnvBool(False)
+    # Store allowlisted BF16 linears as FP8 E4M3 weights with per-channel scales
+    # (changes numerics); decode runs the Triton small-M kernel, prefill dequantizes.
+    SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM = EnvBool(False)
     SGLANG_DEEPGEMM_STANDARD_LAYOUT = EnvStr("auto")
     SGLANG_DEEPGEMM_MASKED_MEMORY_BUDGET_FRACTION = EnvFloat(0.25)
     # Cap the DeepGEMM masked grouped-GEMM per-expert padded capacity at
@@ -1375,6 +1381,11 @@ class Envs:
     # extend_attention_fwd for unsupported cases or when set false (e.g. for
     # debugging). Correctness is unaffected; this only changes performance.
     SGLANG_ENABLE_SPLITKV_VERIFY = EnvBool(True)
+    # Also run that split-KV verify kernel on CUDA, including sliding-window
+    # layers, with a split count sized for SM occupancy. Off by default: the
+    # extend kernel launches one program per (seq, head) at verify, which
+    # idles most SMs at small batch on the RTX 5090.
+    SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA = EnvBool(False)
     SGLANG_NGRAM_FORCE_GREEDY_VERIFY = EnvBool(False)
 
     # ===================================================================

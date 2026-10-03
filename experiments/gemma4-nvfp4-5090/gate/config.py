@@ -47,12 +47,21 @@ class Workload(msgspec.Struct, frozen=True, kw_only=True):
     decode_tokens: int
     reps_per_leg: int
     gated: bool
+    # Nonempty: every leg of every pair times the same prompts, drawn from this
+    # seed, so a pair's gain varies only with timing noise. Empty: each pair
+    # draws fresh prompts from its own seed.
+    fixed_prompt_seed: str = ""
 
 
 # W8 is the Yukon gemma track shape and carries the composite score.
 W8 = Workload(name="W8", concurrency=8, prompt_tokens=1024, decode_tokens=128, reps_per_leg=4, gated=True)
-# W1 gates single-stream TPOT.
-W1 = Workload(name="W1", concurrency=1, prompt_tokens=1024, decode_tokens=256, reps_per_leg=3, gated=True)
+# W1 gates single-stream TPOT. Design v2 (W10, 2026-10-03): 24 fixed prompts
+# instead of 3 fresh ones per pair. Under speculative decoding TPOT follows each
+# prompt's acceptance (per-prompt log-gain sigma 0.28 in T-SPEC2b), so fresh
+# prompts made the per-pair spread a prompt-sampling spread (23.7% over 4 pairs).
+# Verdicts gated before v2 stand on the old design.
+W1 = Workload(name="W1", concurrency=1, prompt_tokens=1024, decode_tokens=256, reps_per_leg=24, gated=True,
+              fixed_prompt_seed="W1-fixed-v2")
 # W32 is a secondary throughput number, reported but never gated.
 W32 = Workload(name="W32", concurrency=32, prompt_tokens=1024, decode_tokens=128, reps_per_leg=1, gated=False)
 WORKLOADS = (W8, W1, W32)

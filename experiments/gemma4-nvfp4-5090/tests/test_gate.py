@@ -55,6 +55,24 @@ class StatsTest(absltest.TestCase):
         self.assertFalse(v["checks"]["w1_tpot_no_regression"])
         self.assertFalse(v["promote"])
 
+    def test_ci_is_reported_but_never_a_check(self):
+        noise = {m: 0.002 for m in stats.GATED_METRICS}
+        legs = [_leg(1, 1.05, w1_decode=d) for d in (2.3, 2.9, 2.3, 2.9)]
+        s = stats.summarize_pairs(legs, [_leg(1, 1.0)] * 4)
+        v = stats.timing_verdict(s, noise)
+        self.assertFalse(v["ci95_narrower_than_bar"]["w1_tpot_gain"])
+        self.assertTrue(v["ci95_narrower_than_bar"]["w8_decode_gain"])
+        self.assertNotIn("w1_tpot_ci", " ".join(v["checks"]))
+        self.assertTrue(v["promote"])
+
+    def test_pair_ci95_uses_student_t(self):
+        logs = [math.log(1.1), math.log(1.3)]
+        ci = stats.pair_ci95(logs)
+        half = 12.706 * (math.log(1.3) - math.log(1.1)) / math.sqrt(2) / math.sqrt(2)
+        self.assertAlmostEqual(ci["half_width"], math.expm1(half))
+        self.assertAlmostEqual(ci["low"] * ci["high"], 1.1 * 1.3)
+        self.assertEqual(stats.pair_ci95([0.0, 0.0, 0.0])["half_width"], 0.0)
+
 
 class DecideOnTest(absltest.TestCase):
     noise = {m: 0.002 for m in stats.GATED_METRICS}
@@ -207,6 +225,13 @@ class QualityTest(parameterized.TestCase):
 
 
 class RunnerTest(absltest.TestCase):
+    def test_w1_times_the_same_prompts_in_every_pair(self):
+        w1 = [runner.timing_seed(config.W1, f"nonce/pair{k}", 5) for k in range(4)]
+        self.assertEqual(len(set(w1)), 1)
+        self.assertNotEqual(runner.timing_seed(config.W1, "p", 0), runner.timing_seed(config.W1, "p", 1))
+        w8 = [runner.timing_seed(config.W8, f"nonce/pair{k}", 0) for k in range(4)]
+        self.assertEqual(len(set(w8)), 4)
+
     def test_abba_alternates(self):
         self.assertEqual(runner.abba_order(3), [["control", "candidate"], ["candidate", "control"],
                                                 ["control", "candidate"]])

@@ -1,0 +1,13 @@
+{
+ "copy_GBs": 1527.0460463523057,
+ "read_GBs": 1621.1906830018652,
+ "bf16_tflops": 235.4472664338569,
+ "fp8_tflops": 669.3766585222309,
+ "lm_head_M1_us": 943.5088157653809,
+ "lm_head_M1_GBs": 1564.7919588354223,
+ "lm_head_M8_us": 882.1711540222168,
+ "lm_head_M8_GBs": 1673.5924783625583,
+ "graph_launch_floor_us": 0.8136351585388184,
+ "device": "NVIDIA GeForce RTX 5090",
+ "clocks_note": "unlocked clocks on shared host; see clocks.csv"
+}

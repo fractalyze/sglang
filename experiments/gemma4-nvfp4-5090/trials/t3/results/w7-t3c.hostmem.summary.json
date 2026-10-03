@@ -1,0 +1,23 @@
+{
+ "returncode": 0,
+ "preflight": {
+  "mem_available_gb": 55.06048583984375,
+  "swap_used_gb": 0.7259902954101562,
+  "load1": 0.92,
+  "foreign_gpu_gb": 0,
+  "waited": []
+ },
+ "peaks_by_phase": {
+  "start": {
+   "min_mem_available_gb": 53.63441848754883,
+   "peak_tree_rss_gb": 1.6190605163574219,
+   "peak_load1": 1.05,
+   "peak_swap_used_gb": 0.7259902954101562,
+   "peak_n_compilers": 2,
+   "peak_compiler_rss_gb": 0.2547492980957031,
+   "peak_max_compiler_rss_gb": 0.24853134155273438
+  }
+ },
+ "tripped": null,
+ "csv": "/home/jooman/gemma4nv/w7/mb-t3c/hostmem.csv"
+}
