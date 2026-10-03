@@ -1,5 +1,15 @@
 # T-SPEC5 (gemma4nv-b3-tspec5): T-SPEC2b's speculative stack on base5 (build-server-3)
 
+**Status: kept (W11, 2026-10-03).** Gate `gemma4nv-b3-tspec5-r2-20261003-134245-build-server-3-f33cc2` (6 pairs) vs `base5`:
+- W8 composite **1.349** (CI 1.329-1.370; decode 1.625, prefill 0.772);
+- W1 TPOT 5.184 -> 2.855 ms (**-44.9%**, gain 1.816);
+- W32 1606 -> 1657 tok/s (**+3.2%**, CI 0.999-1.066; guard passes);
+- fidelity pass (decode KL 0.0162 vs control 0.0207), integrity ok;
+- full GSM8K 96.36 -> 96.13% (-0.23 pt, CI [-0.86, +0.40]), tool-JSON 100 -> 100;
+- hidden tau 3.29 (screen).
+
+Every metric landed inside its frozen interval. Run 1 (`...-130735-...-c82e63`) gave the same gains (W8 1.356) but failed integrity: a co-tenant GPU process in pair5-candidate's window. See `REPORT-bs3-w11.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W11 (bs3) before any gate run. Variant of T-SPEC2b (`gemma4nv-b2-tspec2b`); the bs3 counterpart of W10's T-SPEC3 (base4, bs2), which has no verdict yet.
 
 ## Control and candidate

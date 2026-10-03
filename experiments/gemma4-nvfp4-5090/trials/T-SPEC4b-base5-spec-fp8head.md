@@ -1,5 +1,13 @@
 # T-SPEC4b (gemma4nv-b3-tspec4b): T-SPEC4's FP8 MTP head on base5-spec (build-server-3)
 
+**Status: kept (W11, 2026-10-03).** Gate `gemma4nv-b3-tspec4b-20261003-140249-build-server-3-900d19` (6 pairs) vs `base5-spec`:
+- W1 TPOT 2.863 -> 2.642 ms (**-7.7%**, gain 1.0836, CI 1.046-1.122);
+- W8 composite **1.054** (above the predicted +1 … +5%); W32 **+5.0%** (above 0 … +4%);
+- fidelity pass (decode KL 0.0178 vs control 0.0162), integrity ok;
+- hidden tau 3.29 -> 3.49 (screen), outside the predicted -2 … +1% band upward; per category it moved both ways.
+
+See `REPORT-bs3-w11.md`. Below is the frozen registration.
+
 Registered 2026-10-03 by W11 (bs3) before any screen or gate run of the change on base5-spec. Variant of T-SPEC4 (`gemma4nv-b2-tspec4`, kept on bs2 vs base4-spec). The coordinator asked for it so base6 can be base5 + spec + FP8 MTP head if T-SPEC5 and this trial both keep.
 
 ## Control and candidate
