@@ -27,5 +27,29 @@
       "--triton-attention-num-kv-splits",
       "16"
     ]
+  },
+  "w32a-mem080": {
+    "description": "T-W32a (gemma4nv-b3-w32a): base plus --mem-fraction-static 0.80, so the KV pools (66k full / 53k sliding tokens) hold W32's 32 x 1152 tokens without retraction; see trials/W32-DIAG.md.",
+    "extends": "base",
+    "server_args": [
+      "--mem-fraction-static",
+      "0.80"
+    ]
+  },
+  "w32b-mem076": {
+    "description": "T-W32b (gemma4nv-b3-w32b, variant of T-W32a): base plus --mem-fraction-static 0.76, the smallest probed fraction whose KV pools (52k full / 41.5k sliding tokens) hold W32 without retraction while leaving 5.2 GB for the teacher-forced logprob peak that OOMed 0.80; see trials/W32-DIAG.md.",
+    "extends": "base",
+    "server_args": [
+      "--mem-fraction-static",
+      "0.76"
+    ]
+  },
+  "smallm-gemm": {
+    "extends": "w32b-mem076",
+    "description": "T3 (W6, gemma4nv-b2-t3): base2 (w32b-mem076) on commit 1fd77e64b0 (base a9871012 + Triton small-M BF16 GEMM) with SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM=1, routing the decode-M o_proj and dense MLP BF16 linears off cuBLAS's SM80 WMMA fallback; see trials/T3-smallm-bf16-gemm.md.",
+    "commit": "1fd77e64b05a88e4c89e9787e49c122caf3b47c8",
+    "env": {
+      "SGLANG_OPT_USE_TRITON_SMALL_M_BF16_GEMM": "1"
+    }
   }
 }

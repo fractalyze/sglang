@@ -155,7 +155,7 @@ A candidate fails if either drops more than 1.0 pt.
 **Decode bound.** Compulsory bytes per step at 1792 GB/s. The bytes come from the safetensors headers:
 
 - Routed experts: the measured distinct experts per layer x 3.345 MB per expert (NVFP4 plus FP8 block scales).
-- KV read: sliding layers capped at the 1024 window; full layers counted as one copy because K = V.
+- KV read: sliding layers capped at the 1024 window; full layers count two copies (K and V). `attention_k_eq_v` shares only the projection weight: the cached K is k_norm + RoPE and the cached V is v_norm of the same projection, so both are stored and read. (The first version of this table counted one copy; recomputed from the same router data in `reference/sol/sol.v2.json`.)
 
 **Router measurement.** `--enable-return-routed-experts` at 128 decode steps, taking the per-step union over the batch.
 
@@ -175,16 +175,16 @@ Mean bytes per decode step (GB):
 | lm_head = tied embedding (BF16) | 1.476 | 1.476 | 1.476 |
 | router + norms | 0.023 | 0.023 | 0.023 |
 | routed experts (NVFP4, distinct only) | 4.283 | 0.803 | 6.260 |
-| KV read (FP8) | 0.883 | 0.111 | 3.534 |
-| **total** | **9.958** | **5.704** | **14.587** |
+| KV read (FP8) | 0.928 | 0.117 | 3.712 |
+| **total** | **10.003** | **5.710** | **14.766** |
 
-On this checkpoint, BF16 attention, dense MLP and lm_head make up 4.77 GB of W8's 9.96 GB step (48%), more than the routed experts (43%).
+On this checkpoint, BF16 attention, dense MLP and lm_head make up 4.77 GB of W8's 10.00 GB step (48%), more than the routed experts (43%).
 
 | workload | achieved decode step | SOL step | **decode sol_fraction** | implied BW | achieved batch prefill | prefill SOL (NVFP4/FP8 view / as served) | **prefill sol_fraction** (NVFP4/FP8 / as served) |
 |---|---|---|---|---|---|---|---|
-| W8 | 9.29 ms | 5.56 ms | **0.60** | 1072 GB/s | 291 ms | 63.7 / 154.9 ms | **0.22 / 0.53** |
-| W1 | 6.07 ms | 3.18 ms | **0.52** | 939 GB/s | 48.4 ms | 9.8 / 19.4 ms | **0.20 / 0.40** |
-| W32 | 17.05 ms | 8.14 ms | **0.48** | 856 GB/s | 2615 ms | 254.6 / 619.6 ms | **0.10 / 0.24** |
+| W8 | 9.29 ms | 5.58 ms | **0.60** | 1077 GB/s | 291 ms | 63.7 / 154.9 ms | **0.22 / 0.53** |
+| W1 | 6.07 ms | 3.19 ms | **0.52** | 940 GB/s | 48.4 ms | 9.8 / 19.4 ms | **0.20 / 0.40** |
+| W32 | 17.05 ms | 8.24 ms | **0.48** | 866 GB/s | 2615 ms | 254.6 / 619.6 ms | **0.10 / 0.24** |
 
 How to read the prefill columns:
 

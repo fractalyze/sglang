@@ -132,6 +132,14 @@ class RunnerTest(absltest.TestCase):
         self.assertEqual(runner.server_arg_diff(a, b, [])["undeclared"], ["attention_backend"])
         self.assertEqual(runner.server_arg_diff(a, b, ["--attention-backend", "fa3"])["undeclared"], [])
 
+    def test_pool_size_flag_declares_its_derived_keys(self):
+        a = {"server_info": {"mem_fraction_static": 0.718, "max_total_num_tokens": 37081, "max_req_input_len": 37075,
+                             "launch_command": "--port 1"}}
+        b = {"server_info": {"mem_fraction_static": 0.76, "max_total_num_tokens": 51892, "max_req_input_len": 51886,
+                             "launch_command": "--port 1 --mem-fraction-static 0.76"}}
+        diff = runner.server_arg_diff(a, b, ["--mem-fraction-static", "0.76"])
+        self.assertEqual(diff, {"differing_keys": ["mem_fraction_static"], "undeclared": []})
+
 
 class HostWatchTest(absltest.TestCase):
     def _with(self, mem, swap, foreign):
@@ -200,17 +208,17 @@ class SolTest(absltest.TestCase):
     def tearDown(self):
         sol._text_config = self._orig
 
-    def test_kv_k_eq_v_counts_one_copy(self):
+    def test_kv_k_eq_v_still_counts_k_and_v(self):
         kv = sol.kv_bytes_per_token(1.0)
         self.assertEqual(kv["sliding"], 8 * 256 * 2)
-        self.assertEqual(kv["full"], 2 * 512)
+        self.assertEqual(kv["full"], 2 * 512 * 2)
 
     def test_sliding_kv_read_caps_at_window(self):
         weights = {"bytes_by_component": {"attention_weights": 0, "dense_mlp": 0, "router": 0, "norms_misc": 0,
                                           "lm_head_tied_embed": 0}, "bytes_per_expert_by_layer": {}}
         short = sol.decode_step_bytes([1024], {}, 1.0, weights)["kv_read"]
         long = sol.decode_step_bytes([4096], {}, 1.0, weights)["kv_read"]
-        self.assertEqual(long - short, 3072 * 2 * 512)
+        self.assertEqual(long - short, 3072 * 2 * 512 * 2)
 
     def test_distinct_experts_unions_streams_per_step(self):
         import numpy as np
