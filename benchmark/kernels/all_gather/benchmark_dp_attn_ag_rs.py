@@ -39,11 +39,13 @@ import json
 import os
 from typing import Callable, List
 
+# The engine sets CUDA_DEVICE_MAX_CONNECTIONS=8 for every server.
 _CONFIG_ENV = {
     "default": {"NCCL_CUMEM_ENABLE": "0", "NCCL_NVLS_ENABLE": "0"},
     "nvls": {"NCCL_CUMEM_ENABLE": "0", "NCCL_NVLS_ENABLE": "1"},
     "symm": {"NCCL_CUMEM_ENABLE": "1", "NCCL_NVLS_ENABLE": "1"},
 }
+_SERVER_ENV = {"CUDA_DEVICE_MAX_CONNECTIONS": "8"}
 
 
 def _parse_args() -> argparse.Namespace:
@@ -66,7 +68,11 @@ def _parse_args() -> argparse.Namespace:
         "--nvlink-gbps",
         type=float,
         default=370.0,
-        help="Achievable NVLink bus bandwidth used for the floor column.",
+        help=(
+            "Bus bandwidth (GB/s) for the floor_us column. The default is the "
+            "NCCL Simple-protocol figure on 8x H100 SXM (NVLink 4, NVSwitch); "
+            "pass the figure for your machine."
+        ),
     )
     parser.add_argument("--graph-loop", type=int, default=20)
     parser.add_argument("--test-loop", type=int, default=20)
@@ -76,6 +82,7 @@ def _parse_args() -> argparse.Namespace:
 
 # NCCL reads these at communicator init, before any import creates one.
 ARGS = _parse_args()
+os.environ.update(_SERVER_ENV)
 os.environ.update(_CONFIG_ENV[ARGS.config])
 
 import torch  # noqa: E402
@@ -104,9 +111,10 @@ def _rank_input(rank: int, rows: int, hidden: int, device) -> torch.Tensor:
     )
 
 
-def _graph_time_us(
+def _graph_latencies_us(
     *, fn: Callable[[], object], graph_loop: int, test_loop: int
-) -> float:
+) -> List[float]:
+    """Per-call latency of each replay, sorted ascending."""
     with graph_capture() as ctx:
         graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(graph, stream=ctx.stream):
@@ -127,11 +135,13 @@ def _graph_time_us(
         end.synchronize()
         latencies.append(start.elapsed_time(end) * 1000 / graph_loop)
     graph.reset()
-    latencies.sort()
-    return latencies[len(latencies) // 2]
+    return sorted(latencies)
 
 
-def _row(op: str, impl: str, tokens: int, nbytes: int, us: float) -> dict:
+def _row(
+    op: str, impl: str, tokens: int, nbytes: int, latencies_us: List[float]
+) -> dict:
+    us = latencies_us[len(latencies_us) // 2]
     world = dist.get_world_size()
     # nccl-tests bus bandwidth: each rank moves (n - 1) / n of the full buffer.
     bus_bytes = nbytes * (world - 1) / world
@@ -143,6 +153,8 @@ def _row(op: str, impl: str, tokens: int, nbytes: int, us: float) -> dict:
         "global_tokens": tokens,
         "MiB": round(nbytes / 2**20, 2),
         "us": round(us, 1),
+        "min_us": round(latencies_us[0], 1),
+        "max_us": round(latencies_us[-1], 1),
         "bus_GBps": round(bus_bytes / us / 1e3, 1),
         "floor_us": round(bus_bytes / ARGS.nvlink_gbps / 1e3, 1),
     }
@@ -172,10 +184,14 @@ def _create_multimem_state(*, tp_group, device):
     )
 
 
-def _time_checked(*, fn, out: torch.Tensor, expected: torch.Tensor, what: str) -> float:
-    us = _graph_time_us(fn=fn, graph_loop=ARGS.graph_loop, test_loop=ARGS.test_loop)
+def _time_checked(
+    *, fn, out: torch.Tensor, expected: torch.Tensor, what: str
+) -> List[float]:
+    latencies_us = _graph_latencies_us(
+        fn=fn, graph_loop=ARGS.graph_loop, test_loop=ARGS.test_loop
+    )
     assert torch.equal(out.view_as(expected), expected), f"{what} mismatch"
-    return us
+    return latencies_us
 
 
 def _bench_tokens(*, tokens: int, tp_group, device, symm: bool, multimem_state):
@@ -196,28 +212,28 @@ def _bench_tokens(*, tokens: int, tp_group, device, symm: bool, multimem_state):
         rs_in = rs_inputs[rank].clone()
         rs_out = torch.empty_like(expected_rs)
 
-    ag_us = _time_checked(
+    ag_latencies = _time_checked(
         fn=lambda: tp_group.all_gather_into_tensor(ag_out, ag_in),
         out=ag_out,
         expected=expected_ag,
         what=f"nccl all_gather at {tokens=}",
     )
-    rs_us = _time_checked(
+    rs_latencies = _time_checked(
         fn=lambda: tp_group.reduce_scatter_tensor(rs_out, rs_in),
         out=rs_out,
         expected=expected_rs,
         what=f"nccl reduce_scatter at {tokens=}",
     )
     rows = [
-        _row("all_gather", "nccl", tokens, expected_ag.nbytes, ag_us),
-        _row("reduce_scatter", "nccl", tokens, rs_in.nbytes, rs_us),
+        _row("all_gather", "nccl", tokens, expected_ag.nbytes, ag_latencies),
+        _row("reduce_scatter", "nccl", tokens, rs_in.nbytes, rs_latencies),
     ]
 
     if multimem_state is not None:
         flat_in = ag_in.view(1, -1)
         # Kernel output is a view into the symmetric buffer: stable across calls.
         mm_out = multimem_state.comm_buff.view(-1)[: expected_ag.numel()]
-        mm_us = _time_checked(
+        mm_latencies = _time_checked(
             fn=lambda: triton_symm_mem_ag.all_gather_inner(
                 multimem_state,
                 flat_in,
@@ -228,7 +244,9 @@ def _bench_tokens(*, tokens: int, tp_group, device, symm: bool, multimem_state):
             expected=expected_ag,
             what=f"multimem all_gather at {tokens=}",
         )
-        rows.append(_row("all_gather", "multimem", tokens, expected_ag.nbytes, mm_us))
+        rows.append(
+            _row("all_gather", "multimem", tokens, expected_ag.nbytes, mm_latencies)
+        )
     return rows
 
 
