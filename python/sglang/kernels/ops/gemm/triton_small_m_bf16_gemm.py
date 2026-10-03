@@ -27,12 +27,8 @@ class _TileConfig(NamedTuple):
     block_n: int
     block_k: int
     num_stages: int
-    # Largest M routed to the tile; without block_m_cap its shared memory must fit
-    # BLOCK_M = next_pow2(max_m).
+    # Largest M routed to the tile; its shared memory must fit BLOCK_M = next_pow2(max_m).
     max_m: int = MAX_M
-    # Caps BLOCK_M so M above it runs one program per M block; the weight's later reads
-    # then come from L2 instead of DRAM.
-    block_m_cap: Optional[int] = None
 
 
 # Measured on RTX 5090 at M in {1, 8, 16, 32} (gemma4nv T3 microbench).
@@ -52,11 +48,6 @@ _FP8_WEIGHT_TUNED_SHAPES: Dict[Tuple[int, int], _TileConfig] = {
     # Gemma-4-26B-A4B o_proj: sliding and full.
     (2816, 4096): _TileConfig(32, 256, 4),
     (2816, 8192): _TileConfig(32, 256, 4),
-    # Gemma-4-26B-A4B qkv_proj, sliding and full, at MTP verify widths (1 + k) * B. With 32-row
-    # M blocks the kernel beats cuBLAS BF16 up to M=96 and ties it at M=192 (B=32, k=5), where
-    # the bf16-upcast route costs 2.1-2.5x cuBLAS (gemma4nv W12 microbench).
-    (8192, 2816): _TileConfig(64, 128, 4, max_m=256, block_m_cap=32),
-    (10240, 2816): _TileConfig(64, 128, 4, max_m=256, block_m_cap=32),
 }
 # FP8 E4M3 vocab heads, kept apart so the linear allowlist above never picks them
 # up: Gemma-4-26B-A4B MTP assistant's tied head (SGLANG_OPT_MTP_FP8_LM_HEAD).
@@ -195,8 +186,6 @@ def _launch(
     n = weight.shape[0]
     # tl.dot needs at least 16 rows; padding rows are masked loads of zero.
     block_m = max(16, triton.next_power_of_2(m))
-    if cfg.block_m_cap is not None:
-        block_m = min(block_m, cfg.block_m_cap)
     out = torch.empty((m, n), dtype=torch.bfloat16, device=x.device)
     grid = (triton.cdiv(n, cfg.block_n), triton.cdiv(m, block_m))
     _small_m_bf16_gemm_kernel[grid](
