@@ -89,10 +89,10 @@ from sglang.srt.distributed.device_communicators.pynccl_allocator import (  # no
     use_symmetric_memory,
 )
 from sglang.srt.distributed.parallel_state import (  # noqa: E402
-    get_tp_group,
     graph_capture,
     initialize_model_parallel,
 )
+from sglang.srt.runtime_context import get_parallel  # noqa: E402
 from sglang.test.test_utils import publish_build_topology  # noqa: E402
 
 
@@ -156,7 +156,7 @@ def _init_groups(*, symm: bool):
     init_distributed_environment(world_size=world, rank=rank, local_rank=device.index)
     publish_build_topology(world_rank=rank, tp_size=world, enable_symm_mem=symm)
     initialize_model_parallel(enable_symm_mem=symm)
-    return get_tp_group(), device
+    return get_parallel().tp_group, device
 
 
 def _create_multimem_state(*, tp_group, device):
