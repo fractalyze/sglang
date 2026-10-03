@@ -95,12 +95,6 @@ struct Config {
   static_assert(kStages >= 3, "token block too wide for a three-stage pipeline");
   static constexpr int kSmemBytes = kAlignSlack + kStages * kStageBytes + kEpilogueBytes + kMetaBytes + kBarrierBytes;
 
-  // A stage is exactly one AWQ group, so a row's scale is constant within it:
-  // wgmma accumulates exact q - z products into a per-stage partial, folded into
-  // the result with one fp32 FMA per value. That replaces the per-weight bf16
-  // scale multiply; wider blocks lack registers for the double-buffered partial.
-  static constexpr bool kScaleOnAccumulator = kTokenBlock <= 32;
-
   static constexpr int kStageTxBytes = kWeightBytes + kScaleBytes + kZeroBytes;
   // One expect_tx arrival plus one cp.async arrival per producer thread.
   static constexpr int kFullArrivals = 1 + kProducerThreads;
@@ -250,8 +244,6 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   Tensor frag_a_even = thr_mma.partition_fragment_A(a_shape);  // ((2,2,2), 1, 8)
   Tensor frag_a_odd = thr_mma.partition_fragment_A(a_shape);
   Tensor acc = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
-  Tensor part_even = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
-  Tensor part_odd = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
   Tensor acc_coord = thr_mma.partition_C(make_identity_tensor(Shape<_64, Int<kTokenBlock>>{}));
 
   bf16* staging = epilogue + wg * kTokenBlock * Cfg::kEpilogueStride;
@@ -290,19 +282,15 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
     float row_weight = row_valid ? 1.0f : 0.0f;
     if (p.topk_weights != nullptr && row_valid) row_weight = p.topk_weights[cur.id];
 
-    // Dequantises stage `s` into `frag_a` and issues its wgmma batch without
-    // waiting on it, into `part` with the row scales returned in `scale`, or
-    // straight into `acc` with the weights already scaled.
-    auto issue_stage = [&](auto& frag_a, auto& part, float* scale, int s) {
+    // Dequantises stage `s` into `frag_a` and issues its wgmma batch without waiting on it.
+    auto issue_stage = [&](auto& frag_a, int s) {
       const uint8_t* stage = stages + s * Cfg::kStageBytes;
       const __nv_bfloat16* scales = reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset);
       const uint8_t* zeros = stage + Cfg::kZeroOffset;
+      const nv_bfloat162 scale_lo = __bfloat162bfloat162(scales[row_lo]);
+      const nv_bfloat162 scale_hi = __bfloat162bfloat162(scales[row_lo + 8]);
       const nv_bfloat162 zero_lo = biased_zero(zeros[row_lo]);
       const nv_bfloat162 zero_hi = biased_zero(zeros[row_lo + 8]);
-      const __nv_bfloat16 s_lo = scales[row_lo];
-      const __nv_bfloat16 s_hi = scales[row_lo + 8];
-      scale[0] = __bfloat162float(s_lo);
-      scale[1] = __bfloat162float(s_hi);
 
       Tensor frag_a_words = recast<uint32_t>(frag_a);
       const uint4* words = reinterpret_cast<const uint4*>(stage) + wg * 2 * 128 + tid;
@@ -313,11 +301,7 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
 #pragma unroll
         for (int j = 0; j < 4; ++j) {
           uint32_t frag[4];
-          if constexpr (Cfg::kScaleOnAccumulator) {
-            dequant_fragment_codes(slices[j], zero_lo, zero_hi, reinterpret_cast<nv_bfloat162*>(frag));
-          } else {
-            dequant_fragment(slices[j], zero_lo, zero_hi, __bfloat162bfloat162(s_lo), __bfloat162bfloat162(s_hi), frag);
-          }
+          dequant_fragment(slices[j], zero_lo, zero_hi, scale_lo, scale_hi, frag);
 #pragma unroll
           for (int r = 0; r < 4; ++r) {
             frag_a_words((half * 4 + j) * 4 + r) = frag[r];
@@ -329,72 +313,35 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
           make_smem_ptr(reinterpret_cast<const bf16*>(stage + Cfg::kTokenOffset)), typename Cfg::SmemLayoutTokens{});
       Tensor frag_b = thr_mma.partition_fragment_B(tokens);  // descriptors, (1, 1, 8)
 
-      auto& target = [&]() -> auto& {
-        if constexpr (Cfg::kScaleOnAccumulator) {
-          return part;
-        } else {
-          return acc;
-        }
-      }();
       warpgroup_fence_operand(frag_a);
-      warpgroup_fence_operand(target);
       warpgroup_arrive();
-      tiled_mma.accumulate_ = Cfg::kScaleOnAccumulator ? GMMA::ScaleOut::Zero : GMMA::ScaleOut::One;
 #pragma unroll
       for (int k16 = 0; k16 < size<2>(frag_a); ++k16) {
-        cute::gemm(tiled_mma, frag_a(_, _, k16), frag_b(_, _, k16), target);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        cute::gemm(tiled_mma, frag_a(_, _, k16), frag_b(_, _, k16), acc);
       }
       warpgroup_commit_batch();
-    };
-
-    // acc += scale[row] * part; C values alternate row g, g + 8 every second element.
-    auto fold = [&](auto& part, const float* scale) {
-      if constexpr (Cfg::kScaleOnAccumulator) {
-        warpgroup_fence_operand(part);
-#pragma unroll
-        for (int i = 0; i < size(acc); ++i) {
-          acc(i) = fmaf(scale[(i >> 1) & 1], part(i), acc(i));
-        }
-      }
     };
 
     clear(acc);
     warpgroup_fence_operand(acc);
     // One wgmma batch stays in flight while the next stage dequantises, so the
-    // register A fragments and partials alternate and a stage is released one
-    // step late.
-    float scale_even[2], scale_odd[2];
+    // register A fragments alternate and a stage is released one step late.
     int prev_stage = -1;
     for (int kt = 0; kt < k_tiles; ++kt, ++it) {
       const int s = it % Cfg::kStages;
       device::ptx::mbar_wait_parity(&full[s], (it / Cfg::kStages) & 1);
       if (it & 1) {
-        issue_stage(frag_a_odd, part_odd, scale_odd, s);
+        issue_stage(frag_a_odd, s);
       } else {
-        issue_stage(frag_a_even, part_even, scale_even, s);
+        issue_stage(frag_a_even, s);
       }
       warpgroup_wait<1>();
-      if (prev_stage >= 0) {
-        if (it & 1) {
-          fold(part_even, scale_even);
-        } else {
-          fold(part_odd, scale_odd);
-        }
-        device::ptx::mbar_arrive(&empty[prev_stage]);
-      }
+      if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
       prev_stage = s;
     }
     warpgroup_wait<0>();
-    if (prev_stage >= 0) {
-      if ((it - 1) & 1) {
-        fold(part_odd, scale_odd);
-      } else {
-        fold(part_even, scale_even);
-      }
-      device::ptx::mbar_arrive(&empty[prev_stage]);
-    }
     warpgroup_fence_operand(acc);
+    if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
 
     if (tid < kTokenBlock) {
       tile_ids[tid] = row_valid ? cur.id : -1;
