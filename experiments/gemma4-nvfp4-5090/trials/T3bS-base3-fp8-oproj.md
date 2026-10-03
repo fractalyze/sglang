@@ -1,5 +1,13 @@
 # T3bS (gemma4nv-b3-t3b): FP8 E4M3 weight-only o_proj stacked on base3, build-server-3
 
+**Status: kept and adopted into base4 (W9, 2026-10-03).**
+- **Gate** `gemma4nv-b3-t3b-20261003-103822-build-server-3-012d22`: W8 composite 1.0142,
+  W1 TPOT -4.03%, W32 0.9997, decode KL 0.0253 (p99 0.45). The decode KL check exercises the
+  M <= 32 kernel.
+- **Full-GSM8K quality:** paired delta -0.23 pt, 95% CI [-0.92, +0.47]; tool-JSON 100 -> 100.
+
+See `REPORT-bs3-w9.md`. Below is the frozen registration.
+
 Registered before any run (W9, 2026-10-03). Variant of `gemma4nv-b2-t3b` (bs2, W7, kept against
 `smallm-gemm` = base2 + T3; see `trials/T3b-fp8-weight-oproj.md` on `jumanzii/gemma4nv-analysis`).
 
