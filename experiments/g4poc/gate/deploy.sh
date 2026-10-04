@@ -1,0 +1,23 @@
+#!/bin/bash
+# Copies the g4poc experiments directory to a g4poc host and stamps it with the
+# local commit, so the gate records the harness that actually ran.
+#   gate/deploy.sh <host> <dest g4poc dir>
+# Refuses a dirty tree: a stamp must name a commit that contains these files.
+set -euo pipefail
+host="$1" dest="$2"
+here="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -n "$(git -C "$here" status --porcelain -- .)" ]; then
+  echo "refusing to deploy: $here has uncommitted changes" >&2
+  exit 1
+fi
+commit="$(git -C "$here" rev-parse HEAD)"
+tree="$(cd "$here" && python3 -m gate.treehash .)"
+ssh "$host" "mkdir -p '$dest'"
+rsync -a --delete --exclude __pycache__ --exclude '*.pyc' --exclude .DS_Store --exclude DEPLOY.json \
+  "$here/" "$host:$dest/"
+printf '{"commit": "%s", "branch": "%s", "tree_sha256": "%s", "deployed_at": "%s"}\n' \
+  "$commit" "$(git -C "$here" rev-parse --abbrev-ref HEAD)" "$tree" "$(date -u +%Y-%m-%dT%H:%MZ)" |
+  ssh "$host" "cat > '$dest/DEPLOY.json'"
+remote_tree="$(ssh "$host" "cd '$dest' && python3 -m gate.treehash .")"
+[ "$remote_tree" = "$tree" ] || { echo "deployed tree hash $remote_tree != local $tree" >&2; exit 1; }
+echo "deployed $commit ($tree) to $host:$dest"
