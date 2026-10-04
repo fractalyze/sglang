@@ -1,0 +1,41 @@
+{
+ "returncode": 0,
+ "preflight": {
+  "mem_available_gb": 55.65381622314453,
+  "swap_used_gb": 0.9387741088867188,
+  "load1": 0.94,
+  "foreign_gpu_gb": 0,
+  "waited": []
+ },
+ "peaks_by_phase": {
+  "start": {
+   "min_mem_available_gb": 51.8586540222168,
+   "peak_tree_rss_gb": 4.95025634765625,
+   "peak_load1": 1.03,
+   "peak_swap_used_gb": 0.9387741088867188,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  },
+  "weight_load": {
+   "min_mem_available_gb": 50.96321487426758,
+   "peak_tree_rss_gb": 6.377567291259766,
+   "peak_load1": 1.03,
+   "peak_swap_used_gb": 0.9387741088867188,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  },
+  "serving": {
+   "min_mem_available_gb": 48.48346710205078,
+   "peak_tree_rss_gb": 7.660682678222656,
+   "peak_load1": 1.09,
+   "peak_swap_used_gb": 0.9387664794921875,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  }
+ },
+ "tripped": null,
+ "csv": "/data/jooman/g4poc/runs/r03-m093-swa03-noprefillgraph/hostmem.csv"
+}

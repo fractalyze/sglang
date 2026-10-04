@@ -226,6 +226,26 @@ def write_model_dir(src, out, kind, shard_dir, weight_map, config):
             shutil.copy(os.path.join(src, aux), d)
 
 
+def sglang_text_config(text_config: dict) -> dict:
+    """Gemma-4 text config with full/sliding attention dims in SGLang's convention.
+
+    Gemma-4 names sliding-layer dims plainly and full-layer dims `global_*`;
+    SGLang wants base = full, `swa_*` = sliding. hf_transformers/config.py
+    only rewrites `model_type == "gemma4"` (multimodal) configs, so a
+    `gemma4_text` config must arrive already rewritten.
+    """
+    cfg = dict(text_config)
+    cfg.update(
+        swa_head_dim=text_config["head_dim"],
+        swa_v_head_dim=text_config["head_dim"],
+        swa_num_key_value_heads=text_config["num_key_value_heads"],
+        head_dim=text_config["global_head_dim"],
+        v_head_dim=text_config["global_head_dim"],
+        num_key_value_heads=text_config["num_global_key_value_heads"],
+    )
+    return cfg
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", required=True)
@@ -258,7 +278,7 @@ def main():
     vision.flush()
 
     ignore_text = ["lm_head", "re:.*router.*"]
-    text_config = dict(src_config["text_config"])
+    text_config = sglang_text_config(src_config["text_config"])
     text_config.update(
         architectures=["Gemma4ForCausalLM"],
         torch_dtype="bfloat16",

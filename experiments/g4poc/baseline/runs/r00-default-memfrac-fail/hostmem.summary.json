@@ -1,0 +1,32 @@
+{
+ "returncode": -9,
+ "preflight": {
+  "mem_available_gb": 55.49978256225586,
+  "swap_used_gb": 0.9387969970703125,
+  "load1": 0.23,
+  "foreign_gpu_gb": 0,
+  "waited": []
+ },
+ "peaks_by_phase": {
+  "start": {
+   "min_mem_available_gb": 51.819435119628906,
+   "peak_tree_rss_gb": 4.914012908935547,
+   "peak_load1": 0.43,
+   "peak_swap_used_gb": 0.9387969970703125,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  },
+  "weight_load": {
+   "min_mem_available_gb": 51.442291259765625,
+   "peak_tree_rss_gb": 8.576946258544922,
+   "peak_load1": 0.47,
+   "peak_swap_used_gb": 0.9387969970703125,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  }
+ },
+ "tripped": null,
+ "csv": "/data/jooman/g4poc/runs/r01-default/hostmem.csv"
+}

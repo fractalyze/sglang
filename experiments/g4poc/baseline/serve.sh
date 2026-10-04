@@ -2,7 +2,8 @@
 # Launch one SGLang server on bs2 under the gemma4nv host-safety wrapper
 # (host.lock, systemd scope MemoryMax=24G without swap, RAM/load watchdog).
 # usage: serve.sh <run_id> <model_dir> [extra launch_server args...]
-# Stop: pkill -f "[s]glang.launch_server.*--port 30100"; the wrapper then
+# Stop: pkill -f "^[^ ]*python -m sglang.launch_server" (a looser pattern also
+# matches the wrapper's own argv and kills it before it writes its summary); it then
 # writes runs/<run_id>/hostmem.summary.json (peak RSS/load per phase).
 set -euo pipefail
 RUN_ID=$1; MODEL=$2; shift 2
@@ -16,4 +17,4 @@ echo "$(date -Is) $MODEL $*" > "$RUN/cmd.txt"
 git -C "$TREE" rev-parse HEAD >> "$RUN/cmd.txt"
 exec python -m gate.hostwatch --csv "$RUN/hostmem.csv" --log "$RUN/server.log" -- \
   python -m sglang.launch_server --model-path "$MODEL" --host 127.0.0.1 --port 30100 \
-  --kv-cache-dtype fp8_e4m3 --cuda-graph-max-bs 32 --log-level info "$@"
+  --kv-cache-dtype fp8_e4m3 --cuda-graph-max-bs-decode 32 --log-level info "$@"

@@ -67,5 +67,15 @@ class ConvertTensorTest(absltest.TestCase):
             self.assertEqual(out[0][1].dtype, torch.bfloat16)
 
 
+class SglangTextConfigTest(absltest.TestCase):
+    def test_full_dims_become_base_and_sliding_dims_become_swa(self):
+        src = {"head_dim": 256, "num_key_value_heads": 8, "global_head_dim": 512,
+               "num_global_key_value_heads": 2, "hidden_size": 2816}
+        cfg = m.sglang_text_config(src)
+        self.assertEqual((cfg["head_dim"], cfg["v_head_dim"], cfg["num_key_value_heads"]), (512, 512, 2))
+        self.assertEqual((cfg["swa_head_dim"], cfg["swa_v_head_dim"], cfg["swa_num_key_value_heads"]), (256, 256, 8))
+        self.assertEqual(src["head_dim"], 256)
+
+
 if __name__ == "__main__":
     absltest.main()

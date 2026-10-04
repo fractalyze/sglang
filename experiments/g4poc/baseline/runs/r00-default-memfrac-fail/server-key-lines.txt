@@ -1,0 +1,5 @@
+Load weight begin. avail mem=30.68 GB
+Load weight end. elapsed=4.08 s, type=Gemma4ForCausalLM, quant=compressed-tensors, avail mem=5.57 GB, mem usage=25.12 GB.
+Use triton as default attention backend for Gemma4
+Using CompressedTensorsW8A8Fp8MoE
+ValueError: Loaded weights leave no GPU memory for the KV cache under --mem-fraction-static=0.778. Raise --mem-fraction-static above 0.819 (minimum viable = 1 - available/pre = 0.8189). If using speculative decoding, draft weights are now counted.

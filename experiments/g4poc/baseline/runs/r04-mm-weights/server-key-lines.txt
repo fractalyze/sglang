@@ -1,0 +1,4 @@
+Load weight begin. avail mem=30.68 GB
+Load weight end. elapsed=2.74 s, type=Gemma4ForConditionalGeneration, quant=compressed-tensors, avail mem=4.46 GB, mem usage=26.22 GB.
+Use triton as default attention backend for Gemma4
+Using CompressedTensorsW8A8Fp8MoE

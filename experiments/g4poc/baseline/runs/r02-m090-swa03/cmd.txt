@@ -1,0 +1,2 @@
+2026-10-04T15:04:53+09:00 /data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/text --context-length 16384 --mem-fraction-static 0.90 --swa-full-tokens-ratio 0.3
+e3e4acf26813d8895868cf3b2155bddf854b9e35
