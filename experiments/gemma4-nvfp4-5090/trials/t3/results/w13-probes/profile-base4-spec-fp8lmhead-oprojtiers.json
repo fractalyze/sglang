@@ -1,0 +1,29 @@
+{
+ "step[VERIFY": {
+  "rounds": 12,
+  "span_ms_median": 7.060836999999999,
+  "kernel_ms_median": 6.411181500000002,
+  "parts_ms_median": {
+   "NVFP4 MoE (CUTLASS)": 2.27663,
+   "attention": 0.4706405000000001,
+   "cuBLAS WMMA + split-K": 1.0746270000000002,
+   "layer GEMV/GEMM": 1.0786565000000001,
+   "lm_head": 0.44312,
+   "norms, RoPE, glue": 1.0250890000000004,
+   "softmax + max over the vocab": 0.038513000000000006
+  }
+ },
+ "step[DRAFT_LOOP": {
+  "rounds": 12,
+  "span_ms_median": 2.9150915,
+  "kernel_ms_median": 2.8432660000000003,
+  "parts_ms_median": {
+   "attention": 0.20464,
+   "cuBLAS WMMA + split-K": 0.29868849999999997,
+   "layer GEMV/GEMM": 0.9068499999999999,
+   "lm_head": 0.8232004999999999,
+   "norms, RoPE, glue": 0.28729649999999984,
+   "softmax + max over the vocab": 0.3206715000000001
+  }
+ }
+}

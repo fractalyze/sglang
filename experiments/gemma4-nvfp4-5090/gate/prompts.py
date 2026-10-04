@@ -1,9 +1,10 @@
 """Token-exact timing prompts.
 
 Prompts are random 1024-token windows of a fixed text+code corpus (the SGLang
-docs and sources at the pinned baseline commit). Every (pair, workload, rep)
-draws fresh windows, so no prefix or output cache can hit across timed
-requests, and the 8 streams of a W8 batch route to different experts as real
+docs and sources at the pinned baseline commit). Every (workload, rep) draws
+its own windows (and, for a workload without a fixed seed, every pair too), and
+the cache is flushed before each rep, so no prefix or output cache can hit across
+timed requests, and the 8 streams of a W8 batch route to different experts as real
 traffic does (identical prompts inflated expert-sharing gains ~3x in Yukon).
 Both legs of a pair see the same prompts, so their outputs can be compared.
 """

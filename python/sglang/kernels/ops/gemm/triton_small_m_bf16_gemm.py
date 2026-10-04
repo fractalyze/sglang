@@ -27,6 +27,8 @@ class _TileConfig(NamedTuple):
     block_n: int
     block_k: int
     num_stages: int
+    # Largest M routed to the tile; its shared memory must fit BLOCK_M = next_pow2(max_m).
+    max_m: int = MAX_M
 
 
 # Measured on RTX 5090 at M in {1, 8, 16, 32} (gemma4nv T3 microbench).
@@ -52,6 +54,9 @@ _FP8_WEIGHT_TUNED_SHAPES: Dict[Tuple[int, int], _TileConfig] = {
 _FP8_HEAD_TUNED_SHAPES: Dict[Tuple[int, int], _TileConfig] = {
     # Best worst case over M in {1, 8, 32} on the 5090 (186-198 us vs cuBLAS BF16 353-364 us).
     (262144, 1024): _TileConfig(128, 128, 3),
+    # The Gemma-4-26B-A4B target's tied head (SGLANG_OPT_GEMMA4_FP8_LM_HEAD): best worst case
+    # over M in 4..48 on the 5090 (443-525 us vs cuBLAS BF16 880-925 us; gemma4nv W12).
+    (262144, 2816): _TileConfig(128, 128, 3, max_m=48),
 }
 _FP8_E4M3_MAX = 448.0
 
@@ -64,12 +69,35 @@ def use_fp8_weight_only(n: int, k: int) -> bool:
     return (n, k) in _FP8_WEIGHT_TUNED_SHAPES
 
 
+def fits_triton_small_m_fp8_weight_gemm(m: int, n: int, k: int) -> bool:
+    cfg = _FP8_WEIGHT_TUNED_SHAPES.get((n, k))
+    return cfg is not None and m <= cfg.max_m
+
+
 def quantize_fp8_weight_per_channel(
     weight: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Row-major ``weight`` [N, K] -> (E4M3 weight [N, K], fp32 scale [N]), absmax per row."""
     scale = weight.float().abs().amax(dim=1).clamp_min(1e-12) / _FP8_E4M3_MAX
     return (weight.float() / scale[:, None]).to(torch.float8_e4m3fn), scale
+
+
+def quantize_fp8_weight_per_channel_chunked(
+    weight: torch.Tensor, chunk_rows: int
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """``quantize_fp8_weight_per_channel`` over ``chunk_rows`` rows at a time.
+
+    Rows are independent, so the result is identical; peak memory holds one chunk in fp32.
+    """
+    rows = weight.shape[0]
+    weight_fp8 = torch.empty_like(weight, dtype=torch.float8_e4m3fn)
+    scale = torch.empty(rows, dtype=torch.float32, device=weight.device)
+    for start in range(0, rows, chunk_rows):
+        end = min(start + chunk_rows, rows)
+        weight_fp8[start:end], scale[start:end] = quantize_fp8_weight_per_channel(
+            weight[start:end]
+        )
+    return weight_fp8, scale
 
 
 @triton.jit
@@ -126,7 +154,7 @@ def triton_small_m_bf16_gemm(x: torch.Tensor, weight: torch.Tensor) -> torch.Ten
 def triton_small_m_fp8_weight_gemm(
     x: torch.Tensor, weight: torch.Tensor, scale: torch.Tensor
 ) -> torch.Tensor:
-    """``(x @ weight.T) * scale`` for an E4M3 ``weight`` [N, K] and fp32 ``scale`` [N], M <= MAX_M."""
+    """``(x @ weight.T) * scale`` for an E4M3 ``weight`` [N, K] and fp32 ``scale`` [N], M <= the shape's max_m."""
     n, k = weight.shape
     return _launch(x, weight, scale, _FP8_WEIGHT_TUNED_SHAPES[(n, k)])
 
@@ -135,10 +163,15 @@ def use_fp8_vocab_head(n: int, k: int) -> bool:
     return (n, k) in _FP8_HEAD_TUNED_SHAPES
 
 
+def fits_fp8_vocab_head(m: int, n: int, k: int) -> bool:
+    cfg = _FP8_HEAD_TUNED_SHAPES.get((n, k))
+    return cfg is not None and m <= cfg.max_m
+
+
 def triton_small_m_fp8_vocab_head(
     x: torch.Tensor, weight: torch.Tensor, scale: torch.Tensor
 ) -> torch.Tensor:
-    """Logits ``(x @ weight.T) * scale`` for an E4M3 vocab head [V, K], M <= MAX_M."""
+    """Logits ``(x @ weight.T) * scale`` for an E4M3 vocab head [V, K], M <= the shape's max_m."""
     n, k = weight.shape
     return _launch(x, weight, scale, _FP8_HEAD_TUNED_SHAPES[(n, k)])
 

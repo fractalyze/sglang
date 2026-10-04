@@ -225,12 +225,33 @@ class QualityTest(parameterized.TestCase):
 
 
 class RunnerTest(absltest.TestCase):
-    def test_w1_times_the_same_prompts_in_every_pair(self):
-        w1 = [runner.timing_seed(config.W1, f"nonce/pair{k}", 5) for k in range(4)]
-        self.assertEqual(len(set(w1)), 1)
-        self.assertNotEqual(runner.timing_seed(config.W1, "p", 0), runner.timing_seed(config.W1, "p", 1))
-        w8 = [runner.timing_seed(config.W8, f"nonce/pair{k}", 0) for k in range(4)]
-        self.assertEqual(len(set(w8)), 4)
+    def test_gated_workloads_time_the_same_prompts_in_every_pair(self):
+        for wl in (config.W1, config.W8):
+            seeds = [runner.timing_seed(wl, f"nonce/pair{k}", 3) for k in range(4)]
+            self.assertEqual(len(set(seeds)), 1, wl.name)
+            self.assertNotEqual(runner.timing_seed(wl, "p", 0), runner.timing_seed(wl, "p", 1))
+        self.assertNotEqual(runner.timing_seed(config.W1, "p", 0), runner.timing_seed(config.W8, "p", 0))
+        w32 = [runner.timing_seed(config.W32, f"nonce/pair{k}", 0) for k in range(4)]
+        self.assertEqual(len(set(w32)), 4)
+
+    def test_cache_is_flushed_between_fidelity_passes(self):
+        calls = []
+
+        class Srv:
+            url = "http://x"
+
+            def flush_cache(self):
+                calls.append("flush")
+
+        orig = fidelity.run, fidelity.run_forced, fidelity.load_json
+        fidelity.run = lambda url: calls.append("run") or "out"
+        fidelity.run_forced = lambda url, ref: calls.append("forced") or "forced"
+        fidelity.load_json = lambda path: {}
+        try:
+            self.assertEqual(runner.fidelity_passes(Srv()), ("out", "forced"))
+        finally:
+            fidelity.run, fidelity.run_forced, fidelity.load_json = orig
+        self.assertEqual(calls, ["run", "flush", "forced"])
 
     def test_abba_alternates(self):
         self.assertEqual(runner.abba_order(3), [["control", "candidate"], ["candidate", "control"],

@@ -517,6 +517,58 @@ Peak tree RSS per phase, from the 2 s watchdog CSVs. Every engine ran alone unde
 - **Weight-load spikes vary between 6.9 and 14.7 GB from launch to launch** for the same ref. That spread is mmap page-cache attribution, not a change in the model.
 - **Two FP8-head launches failed at load** with a Python error, not a memory event (`runs/contaminated-w10-*-loadfail`, peak 11.4 GB).
 
+### W12 on bs2 (verify-width trials, k re-sweep, 2026-10-03)
+
+**Measurement.** Peak tree RSS per phase, from the 2 s watchdog CSVs.
+
+**Controls.** Every engine ran alone under `host.lock`, in the 24G no-swap scope, with the watchdog and `MAX_JOBS=4`.
+
+**Outcome.**
+- No watchdog tripped.
+- Swap peaked at 1.6 GB, a co-tenant's.
+- No nvcc or cicc ran. The JIT caches held, and only Triton's ptxas ran for the new tiles.
+
+| run | min MemAvailable | weight load | autotune | graph capture | serving | peak load |
+|---|---:|---:|---:|---:|---:|---:|
+| prebuilds: qkvfp8 / fp8lmhead / k6 (JIT step + server) | 47.8 GB | - | - | - | 19.4-19.6 GB | 4.4 |
+| gate T-SPEC6b (8 legs) | 47.9 GB | 14.6 GB | 6.3 GB | 19.2 GB | 19.5 GB | 6.1 |
+| gate T-SPEC6c (8 legs) | 48.4 GB | 14.9 GB | 6.3 GB | 7.2 GB | 19.5 GB | 1.9 |
+| gate T-SPEC7 (8 legs) | 47.0 GB | 14.8 GB | 6.4 GB | 19.2 GB | 19.5 GB | 6.1 |
+| quality, full GSM8K: base4-spec-fp8head / fp8lmhead / k6 | 36.5 GB (co-tenant) | - | - | - | 19.5 GB | 5.9 |
+| spec / gate-shape / profile / forced-c1 probes (17 launches) | 43.2 GB | 7.8-13.0 GB | 6.0-6.4 GB | 6.3-7.0 GB | 19.5 GB | 8.3 |
+| GEMM microbenches and unit tests (8 runs) | 49.4 GB | - | - | - | 1.4-2.0 GB | 3.9 |
+
+**Notes.**
+- **Serving RSS stays at 19.5 GB with every W12 change.** That covers the FP8 qkv weights, the target head's 740 MB FP8 copy (GPU memory, not host) and k=6.
+- **systemd reported a 24G "memory peak" for one probe scope.** It counts page cache from the model mmap. The process tree's RSS in the same window was 19.5 GB.
+- **Co-tenant events.**
+  - A `zisk-worker` (user baz) took 29.6 GB of GPU memory four times during W12. Once, at 14:54, its start raced a probe's server launch, and the server died of CUDA OOM (`runs/w12-gs-base4-spec-fp8head-qkvfp8`, rerun). Host memory was fine throughout.
+  - During those windows host MemAvailable fell to 15-22 GB. The W12 queues wait for no foreign GPU process and at least 32 GB available before every launch.
+- **Gate legs were never contaminated.** The quiescence rule held them each time.
+
+### W13 on bs2 (T3d o_proj tiers, T-MOE1 step 0, 2026-10-03)
+
+**Measurement and controls** are as in W12: every engine ran alone under `host.lock`, in the 24G no-swap scope, with the watchdog and `MAX_JOBS=4`.
+
+**Outcome.**
+- No watchdog tripped.
+- No nvcc or cicc ran. The FlashInfer JIT cache held, and only Triton's ptxas ran for the new tiles.
+
+| run | min MemAvailable | weight load | autotune | graph capture | serving | peak load |
+|---|---:|---:|---:|---:|---:|---:|
+| prebuild base4-spec-fp8lmhead-oprojtiers (JIT step + server) | 47.2 GB | - | - | - | 19.5 GB | 3.6 |
+| gate T3d (8 legs) | 40.8 GB (timed window) | 14.5 GB | 6.3 GB | 7.4 GB | 19.4 GB | 7.9 |
+| spec / gate-shape / profile probes (6 launches) | 42.4 GB | 12.7 GB | 6.3 GB | 7.3 GB | 19.5 GB | 13.1 |
+| o_proj and MoE-tactic microbenches, unit tests (5 runs) | 45.4 GB | - | - | - | 1.3 GB | 8.1 |
+
+**Notes.**
+- **Serving RSS is still 19.5 GB.** T3d keeps a single E4M3 copy of o_proj.
+- **The MoE tactic bench forced every FlashInfer SM120 tactic,** including the four that throw "Unsupported tile shape config". It allocated no host memory beyond 1.3 GB.
+- **Co-tenant events.**
+  - A `cargo-zisk-dev proofman-setup` (user baz) held a 614 MB CUDA context on an idle GPU (0% utilization, SM at 180 MHz) for about 35 minutes. Its job was CPU-bound.
+  - The gate's quiescence rule counts any foreign process, so the first T3d attempt timed out after 1,800 s. The W13 queue retried it, and it ran once the process exited.
+  - An earlier `zisk-worker` held 30 GB of GPU memory, and MemAvailable fell to 14-17 GB.
+
 ## Baseline numbers (A/A, 6 pairs, control legs)
 
 | metric | value | definition |

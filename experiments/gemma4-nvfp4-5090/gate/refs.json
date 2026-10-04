@@ -240,5 +240,35 @@
   "base6": {
     "extends": "base5-spec-fp8head",
     "description": "Pinned base6 (W11): base5 + T-SPEC5's speculative stack (MTP assistant drafter k=5 topk 1, SGLANG_OPT_USE_TRITON_SPLITKV_VERIFY_CUDA=1, --mem-fraction-static 0.78) + T-SPEC4b's FP8 MTP head (SGLANG_OPT_MTP_FP8_LM_HEAD=1), commit 701947e266; see BASELINE.md base6 section."
+  },
+  "base4-spec-fp8head-qkvfp8": {
+    "extends": "base4-spec-fp8head",
+    "description": "T-SPEC6b (W12, gemma4nv-b2-tspec6b): base4-spec-fp8head on commit c9b595d5a3 (3d1732c505's python tree + the FP8 weight-only allowlist extended to both qkv_proj shapes, max_m 256 with 32-row M blocks; nothing else under python/ differs). The inherited SGLANG_OPT_USE_TRITON_SMALL_M_FP8_WEIGHT_GEMM=1 now also stores qkv_proj as FP8 E4M3 per output channel; see trials/T-SPEC6b-fp8-qkv-verify.md.",
+    "commit": "c9b595d5a36e003459da46b0da9cd6ba7a709a0b",
+    "weight_layout_change": true
+  },
+  "base4-spec-fp8head-fp8lmhead": {
+    "extends": "base4-spec-fp8head",
+    "description": "T-SPEC6c (W12, gemma4nv-b2-tspec6c): base4-spec-fp8head on commit dd5361a7bc (3d1732c505's python tree + an FP8 E4M3 per-row copy of the target's tied 262144 x 2816 head in gemma4_mm.py, used for logits batches of at most 48 rows; the per-tile max_m plumbing; T-SPEC6b's qkv entries removed, so o_proj routes as before) with SGLANG_OPT_GEMMA4_FP8_LM_HEAD=1; see trials/T-SPEC6c-fp8-target-lm-head.md.",
+    "commit": "dd5361a7bcb2a15e4e0c5ed343fb4df32dbd43aa",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FP8_LM_HEAD": "1"
+    }
+  },
+  "base4-spec-fp8lmhead-k6": {
+    "extends": "base4-spec-fp8head-fp8lmhead",
+    "description": "T-SPEC7 (W12, gemma4nv-b2-tspec7): base4-spec-fp8head-fp8lmhead with MTP draft depth k=6 (7 verify tokens) on commit 43039cd0f2 (dd5361a7bc + the FP8 target head's max_m 48 -> 64, so a B=8 verify of 56 rows stays on it; a no-op for k <= 5 at B <= 8); see trials/T-SPEC7-mtp-k6.md.",
+    "commit": "43039cd0f2b6bc739f52d40ec598e665d6067de6",
+    "server_args": [
+      "--speculative-num-steps",
+      "6",
+      "--speculative-num-draft-tokens",
+      "7"
+    ]
+  },
+  "base4-spec-fp8lmhead-oprojtiers": {
+    "commit": "350d0531002c7a043abdd9b7977ebb433105df8a",
+    "description": "T3d (W13, gemma4nv-b2-t3d): base4-spec-fp8head-fp8lmhead on commit 350d053100 (dd5361a7bc's python tree + M tiers for the FP8 weight-only o_proj: Triton with capped BLOCK_M up to M=8192 instead of the bf16 upcast + cuBLAS route above M=32); see trials/T3d-oproj-fp8-m-tiers.md.",
+    "extends": "base4-spec-fp8head-fp8lmhead"
   }
 }

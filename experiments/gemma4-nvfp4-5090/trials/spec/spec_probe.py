@@ -16,6 +16,15 @@ gate's host-safety path (host.lock, preflight, 24G no-swap scope, watchdog):
              [tokens, layers, top_k] per stream, saved for verify_cost.py.
   profile -- torch-profiler trace of --profile-steps decode steps at B=1
              (W2's start_profile shape), after one warm-up request.
+  gate-shape -- the gate's own timed workloads (fixed W1 and W8 prompts, W32) once,
+             after the gate's warm-up: one unpaired leg, summed as the gate sums it, plus
+             acceptance on the W1 prompts. Compares configs on the gate's prompts.
+  forced-c1 -- teacher-forced top-k logprobs on the hidden set at one logits row per
+             forward: one request per reference position (cached prefix + 1 token,
+             max_new_tokens 1). The gate's forced pass reads all positions in one
+             prefill, whose logits batch exceeds a narrow-batch-only head's max M;
+             this mode measures the head that decode and verify use. Rows land in
+             forced_c1.json in the gate's compare_forced format.
   info    -- launch only. Saves /get_server_info, so a candidate's resolved
              args can be diffed against its control with the gate's own check
              before a gate run is spent on an undeclared derived field.
@@ -38,7 +47,7 @@ from typing import Dict, List
 import numpy as np
 import requests
 
-from gate import client, config, hostwatch, prompts, server
+from gate import client, config, hostwatch, prompts, runner, server, stats
 
 N_LAYERS, TOP_K = 30, 8
 BOS = 2
@@ -70,8 +79,15 @@ def _generate(url: str, ids: List[int], max_new: int, **extra) -> Dict:
 def _accept_stats(metas: List[Dict]) -> Dict:
     toks = sum(m["completion_tokens"] for m in metas)
     verify = sum(m.get("spec_verify_ct", 0) for m in metas)
+    # Index i counts verify rounds that kept i drafts (bonus excluded).
+    hist: List[int] = []
+    for m in metas:
+        for i, c in enumerate(m.get("spec_correct_drafts_histogram") or []):
+            hist.extend([0] * (i + 1 - len(hist)))
+            hist[i] += c
     return {"n": len(metas), "tokens": toks, "verify_ct": verify,
-            "accept_length": round(toks / verify, 3) if verify else None}
+            "accept_length": round(toks / verify, 3) if verify else None,
+            "correct_drafts_histogram": hist}
 
 
 def mode_spec(srv: server.Server, out: Dict, decode_new: int) -> None:
@@ -165,9 +181,43 @@ def mode_profile(srv: server.Server, out: Dict, out_dir: str, steps: int) -> Non
     out["profile"] = {"trace_dir": trace_dir, "stream": res["streams"][0] | {"output_ids": None}}
 
 
+def mode_gate_shape(srv: server.Server, out: Dict) -> None:
+    corpus, seed = prompts.load_corpus(), "gate-shape"
+    runner.warm_up(srv, corpus, BOS, seed)
+    leg = {"workloads": runner._timed_workloads(srv, corpus, BOS, seed)}
+    sums = stats.leg_sums(leg)
+    out["gate_shape"] = {**sums, "w1_tpot_ms": 1e3 * sums["w1_decode_s"] / sums["w1_decode_tokens"],
+                         "w32_tok_s": sums["w32_output_tokens"] / sums["w32_wall_s"]}
+    metas = []
+    for rep in range(config.W1.reps_per_leg):
+        srv.flush_cache()
+        ps = prompts.timing_prompts(corpus, BOS, runner.timing_seed(config.W1, seed, rep), 1, config.W1.prompt_tokens)
+        metas.append(_generate(srv.url, ps[0], config.W1.decode_tokens)["meta_info"])
+    out["gate_shape"]["w1_accept"] = _accept_stats(metas)
+
+
+def mode_forced_c1(srv: server.Server, out: Dict, out_dir: str) -> None:
+    from gate import fidelity
+
+    reference = fidelity.load_json(fidelity.REFERENCE_PATH)
+    by_id = {p["id"]: p for p in fidelity.load_prompts()}
+    rows = []
+    for ref in reference:
+        srv.flush_cache()
+        prompt, toks = by_id[ref["id"]]["input_ids"], ref["output_ids"]
+        top = [_generate(srv.url, prompt + toks[:i], 1, return_logprob=True,
+                         top_logprobs_num=config.TOP_LOGPROBS,
+                         logprob_start_len=len(prompt) + i)["meta_info"]["output_top_logprobs"][0]
+               for i in range(len(toks))]
+        rows.append({"id": ref["id"], "top_logprobs": [[(lp, tid) for lp, tid, *_ in pos] for pos in top]})
+    fidelity.save_json(os.path.join(out_dir, "forced_c1.json"), rows)
+    cmp = fidelity.compare_forced(reference, fidelity.load_json(fidelity.REFERENCE_FORCED_PATH), rows)
+    out["forced_c1_vs_reference"] = {k: v for k, v in cmp.items() if k != "per_prompt"}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", required=True, choices=("spec", "sweep", "experts", "profile", "info"))
+    ap.add_argument("--mode", required=True, choices=("spec", "sweep", "experts", "profile", "info", "gate-shape", "forced-c1"))
     ap.add_argument("--ref", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rows", default="1,2,3,4,5,6,8,12,16,24,32,40,48")
@@ -188,6 +238,10 @@ def main() -> None:
             mode_sweep(srv, out, [int(x) for x in args.rows.split(",")])
         elif args.mode == "experts":
             mode_experts(srv, out, args.out, args.decode_new)
+        elif args.mode == "forced-c1":
+            mode_forced_c1(srv, out, args.out)
+        elif args.mode == "gate-shape":
+            mode_gate_shape(srv, out)
         elif args.mode == "profile":
             mode_profile(srv, out, args.out, args.profile_steps)
     out["host_summary"] = srv.host_summary

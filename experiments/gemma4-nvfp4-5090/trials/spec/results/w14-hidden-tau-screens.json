@@ -1,0 +1,90 @@
+{
+ "T-SPEC4 (bs2)": {
+  "control_probe": "/data/jooman/gemma4nv/runs/w10-scr-spec/probe.json",
+  "candidate_probe": "/data/jooman/gemma4nv/runs/w10-scr-fp8head/probe.json",
+  "refs": [
+   "base4-spec",
+   "base4-spec-fp8head"
+  ],
+  "commits": [
+   "c99575c4f52fee62ed0ebd0276344b059922a2a5",
+   "3d1732c50525fff8eef827831246c9463ea532a1"
+  ],
+  "control": 3.647611420082805,
+  "candidate": 3.6547459311407113,
+  "ratio": 1.0019559405419738,
+  "ci95": {
+   "low": 0.977386747051801,
+   "high": 1.0257751617927389,
+   "half_width": 0.024454952913823533
+  },
+  "n_prompts": 22,
+  "significant": false
+ },
+ "T-SPEC6c (bs2)": {
+  "control_probe": "/data/jooman/gemma4nv/runs/w10-scr-fp8head/probe.json",
+  "candidate_probe": "/data/jooman/gemma4nv/scratch/w14/spec-base4-spec-fp8head-fp8lmhead.json",
+  "refs": [
+   "base4-spec-fp8head",
+   "base4-spec-fp8head-fp8lmhead"
+  ],
+  "commits": [
+   "3d1732c50525fff8eef827831246c9463ea532a1",
+   "dd5361a7bcb2a15e4e0c5ed343fb4df32dbd43aa"
+  ],
+  "control": 3.6547459311407113,
+  "candidate": 3.463771917395332,
+  "ratio": 0.9477462955446063,
+  "ci95": {
+   "low": 0.8704754833016934,
+   "high": 1.0672946459067276,
+   "half_width": 0.10729641406723052
+  },
+  "n_prompts": 22,
+  "significant": false
+ },
+ "T3d (bs2)": {
+  "control_probe": "/data/jooman/gemma4nv/scratch/w14/spec-base4-spec-fp8head-fp8lmhead.json",
+  "candidate_probe": "/data/jooman/gemma4nv/scratch/w14/spec-base4-spec-fp8lmhead-oprojtiers.json",
+  "refs": [
+   "base4-spec-fp8head-fp8lmhead",
+   "base4-spec-fp8lmhead-oprojtiers"
+  ],
+  "commits": [
+   "dd5361a7bcb2a15e4e0c5ed343fb4df32dbd43aa",
+   "350d0531002c7a043abdd9b7977ebb433105df8a"
+  ],
+  "control": 3.463771917395332,
+  "candidate": 3.6383574379687107,
+  "ratio": 1.0504032958107306,
+  "ci95": {
+   "low": 0.9097971192884858,
+   "high": 1.1786920313336704,
+   "half_width": 0.13822440979323314
+  },
+  "n_prompts": 22,
+  "significant": false
+ },
+ "T-SPEC4b (bs3)": {
+  "control_probe": "/data/jooman/gemma4nv/scratch/w14/b3-spec.json",
+  "candidate_probe": "/data/jooman/gemma4nv/scratch/w14/b3-fp8head.json",
+  "refs": [
+   "base5-spec",
+   "base5-spec-fp8head"
+  ],
+  "commits": [
+   "a053c1bd0fc2e7f93cd53da11617a52701402f69",
+   "701947e26619cf23d9d3d42cef4bdda1b08897fd"
+  ],
+  "control": 3.293629695471001,
+  "candidate": 3.4915179591468988,
+  "ratio": 1.06008212275594,
+  "ci95": {
+   "low": 0.9250490492380272,
+   "high": 1.1398396330306397,
+   "half_width": 0.11004221729668323
+  },
+  "n_prompts": 22,
+  "significant": false
+ }
+}

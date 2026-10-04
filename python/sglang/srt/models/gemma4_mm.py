@@ -28,6 +28,12 @@ from transformers import (
     PreTrainedModel,
 )
 
+from sglang.kernels.ops.gemm.triton_small_m_bf16_gemm import (
+    fits_fp8_vocab_head,
+    quantize_fp8_weight_per_channel_chunked,
+    triton_small_m_fp8_vocab_head,
+    use_fp8_vocab_head,
+)
 from sglang.srt.environ import envs
 from sglang.srt.layers.attention.triton_backend import TritonAttnBackend
 from sglang.srt.layers.layernorm import Gemma4RMSNorm
@@ -74,6 +80,53 @@ _is_cpu_amx_available = cpu_has_amx_support()
 _is_cpu = is_cpu()
 
 cached_get_processor = lru_cache(get_processor)
+
+# Rows quantized at a time, so load never holds an fp32 copy of the whole head.
+_FP8_HEAD_QUANT_CHUNK = 16384
+
+
+class _Fp8TiedHeadMethod:
+    """LogitsProcessor hook: narrow batches read the FP8 copy, wider ones the BF16 table."""
+
+    def process_weights_after_loading(self, layer: nn.Module) -> None:
+        # The model loader calls this on every quant_method; the copy is final after load_weights.
+        del layer
+
+    def apply(
+        self,
+        layer: "_Fp8TiedHead",
+        x: torch.Tensor,
+        bias: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        x2d = x.reshape(-1, x.shape[-1])
+        if x2d.dtype == torch.bfloat16 and fits_fp8_vocab_head(
+            x2d.shape[0], *layer.weight.shape
+        ):
+            logits = triton_small_m_fp8_vocab_head(
+                x2d.contiguous(), layer.weight, layer.weight_scale
+            )
+        else:
+            # The default LogitsProcessor path for the tied BF16 head.
+            logits = torch.matmul(x2d.to(layer.bf16_weight.dtype), layer.bf16_weight.T)
+        if bias is not None:
+            logits = logits + bias
+        return logits.view(*x.shape[:-1], -1)
+
+
+class _Fp8TiedHead(nn.Module):
+    """FP8 E4M3 copy (per-row scales) of the target's tied head (SGLANG_OPT_GEMMA4_FP8_LM_HEAD).
+
+    The BF16 ``embed_tokens`` stays: it embeds every input token and serves batches
+    wider than the FP8 tile's max M (prefill logprobs, MTP verify above B=8).
+    """
+
+    def __init__(self, bf16_weight: torch.Tensor):
+        super().__init__()
+        self.bf16_weight = bf16_weight
+        self.weight, self.weight_scale = quantize_fp8_weight_per_channel_chunked(
+            bf16_weight, _FP8_HEAD_QUANT_CHUNK
+        )
+        self.quant_method = _Fp8TiedHeadMethod()
 
 
 class Gemma4ImagePixelInputs(TypedDict):
@@ -267,6 +320,9 @@ class Gemma4ForConditionalGeneration(PreTrainedModel):
             )
         else:
             self.lm_head = PPMissingLayer()
+
+        # Set after load when SGLANG_OPT_GEMMA4_FP8_LM_HEAD is on; logits then read it.
+        self.fp8_lm_head: Optional[_Fp8TiedHead] = None
 
         # Create logits processor for the multimodal model
         self.logits_processor = LogitsProcessor(config.text_config)
@@ -681,9 +737,12 @@ class Gemma4ForConditionalGeneration(PreTrainedModel):
         if self.capture_aux_hidden_states:
             hidden_states, aux_hidden_states = hidden_states
 
-        head = (
-            self.language_model.embed_tokens if self.lm_head_is_tied else self.lm_head
-        )
+        if self.fp8_lm_head is not None:
+            head = self.fp8_lm_head
+        elif self.lm_head_is_tied:
+            head = self.language_model.embed_tokens
+        else:
+            head = self.lm_head
         return self.logits_processor(
             input_ids,
             hidden_states,
@@ -1056,7 +1115,31 @@ class Gemma4ForConditionalGeneration(PreTrainedModel):
                 names = sorted(p for p in unloaded_params if pred(p))
                 if names:
                     logger.log(level, "%s: %s", msg, names)
+        if envs.SGLANG_OPT_GEMMA4_FP8_LM_HEAD.get():
+            self._add_fp8_lm_head()
         return loaded_params
+
+    @torch.no_grad()
+    def _add_fp8_lm_head(self) -> None:
+        weight = self.language_model.embed_tokens.weight
+        if (
+            not self.lm_head_is_tied
+            or not weight.is_cuda
+            or not use_fp8_vocab_head(*weight.shape)
+        ):
+            logger.warning(
+                "SGLANG_OPT_GEMMA4_FP8_LM_HEAD ignored: head %s on %s (tied=%s) has no FP8 tile.",
+                list(weight.shape),
+                weight.device,
+                self.lm_head_is_tied,
+            )
+            return
+        self.fp8_lm_head = _Fp8TiedHead(weight.data)
+        torch.cuda.empty_cache()
+        logger.info(
+            "Added an FP8 E4M3 copy of the tied LM head %s with per-row scales.",
+            list(weight.shape),
+        )
 
     lora_pattern = re.compile(
         r"^language_model\.layers\.(\d+)\.(?:self_attn|mlp)\.(?:qkv_proj|o_proj|down_proj|gate_up_proj)"
