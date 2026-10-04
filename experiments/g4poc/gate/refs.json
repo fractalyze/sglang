@@ -1,0 +1,13 @@
+{
+ "base": {
+  "description": "PROVISIONAL until PA pins the FP8 base (BASELINE-FP8.md): the wrap-up tree, FP8 KV cache, decode CUDA graphs up to bs 32 as in PA's baseline/serve.sh. The model dir is the offline FP8 conversion (G4POC_MODEL_DIR).",
+  "commit": "91132098df",
+  "server_args": [
+   "--kv-cache-dtype",
+   "fp8_e4m3",
+   "--cuda-graph-max-bs",
+   "32"
+  ],
+  "env": {}
+ }
+}
