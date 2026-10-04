@@ -199,6 +199,18 @@ gate/run.sh gate pd-measure --ref base; gate/run.sh gate pd-model --pd .. --swee
 Tests: `python gate/tests/test_g4poc.py` (67, no GPU: a fake `/generate` server with a prefix
 cache checks the replay end to end, including the cross-turn hit and per-session nonces).
 
-## 6. Smoke run on the FP8 server
+## 6. Smoke runs
 
-Pending: PA reports the FP8 server up on bs2 (see the results section below once filled).
+**Harness smoke (NVFP4, smoke-only, not a result).** Coordinator-approved while the FP8 base
+was not up: bs2, ref `nvfp4-smoke` (gemma4nv's NVFP4 base), `gate smoke` (L8-smoke: 8
+concurrent sessions, think time x0.2, 20 s warm-up, 60 s window), run
+`smoke-nvfp4-smoke-20261004-145317-build-server-2-b5f5cc`. The whole path worked: capped
+launch under host.lock, warm-up replay, flush, timed replay, Prometheus sampling, report.
+31 window requests, 0 failed, client lag p99 14 ms, mean prompt 5,102 tokens, mean output 210,
+hit rate 0.49 (short window, many sessions' first turn), 0 retractions, 0 eager decode steps,
+`sglang:evicted_tokens_total` +68K tokens in the window at full-pool usage <= 0.49 (to explain
+on the FP8 base: likely the SWA pool's eviction). Host: peak tree RSS 14.0 GB at weight load,
+6.6 GB serving, MemAvailable >= 49.7 GB, load1 < 1. It also showed SGLang emits the labelled
+retraction counter only after its first increment; an absent counter now reads as 0.
+
+**FP8 base smoke:** pending PA's pinned ref (`BASELINE-FP8.md`: model dir, flags, commit).

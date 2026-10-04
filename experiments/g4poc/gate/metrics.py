@@ -241,8 +241,9 @@ def gauge_summary(samples: Sequence[Dict], t0: float, t1: float) -> Dict[str, Di
 
 def retractions(delta: Optional[Dict[str, float]], log_counts: Dict[str, int]) -> Dict:
     """Retracted requests over the window: the server counter when metrics are on, else the log."""
-    if delta and "sglang:num_retracted_requests_total" in delta:
-        return {"requests": int(delta["sglang:num_retracted_requests_total"]),
+    if delta is not None:
+        # A labelled Prometheus counter is absent until its first increment: absent means none.
+        return {"requests": int(delta.get("sglang:num_retracted_requests_total", 0)),
                 "input_tokens": int(delta.get("sglang:num_retracted_input_tokens_total", 0)),
                 "source": "metrics", "log_events": log_counts["events"]}
     return {"requests": log_counts["requests"], "source": "log", "log_events": log_counts["events"]}

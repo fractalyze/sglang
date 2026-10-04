@@ -410,6 +410,9 @@ class MetricsTest(parameterized.TestCase):
                "Decode batch ...\nKV cache pool is full. Retract requests. #retracted_reqs: 2, #new_tokens_gained: 4\n")
         self.assertEqual(metrics.retractions_from_log(log), {"events": 2, "requests": 5})
         self.assertEqual(metrics.retractions(None, {"events": 2, "requests": 5})["source"], "log")
+        # Metrics on but the counter never incremented: zero retractions, not a fallback.
+        none = metrics.retractions({"sglang:prompt_tokens_total": 10.0}, {"events": 0, "requests": 0})
+        self.assertEqual((none["requests"], none["source"]), (0, "metrics"))
 
 
 def _leg(e2e, out_tok=200, n=20, ids=None, retracted=0, window=10.0):
