@@ -558,6 +558,49 @@ class RpQualityTest(parameterized.TestCase):
         self.assertEqual(items, rpquality.build_items(sessions, TOK))
 
 
+async def _with_fake_server(fn):
+    from aiohttp import web
+
+    fake = FakeServer()
+    app = web.Application()
+    app.router.add_post("/generate", fake.generate)
+    srv_runner = web.AppRunner(app)
+    await srv_runner.setup()
+    site = web.TCPSite(srv_runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    try:
+        return await asyncio.get_running_loop().run_in_executor(None, fn, f"http://127.0.0.1:{port}"), fake
+    finally:
+        await srv_runner.cleanup()
+
+
+class PdMeasureTest(absltest.TestCase):
+    def setUp(self):
+        self.sessions = [_session(f"s{i}", n_turns=3, history=20) for i in range(5)]
+
+    def test_prompts_have_exact_length_and_distinct_nonces(self):
+        ps = pd.prompts_of_length(self.sessions, TOK, 200, 6, "seed")
+        self.assertLen(ps, 6)
+        self.assertTrue(all(len(p) == 200 for p in ps))
+        self.assertLen({tuple(p) for p in ps}, 6)
+
+    def test_prefill_point_counts_uncached_tokens(self):
+        ps = pd.prompts_of_length(self.sessions, TOK, 200, 8, "pre")
+        res, fake = asyncio.run(_with_fake_server(lambda url: pd.prefill_point(url, ps, in_flight=4)))
+        self.assertEqual(res["n"], 8)
+        self.assertTrue(all(b["sampling_params"]["max_new_tokens"] == 1 for b in fake.requests))
+        self.assertLess(res["hit_rate"], 0.2)
+        self.assertGreater(res["prefill_tok_s"], 0)
+
+    def test_decode_point_runs_on_cached_prefixes(self):
+        ps = pd.prompts_of_length(self.sessions, TOK, 200, 4, "dec")
+        res, fake = asyncio.run(_with_fake_server(lambda url: pd.decode_point(url, ps)))
+        self.assertEqual(res["batch"], 4)
+        self.assertGreater(res["hit_rate"], 0.95)
+        self.assertEqual(sum(b["sampling_params"]["max_new_tokens"] == pd.DECODE_TOKENS for b in fake.requests), 4)
+
+
 class PdModelTest(absltest.TestCase):
     def test_kv_bytes_match_the_study_numbers(self):
         self.assertEqual(pd.SLIDING_KV_BYTES_PER_TOKEN, 102400)

@@ -18,7 +18,8 @@ MODEL_ID = "google/gemma-4-26B-A4B-it"
 MODEL_REVISION = "4d7ae4984b7db7de8f8457170b3f1a419ee76d52"
 MODEL_DIR = os.environ.get("G4POC_MODEL_DIR", os.path.join(ROOT, "models", "gemma-4-26B-A4B-it"))
 VENV_PYTHON = os.path.join(os.environ.get("G4_VENV", "/data/jooman/gemma4nv/venv"), "bin", "python")
-RUNS_DIR = os.path.join(ROOT, "runs")
+# bs2's /data is nearly full; runs can live elsewhere (e.g. /home).
+RUNS_DIR = os.environ.get("G4POC_RUNS_DIR", os.path.join(ROOT, "runs"))
 LEDGER = os.path.join(ROOT, "ledger", "evaluations.jsonl")
 # The gemma4nv source checkout and its per-commit worktrees are shared: refs name commits of the same repo.
 TREES_DIR = os.environ.get("G4POC_TREES_DIR", "/data/jooman/gemma4nv/trees")

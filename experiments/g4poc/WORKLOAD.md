@@ -196,7 +196,7 @@ gate/run.sh gate run --control base --candidate base --pairs 4    # A/A, then se
 gate/run.sh gate pd-measure --ref base; gate/run.sh gate pd-model --pd .. --sweep ..
 ```
 
-Tests: `python gate/tests/test_g4poc.py` (67, no GPU: a fake `/generate` server with a prefix
+Tests: `python gate/tests/test_g4poc.py` (70, no GPU: a fake `/generate` server with a prefix
 cache checks the replay end to end, including the cross-turn hit and per-session nonces).
 
 ## 6. Smoke runs
