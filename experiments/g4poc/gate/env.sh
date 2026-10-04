@@ -11,8 +11,12 @@ case "$(hostname)" in
 esac
 export G4_VENV=$G4_HOME/venv
 export G4POC_HOST_LOCK=$G4/host.lock G4POC_GPU_LOCK=$G4/gpu.lock
-# The official checkpoint (BF16 on disk); FP8 weights come from the ref's flags.
-export G4POC_MODEL_DIR=${G4POC_MODEL_DIR:-$G4POC/models/gemma-4-26B-A4B-it}
+# The study's FP8 checkpoint (text-only dir; see BASELINE-FP8.md section 2).
+export G4POC_MODEL_DIR=${G4POC_MODEL_DIR:-$G4POC/models/gemma-4-26B-A4B-it-fp8ch/text}
+# bs2's /data is nearly full: run records go to /home there.
+case "$(hostname)" in
+  build-server-2) export G4POC_RUNS_DIR=${G4POC_RUNS_DIR:-/home/jooman/g4poc/runs} ;;
+esac
 export TMPDIR=$G4_HOME/tmp UV_CACHE_DIR=$G4_HOME/cache/uv PIP_CACHE_DIR=$G4_HOME/cache/pip
 export HF_HOME=$G4/hf XDG_CACHE_HOME=$G4_HOME/cache/xdg
 export TRITON_CACHE_DIR=$G4_HOME/cache/triton TORCHINDUCTOR_CACHE_DIR=$G4_HOME/cache/inductor

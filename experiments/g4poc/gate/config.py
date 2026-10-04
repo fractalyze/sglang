@@ -16,7 +16,7 @@ STUDY = "g4poc"
 ROOT = os.environ.get("G4POC", "/data/jooman/g4poc")
 MODEL_ID = "google/gemma-4-26B-A4B-it"
 MODEL_REVISION = "4d7ae4984b7db7de8f8457170b3f1a419ee76d52"
-MODEL_DIR = os.environ.get("G4POC_MODEL_DIR", os.path.join(ROOT, "models", "gemma-4-26B-A4B-it"))
+MODEL_DIR = os.environ.get("G4POC_MODEL_DIR", os.path.join(ROOT, "models", "gemma-4-26B-A4B-it-fp8ch", "text"))
 VENV_PYTHON = os.path.join(os.environ.get("G4_VENV", "/data/jooman/gemma4nv/venv"), "bin", "python")
 # bs2's /data is nearly full; runs can live elsewhere (e.g. /home).
 RUNS_DIR = os.environ.get("G4POC_RUNS_DIR", os.path.join(ROOT, "runs"))
