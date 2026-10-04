@@ -16,6 +16,10 @@ loaders accept for compressed-tensors (experts.<e>.{gate,up,down}_proj.*):
 Why not 128x128 block FP8: moe_intermediate_size 704 and intermediate_size
 2112 are not multiples of 128.
 
+With --remote-repo/--revision the tensor bytes are range-read from the Hub
+instead of <src>/*.safetensors (<src> then holds only config, index and
+tokenizer files), so a host without disk for the 51.6 GB BF16 copy can convert.
+
 Output: <out>/shards/*.safetensors (language model) + vision.safetensors, and
 two model dirs that symlink them:
   <out>/text  Gemma4ForCausalLM (no vision tower is built or loaded)
@@ -27,6 +31,10 @@ import json
 import os
 import re
 import shutil
+
+import struct
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
 import torch
 from safetensors import safe_open
@@ -120,6 +128,59 @@ def quant_config(ignore):
     }
 
 
+_DTYPES = {"BF16": torch.bfloat16, "F32": torch.float32, "F16": torch.float16}
+_RANGE_BYTES = 128 << 20
+
+
+class RemoteSafetensors:
+    """safe_open-like reader that range-reads one .safetensors file from the Hub."""
+
+    def __init__(self, url: str, headers: dict):
+        import httpx
+
+        self.url, self.headers = url, headers
+        self.client = httpx.Client(follow_redirects=True, timeout=300)
+        (n,) = struct.unpack("<Q", self._get(0, 8))
+        self.header = json.loads(self._get(8, 8 + n))
+        self.header.pop("__metadata__", None)
+        self.data_start = 8 + n
+
+    def _get(self, lo: int, hi: int) -> bytes:
+        for attempt in range(5):
+            try:
+                r = self.client.get(self.url, headers={**self.headers, "Range": f"bytes={lo}-{hi - 1}"})
+                r.raise_for_status()
+                assert len(r.content) == hi - lo, (len(r.content), hi - lo)
+                return r.content
+            except Exception:
+                if attempt == 4:
+                    raise
+
+    def get_tensor(self, name: str) -> torch.Tensor:
+        meta = self.header[name]
+        lo, hi = (self.data_start + o for o in meta["data_offsets"])
+        cuts = list(range(lo, hi, _RANGE_BYTES)) + [hi]
+        with ThreadPoolExecutor(8) as ex:
+            parts = list(ex.map(lambda i: self._get(cuts[i], cuts[i + 1]), range(len(cuts) - 1)))
+        buf = bytearray(b"".join(parts))
+        return torch.frombuffer(buf, dtype=_DTYPES[meta["dtype"]]).reshape(meta["shape"])
+
+
+@contextmanager
+def open_source(src_dir: str, fname: str, remote_repo, revision):
+    if remote_repo is None:
+        with safe_open(os.path.join(src_dir, fname), framework="pt") as f:
+            yield f
+        return
+    from huggingface_hub import get_token, hf_hub_url
+
+    token = get_token()
+    yield RemoteSafetensors(
+        hf_hub_url(remote_repo, fname, revision=revision),
+        {"Authorization": f"Bearer {token}"} if token else {},
+    )
+
+
 class ShardWriter:
     def __init__(self, out_dir: str, prefix: str):
         self.out_dir, self.prefix = out_dir, prefix
@@ -169,6 +230,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--remote-repo", default=None)
+    ap.add_argument("--revision", default=None)
     args = ap.parse_args()
 
     shard_dir = os.path.join(args.out, "shards")
@@ -184,7 +247,7 @@ def main():
     for name, fname in src_map.items():
         by_file.setdefault(fname, []).append(name)
     for fname, names in sorted(by_file.items()):
-        with safe_open(os.path.join(args.src, fname), framework="pt") as f:
+        with open_source(args.src, fname, args.remote_repo, args.revision) as f:
             for name in sorted(names):
                 if name == "lm_head.weight":
                     continue  # tied to embed_tokens
