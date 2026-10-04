@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 import torch
 
+from sglang.srt.environ import envs
 from sglang.srt.layers.moe import MoeRunner
 from sglang.srt.layers.moe.moe_runner.marlin import MarlinMoeQuantInfo
 from sglang.srt.layers.quantization.marlin_utils import (
@@ -16,6 +17,9 @@ from sglang.srt.layers.quantization.marlin_utils import (
     moe_awq_to_marlin_zero_points,
 )
 from sglang.srt.layers.quantization.utils import get_scalar_types, replace_parameter
+from sglang.srt.model_executor.runner_backend_utils.tc_piecewise_cuda_graph import (
+    get_tc_piecewise_forward_context,
+)
 from sglang.srt.utils import is_hip, is_xpu
 
 if TYPE_CHECKING:
@@ -27,6 +31,8 @@ if TYPE_CHECKING:
 
 awq_marlin_moe_repack = None
 awq_marlin_repack = None
+supports_w4a16_sm90 = None
+w4a16_sm90_gemm = None
 
 
 def _unsupported_awq_dequantize(*args, **kwargs):
@@ -49,6 +55,10 @@ elif is_hip():
         pass
 else:
     try:
+        from sglang.kernels.ops.gemm.w4a16_sm90 import (
+            supports_w4a16_sm90,
+            w4a16_sm90_gemm,
+        )
         from sglang.kernels.ops.quantization.awq_dequantize import awq_dequantize
         from sglang.kernels.ops.quantization.awq_marlin_repack import (
             awq_marlin_moe_repack,
@@ -105,6 +115,9 @@ class AWQLinearKernel:
 class AWQMarlinLinearKernel:
     def __init__(self, quant_config: Optional[QuantizationConfig] = None):
         self.quant_config = quant_config
+        self.use_w4a16_sm90 = (
+            envs.SGLANG_USE_W4A16_SM90_GEMM.get() and w4a16_sm90_gemm is not None
+        )
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         device = layer.qweight.device
@@ -147,6 +160,10 @@ class AWQMarlinLinearKernel:
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        if self.use_w4a16_sm90:
+            out = self._apply_w4a16_sm90(layer, x, bias)
+            if out is not None:
+                return out
         return apply_awq_marlin_linear(
             input=x,
             weight=layer.qweight,
@@ -160,6 +177,26 @@ class AWQMarlinLinearKernel:
             input_size_per_partition=layer.input_size_per_partition,
             bias=bias,
         )
+
+    def _apply_w4a16_sm90(
+        self, layer: torch.nn.Module, x: torch.Tensor, bias: Optional[torch.Tensor]
+    ) -> Optional[torch.Tensor]:
+        """The SM90 kernel's result, or None when this call stays on Marlin."""
+        x_2d = x.reshape(-1, x.shape[-1])
+        n = layer.output_size_per_partition
+        # The piecewise-graph path runs Marlin as a registered custom op.
+        if get_tc_piecewise_forward_context() is not None or not supports_w4a16_sm90(
+            m=x_2d.shape[0],
+            n=n,
+            k=layer.input_size_per_partition,
+            group_size=self.quant_config.group_size,
+            dtype=x.dtype,
+        ):
+            return None
+        out = w4a16_sm90_gemm(x_2d, layer.qweight, layer.scales, layer.qzeros, size_n=n)
+        if bias is not None:
+            out.add_(bias)
+        return out.reshape(x.shape[:-1] + (n,))
 
 
 class AWQMoEKernel:

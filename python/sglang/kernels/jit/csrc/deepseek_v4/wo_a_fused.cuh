@@ -21,7 +21,9 @@
 #include <sgl_kernel/tensor.h>
 #include <sgl_kernel/utils.h>
 
+#include <sgl_kernel/cluster.cuh>
 #include <sgl_kernel/mbarrier.cuh>
+#include <sgl_kernel/tma.cuh>
 #include <sgl_kernel/type.cuh>
 #include <sgl_kernel/utils.cuh>
 #include <sgl_kernel/warp.cuh>
@@ -38,68 +40,10 @@
 
 namespace sglang::device::ptx {
 
-// ---- TMA -------------------------------------------------------------------
-// Coordinate convention: the tensor map's globalDim is (inner, outer) -- dim 0
-// is the stride-1 axis -- and the load takes (x = inner, y = outer). Swapping
-// them loads a transposed tile with plausible magnitudes and scrambled pairing.
-// Warm the cache line holding the tensor-map descriptor so the first TMA does
-// not pay the descriptor fetch on top of the DRAM latency.
-SGL_DEVICE void prefetch_tensormap(const void* tmap) {
-  asm volatile("prefetch.tensormap [%0];" ::"l"(tmap) : "memory");
-}
-
-SGL_DEVICE void
-cp_async_bulk_tensor_2d(uint32_t dst_smem, const CUtensorMap* tmap, int32_t x, int32_t y, uint64_t* bar) {
-  asm volatile(
-      "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes"
-      " [%0], [%1, {%2, %3}], [%4];" ::"r"(dst_smem),
-      "l"(tmap),
-      "r"(x),
-      "r"(y),
-      "r"(to_shared(bar))
-      : "memory");
-}
-
-// Push partial sums into a peer's inbox and credit its mbarrier byte count.
-SGL_DEVICE void st_async_b32(uint32_t dst_dsmem, float value, uint32_t dst_bar) {
-  asm volatile("st.async.shared::cluster.mbarrier::complete_tx::bytes.b32 [%0], %1, [%2];" ::"r"(dst_dsmem),
-               "f"(value),
-               "r"(dst_bar)
-               : "memory");
-}
-
 // Generic stores land in a different proxy than the one the MMA and the bulk
 // copy engine read through.
 SGL_DEVICE void fence_proxy_async_shared() {
   asm volatile("fence.proxy.async.shared::cta;" ::: "memory");
-}
-
-// Retarget a local smem offset at CTA `rank` of this cluster (DSMEM).
-SGL_DEVICE uint32_t mapa(uint32_t addr, uint32_t rank) {
-  uint32_t out;
-  asm volatile("mapa.shared::cluster.u32 %0, %1, %2;" : "=r"(out) : "r"(addr), "r"(rank));
-  return out;
-}
-
-SGL_DEVICE uint32_t cluster_ctarank() {
-  uint32_t r;
-  asm("mov.u32 %0, %%cluster_ctarank;" : "=r"(r));
-  return r;
-}
-
-// Publishes mbarrier initialization to the whole cluster. Because this fence
-// carries the release, the cluster arrive below needs no ordering of its own.
-SGL_DEVICE void fence_mbarrier_init_release_cluster() {
-  asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");
-}
-
-// Split cluster handshake: every CTA arrives in the prologue, but only the code
-// that actually touches a peer's memory pays for the wait.
-SGL_DEVICE void cluster_arrive_relaxed() {
-  asm volatile("barrier.cluster.arrive.relaxed.aligned;" ::: "memory");
-}
-SGL_DEVICE void cluster_wait_acquire() {
-  asm volatile("barrier.cluster.wait.acquire.aligned;" ::: "memory");
 }
 
 SGL_DEVICE void bar_sync(uint32_t id, uint32_t threads) {
@@ -659,27 +603,15 @@ __global__ void __cluster_dims__(Trait::kSplitK, 1, 1) __launch_bounds__(Trait::
 // bounds and TMA zero-fills them, which is how tokens >= m get masked.
 inline CUtensorMap make_map(
     const void* base, uint64_t cols, uint64_t rows, uint64_t row_stride_bytes, uint32_t box_cols, uint32_t box_rows) {
-  CUtensorMap map{};
-  uint64_t dim[2] = {cols, rows};
-  uint64_t stride[1] = {row_stride_bytes};
-  uint32_t box[2] = {box_cols, box_rows};
-  uint32_t elem_stride[2] = {1, 1};
-  // The only driver-API call in the file; there is no runtime-API tensor-map
-  // encoder, so the module links `-lcuda` for it.
-  cuTensorMapEncodeTiled(
-      &map,
+  return host::make_tma_map_2d(
+      base,
       CU_TENSOR_MAP_DATA_TYPE_BFLOAT16,
-      2,
-      const_cast<void*>(base),
-      dim,
-      stride,
-      box,
-      elem_stride,
-      CU_TENSOR_MAP_INTERLEAVE_NONE,
-      CU_TENSOR_MAP_SWIZZLE_128B,
-      CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
-      CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
-  return map;
+      cols,
+      rows,
+      row_stride_bytes,
+      box_cols,
+      box_rows,
+      CU_TENSOR_MAP_SWIZZLE_128B);
 }
 
 }  // namespace sglang::wo_a_fused
