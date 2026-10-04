@@ -9,5 +9,16 @@
    "32"
   ],
   "env": {}
+ },
+ "nvfp4-smoke": {
+  "description": "Harness smoke only (2026-10-04, coordinator-approved while the FP8 base is not up): gemma4nv's NVFP4 base, run with G4POC_MODEL_DIR at the NVFP4 snapshot. Never a g4poc result.",
+  "commit": "a9871012acb768dc94a43a6542cc32626c7b7b0b",
+  "server_args": [
+   "--moe-runner-backend",
+   "flashinfer_cutlass",
+   "--cuda-graph-max-bs-decode",
+   "32"
+  ],
+  "env": {}
  }
 }
