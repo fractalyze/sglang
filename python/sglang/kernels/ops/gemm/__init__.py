@@ -500,6 +500,14 @@ register_kernel(
 )
 register_kernel(
     KernelSpec(
+        op="gemm.w4a16_sm90_gemm",
+        backend=KernelBackend.JIT,
+        target="sglang.kernels.ops.gemm.w4a16_sm90:w4a16_sm90_gemm",
+        capabilities=_SM90,
+    )
+)
+register_kernel(
+    KernelSpec(
         op="gemm.rel_proj_small_t",
         backend=KernelBackend.JIT,
         target="sglang.kernels.ops.gemm.inkling_rel_proj:rel_proj_small_t",
