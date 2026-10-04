@@ -1,0 +1,18 @@
+{
+ "n": 16,
+ "input_len": 5000,
+ "output_len": 300,
+ "wall_s": 15.689548254013062,
+ "output_tok_per_s": 305.93615076025276,
+ "latency_p50_s": 8.543272018432617,
+ "latency_max_s": 15.667222261428833,
+ "decode_lines": 30,
+ "peak_running": 5,
+ "peak_full_usage": 0.91,
+ "peak_full_tokens": 26405,
+ "peak_swa_usage": 0.34,
+ "peak_swa_tokens": 7848,
+ "peak_queue": 11,
+ "retract_lines": 0,
+ "retract_samples": []
+}

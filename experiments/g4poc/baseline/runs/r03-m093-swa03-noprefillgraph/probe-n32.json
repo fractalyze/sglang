@@ -1,0 +1,20 @@
+{
+ "n": 32,
+ "input_len": 5000,
+ "output_len": 300,
+ "wall_s": 14.986841201782227,
+ "output_tok_per_s": 640.5619350165913,
+ "latency_p50_s": 11.424120903015137,
+ "latency_max_s": 14.960850954055786,
+ "decode_lines": 15,
+ "peak_running": 17,
+ "peak_full_usage": 0.99,
+ "peak_full_tokens": 89097,
+ "peak_swa_usage": 0.89,
+ "peak_swa_tokens": 24032,
+ "peak_queue": 16,
+ "retract_lines": 2,
+ "retract_samples": [
+  "[2026-10-04 15:07:08] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1291, #new_token_ratio: 0.4311 -> 0.9598"
+ ]
+}

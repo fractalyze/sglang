@@ -1,0 +1,32 @@
+{
+ "returncode": -15,
+ "preflight": {
+  "mem_available_gb": 55.629451751708984,
+  "swap_used_gb": 0.9387664794921875,
+  "load1": 1.05,
+  "foreign_gpu_gb": 0,
+  "waited": []
+ },
+ "peaks_by_phase": {
+  "start": {
+   "min_mem_available_gb": 51.85710525512695,
+   "peak_tree_rss_gb": 4.483936309814453,
+   "peak_load1": 1.2,
+   "peak_swap_used_gb": 0.9387664794921875,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  },
+  "weight_load": {
+   "min_mem_available_gb": 51.61625289916992,
+   "peak_tree_rss_gb": 8.409297943115234,
+   "peak_load1": 1.2,
+   "peak_swap_used_gb": 0.9387664794921875,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  }
+ },
+ "tripped": null,
+ "csv": "/data/jooman/g4poc/runs/r04-mm-weights/hostmem.csv"
+}

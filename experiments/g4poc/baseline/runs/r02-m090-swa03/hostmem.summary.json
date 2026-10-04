@@ -1,0 +1,46 @@
+{
+ "returncode": 0,
+ "preflight": {
+  "mem_available_gb": 55.60859298706055,
+  "swap_used_gb": 0.9387741088867188,
+  "load1": 0.71,
+  "foreign_gpu_gb": 0,
+  "waited": [
+   {
+    "t": 1791093894,
+    "reason": "other users hold 29.7 GB of GPU memory > 4"
+   }
+  ]
+ },
+ "peaks_by_phase": {
+  "start": {
+   "min_mem_available_gb": 51.90901184082031,
+   "peak_tree_rss_gb": 4.923347473144531,
+   "peak_load1": 0.84,
+   "peak_swap_used_gb": 0.9387741088867188,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  },
+  "weight_load": {
+   "min_mem_available_gb": 50.468055725097656,
+   "peak_tree_rss_gb": 7.96453857421875,
+   "peak_load1": 0.86,
+   "peak_swap_used_gb": 0.9387741088867188,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  },
+  "serving": {
+   "min_mem_available_gb": 50.14475631713867,
+   "peak_tree_rss_gb": 6.708240509033203,
+   "peak_load1": 0.94,
+   "peak_swap_used_gb": 0.9387741088867188,
+   "peak_n_compilers": 0.0,
+   "peak_compiler_rss_gb": 0.0,
+   "peak_max_compiler_rss_gb": 0.0
+  }
+ },
+ "tripped": null,
+ "csv": "/data/jooman/g4poc/runs/r02-m090-swa03/hostmem.csv"
+}

@@ -1,0 +1,15 @@
+  0%|          | 0/50 [00:00<?, ?it/s]Capturing prefill shape (num_tokens=4096 avail_mem=2.82 GB):   0%|          | 0/50 [00:00<?, ?it/s][2026-10-04 15:05:39] Using default MoE kernel config. Performance might be sub-optimal! Config file not found at /data/jooman/g4poc/tree/python/sglang/srt/layers/moe/moe_runner/triton_utils/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,d
+Capture target decode CUDA graph begin. backend=full, num_tokens_per_req=1, bs=[1, 2, 4, 8, 12, 16, 24, 32], avail mem=1.70 GB
+Capture target decode CUDA graph end. elapsed=1.10 s, mem usage=0.04 GB, avail mem=1.66 GB.
+Capture target prefill CUDA graph begin. backend=breakable, num_tokens=[4, 8, 12, 16, 20, 24, 28, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256, 288, 320, 352, 384, 416, 448, 480, 512, 576, 640, 704, 768, 832, 896, 960, 1024, 1280, 1536, 1792, 2048, 2304, 2560, 2816, 3072, 3328, 3584, 3840, 4096], avail mem=2.82 GB
+Capture target prefill CUDA graph end. elapsed=6.93 s, mem usage=1.12 GB, avail mem=1.70 GB.
+Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 65387, K size: 0.31 GB, V size: 0.31 GB
+Load weight begin. avail mem=30.68 GB
+Load weight end. elapsed=2.50 s, type=Gemma4ForCausalLM, quant=compressed-tensors, avail mem=5.57 GB, mem usage=25.12 GB.
+max_total_num_tokens=65387, chunked_prefill_size=4096, max_prefill_tokens=16384, max_running_requests=2048, context_len=16384, available_gpu_mem=1.66 GB
+Memory pool end. avail mem=2.86 GB
+SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 19616, K size: 0.94 GB, V size: 0.94 GB
+Use sliding window memory pool. full_layer_tokens=65387, swa_layer_tokens=19616
+Use triton as default attention backend for Gemma4
+Using CompressedTensorsW8A8Fp8MoE
+Using default MoE kernel config. Performance might be sub-optimal! Config file not found at /data/jooman/g4poc/tree/python/sglang/srt/layers/moe/moe_runner/triton_utils/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_channel_quant=True_down.json, you can create them with https://github.com/sgl-project/sglang/tree/main/benchmark/kernels/fused_moe_triton

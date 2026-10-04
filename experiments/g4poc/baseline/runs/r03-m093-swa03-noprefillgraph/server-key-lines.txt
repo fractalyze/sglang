@@ -1,0 +1,14 @@
+  0%|          | 0/8 [00:00<?, ?it/s]Capturing batches (bs=32 avail_mem=1.80 GB):   0%|          | 0/8 [00:00<?, ?it/s][2026-10-04 15:06:45] Using default MoE kernel config. Performance might be sub-optimal! Config file not found at /data/jooman/g4poc/tree/python/sglang/srt/layers/moe/moe_runner/triton_utils/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_
+Capture target decode CUDA graph begin. backend=full, num_tokens_per_req=1, bs=[1, 2, 4, 8, 12, 16, 24, 32], avail mem=1.85 GB
+Capture target decode CUDA graph end. elapsed=1.78 s, mem usage=0.13 GB, avail mem=1.72 GB.
+Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 89571, K size: 0.43 GB, V size: 0.43 GB
+KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1291, #new_token_ratio: 0.4311 -> 0.9598
+Load weight begin. avail mem=30.68 GB
+Load weight end. elapsed=2.56 s, type=Gemma4ForCausalLM, quant=compressed-tensors, avail mem=5.57 GB, mem usage=25.12 GB.
+max_total_num_tokens=89571, chunked_prefill_size=4096, max_prefill_tokens=16384, max_running_requests=2799, context_len=16384, available_gpu_mem=1.72 GB
+Memory pool end. avail mem=1.90 GB
+SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 26871, K size: 1.28 GB, V size: 1.28 GB
+Use sliding window memory pool. full_layer_tokens=89571, swa_layer_tokens=26871
+Use triton as default attention backend for Gemma4
+Using CompressedTensorsW8A8Fp8MoE
+Using default MoE kernel config. Performance might be sub-optimal! Config file not found at /data/jooman/g4poc/tree/python/sglang/srt/layers/moe/moe_runner/triton_utils/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_channel_quant=True_down.json, you can create them with https://github.com/sgl-project/sglang/tree/main/benchmark/kernels/fused_moe_triton
