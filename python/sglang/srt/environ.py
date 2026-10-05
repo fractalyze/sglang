@@ -1135,8 +1135,8 @@ class Envs:
     # explicitly in code; this env var allows override (0=force off, 1=force on).
     SGLANG_TRITON_COMPACT_EXTEND_ATTENTION = EnvBool(True)
     # sm120 extend attention over an FP8 KV cache: use the retuned tiles in
-    # extend_attention._SM120_FP8_KV_EXTEND_TILES (wider prefix tile, pipelined
-    # loads) instead of the sm120 defaults. Reorders the softmax reduction.
+    # extend_attention._SM120_FP8_KV_EXTEND_TILES instead of the sm120 defaults.
+    # Changes the KV tile width, so it reorders the softmax reduction.
     SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES = EnvBool(False)
     # Raise if Triton loads a kernel after the engine starts serving. This
     # verifies that startup warmup covers every kernel specialization used at

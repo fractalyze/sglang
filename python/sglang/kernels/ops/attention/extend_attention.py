@@ -151,12 +151,16 @@ def _get_block_sizes_for_extend_attention(Lq: int, Lv: int):
 
 # sm120 (RTX 5090 / RTX Pro 6000, ~100 KB shared memory) extend tiles for an FP8
 # KV cache, opt-in via SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES. The default
-# sm120 tiles are sized for BF16 K/V; FP8 prefix tiles are half the bytes, which
-# leaves room for a wider prefix sweep and a second pipeline stage.
+# sm120 tiles are sized for BF16 K/V. Swept on an RTX 5090 over Gemma-4-26B-A4B
+# prefill shapes (experiments/g4poc/compute/extend_attn_bench.py; 16 q heads, 2 or
+# 8 kv heads, 347 new tokens over a 3,769-token prefix and 4,096-token chunks):
+# head_dim 512 with a 64-wide prefix tile is 2.3-3.8x faster than the default
+# (32, 32), head_dim 256 with 32x32 tiles and 4 warps 1.7-2.3x faster than the
+# default (64, 64) with 8 warps, which runs at 255 registers per thread.
 # head_dim -> (BLOCK_M, BLOCK_N, BLOCK_N_PREFIX, num_warps, num_stages)
 _SM120_FP8_KV_EXTEND_TILES = {
-    256: (64, 64, 64, 8, 2),
-    512: (32, 32, 64, 8, 2),
+    256: (32, 32, 32, 4, 1),
+    512: (32, 32, 64, 8, 1),
 }
 
 
