@@ -393,9 +393,55 @@ arrivals). The T30 points have no mid-window bursts at 48 sessions. What T60 doe
 almost entirely (hit <= 0.07 with HiCache, <= 0.01 without), throughput follows the turn rate, and HiCache again
 gives no gain.
 
-> [!gap] Poisson session arrivals (`pthink30` at 48/64/80 sessions for both configs, `pthink60` at 96/120/144 for
-> final-mem-c1-c2a and 120 for final-hc) run 04:00-07:55; if the poisson capacity at T30 is materially higher than
-> the slots bound, it becomes the headline.
+**Independent sessions (poisson arrivals; the numbers to size with).** Loads `pthink30` / `pthink60`: sessions arrive
+as a Poisson process at `concurrency / expected_session_s` (150 s at T30, 280 s at T60), so no two are
+phase-correlated; 240 s (T30) or 300 s (T60) warm-up, 480 s window. Each point's plan is one seeded draw of
+heavy-tailed sessions (1-16 turns), so the target does not map exactly to the live count: **read capacity in measured
+live sessions** (PB2 replayed the seeded plans on the CPU; the digests match these runs). No burst episodes (queue
+> 20 for > 60 s) at any point; queue max <= 5.
+
+| config | think | target | live sessions | turns/s | output tok/s | E2E p50 s | E2E p90 s | hit | failed |
+|---|---|---|---|---|---|---|---|---|---|
+| final-hc | 30 s | 48 | 41.3 | 1.54 | 265 | 2.71 | 5.15 | 0.462 | 0 |
+| final-hc | 30 s | 64 | 63.4 | 2.28 | 394 | 4.25 | 8.05 | 0.116 | 0 |
+| final-hc | 30 s | 80 | 64.4 | 2.36 | 427 | 5.17 | 9.02 | 0.107 | 0 |
+| final-mem-c1-c2a | 30 s | 48 | 42.0 | 1.54 | 265 | 3.14 | 5.93 | 0.047 | 0 |
+| final-mem-c1-c2a | 30 s | 64 | 63.6 | 2.28 | 395 | 4.35 | 8.19 | 0.005 | 0 |
+| final-mem-c1-c2a | 30 s | 80 | 64.3 | 2.37 | 428 | 5.23 | 8.99 | 0.003 | 0 |
+| final-hc-cp2048-lpm | 30 s | 64 | 64.4 | 2.26 | 390 | 4.89 | 9.40 | 0.034 | 1 |
+| final-hc | 60 s | 96 | 82.3 | 1.68 | 305 | 3.84 | 6.70 | 0.037 | 1 |
+| final-hc | 60 s | 120 | 113.0 | 2.31 | 420 | 5.34 | 9.73 | 0.013 | 0 |
+| final-hc | 60 s | 144 | 119.0 | 2.43 | 441 | 5.67 | 10.43 | 0.008 | 0 |
+| final-mem-c1-c2a | 60 s | 96 | 82.8 | 1.70 | 308 | 3.89 | 6.47 | 0.002 | 0 |
+| final-mem-c1-c2a | 60 s | 120 | 112.6 | 2.30 | 418 | 5.11 | 8.65 | 0.002 | 0 |
+| final-mem-c1-c2a | 60 s | 144 | 118.0 | 2.41 | 436 | 5.41 | 9.37 | 0.002 | 0 |
+
+Runs (`runs/`): `sweep-final-hc-20261006-011528-*`, `-031205-*`, `-032720-*`; `sweep-final-mem-c1-c2a-20261006-015330-*`,
+`-023118-*`; `sweep-final-hc-cp2048-lpm-20261006-035518-*`. The two failed requests (1 of ~800-1,100 each, both in
+HiCache configs under think time) came back as HTTP 200 with no server error or abort counter; the gate kept no
+per-request detail then and records error type and finish reason from these runs on.
+
+> [!gap] T30 edge refinement at targets C72/C76 (~72 and ~75 live sessions) for final-hc and final-mem-c1-c2a is
+> running.
+
+**Capacity edges (poisson, measured live sessions, E2E p90 <= 10 s):** **T30 ~64-66, T60 ~113-119 sessions per
+GPU.** Session capacity follows the turn rate: both edges sit near 2.3-2.4 turns/s per GPU, since nearly every turn
+re-prefills its ~5.8K-token history once think time exceeds what the cache can hold; so sessions per GPU grow
+roughly in proportion to think time. The slots runs above (phase-correlated, with the window-end bug) are the
+pessimistic bound.
+
+**Recommendation for chat with think time.**
+- **With a 12 GB host pool, HiCache helps only for zero or short think time.** At T30 it is within noise of
+  device-only (p90 8.05 vs 8.19 s at ~64 sessions); at T60 it is slightly worse (p90 +0.2 to +1.1 s, no hit gain).
+- So for chat with think time >= 30 s on servers with ~12 GB of host RAM per GPU, deploy **device-only
+  `final-mem-c1-c2a` with default chunking**. It is also simpler: a 24 GB memory scope, no HiCache start-check
+  retries, and batched outputs reproducible run to run.
+- **HiCache (`final-hc`) pays off** for in-flight-heavy traffic (10 s capacity C24 -> C32, +13% goodput at the
+  operating point) and, per PB's retention model, for larger host pools (>= 48 GB per GPU) at T30 (model only, not
+  measured here).
+- The final in-flight config's two flags (chunked prefill 2048, LPM scheduling) are in-flight levers: under think
+  time `final-hc-cp2048-lpm` loses host-tier hits (0.034 vs 0.116 at ~64 sessions) and its p90 is ~17% higher;
+  PB's same-host control decides the cause.
 
 ## 4. Code levers
 
