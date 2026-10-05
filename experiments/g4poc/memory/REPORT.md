@@ -11,8 +11,9 @@ nvidia-smi's.
 
 ## 0. Summary
 
-**Final config: `final-hc`** (one RTX 5090, FP8 checkpoint; SGLang tree `a0491db764`, branch
-`jumanzii/g4poc-final-hicache` = `53752c62aa` + PB's C2-A tile commits + PC3's two HiCache fixes):
+**Final config: `final-hc-cp2048-lpm`** = `final-hc` + `--chunked-prefill-size 2048 --schedule-policy lpm` (PB's C3)
+(one RTX 5090, FP8 checkpoint; SGLang tree `a0491db764`, branch `jumanzii/g4poc-final-hicache` = `53752c62aa` + PB's
+C2-A tile commits + PC3's two HiCache fixes):
 
 ```
 SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
@@ -24,7 +25,8 @@ python -m sglang.launch_server --model-path <gemma-4-26B-A4B-it FP8 text checkpo
   --max-running-requests 64 --mem-fraction-static 0.955 --swa-full-tokens-ratio 0.268 \
   --cuda-graph-max-bs-decode 48 \
   --enable-hierarchical-cache --hicache-size 12 --hicache-write-policy write_through \
-  --hicache-io-backend kernel --hicache-mem-layout page_first
+  --hicache-io-backend kernel --hicache-mem-layout page_first \
+  --chunked-prefill-size 2048 --schedule-policy lpm
 ```
 
 Host RAM: the server pins a 12 GB host pool and peaks at ~18 GB RSS. SGLang's start check
@@ -37,15 +39,21 @@ available", and the passing ones cleared it by 0.3-3.6 GB. In deployment: read t
 server's cgroup just before launch (page cache stays charged to whoever read it first), give the cgroup >= 32 GB,
 and retry the start on that error (the study's queues do all three that the host allows).
 
-| | mem-base | mem-final (memory levers) | + compute levers (`final-mem-c1-c2a`) | + fixed HiCache (**`final-hc`**) |
-|---|---|---|---|---|
-| burst capacity (5K in / 300 out, no shared prefix) | 17 | 29 | - | - |
-| multi-turn in-flight capacity at E2E p90 <= 10 s (240 s sweep points) | 12 | 20 | 24 | 32 (p90 9.55 s) |
-| **operating point, sustained 30 min** | - | - | - | **C28: p90 8.92 s, 0 failures** |
-| output tok/s at the operating point | 558 | 677 | 833 | **919** (+65%) |
-| $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | **0.212 (-39%)** |
-| multi-turn exactness at concurrency 1 (12 later turns) | - | - | 12/12 control | 12/12 identical to control |
-| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: no regression shown (section 5) |
+| | mem-base | mem-final (memory levers) | + compute levers (`final-mem-c1-c2a`) | + fixed HiCache (`final-hc`) | + chunk 2048, LPM (**`final-hc-cp2048-lpm`**) |
+|---|---|---|---|---|---|
+| burst capacity (5K in / 300 out, no shared prefix) | 17 | 29 | - | - | - |
+| multi-turn in-flight capacity at E2E p90 <= 10 s (240 s sweep points) | 12 | 20 | 24 | 32 (p90 9.55 s) | 36 (p90 9.02 s, p99 43.5 s) |
+| **operating point, sustained 30 min** | - | - | - | C28: p90 8.92 s | **C28: p90 8.59 s, p99 11.13 s, 0 failures** |
+| output tok/s at the operating point | 558 | 677 | 833 | 919 | **952** (+71%) |
+| $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | 0.212 (-39%) | **0.204 (-41%)** |
+| multi-turn exactness at concurrency 1 (12 later turns) | - | - | 12/12 control | 12/12 identical to control | 12/12 (PX) |
+| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: no regression shown (section 5) | role-play: NLL +0.0003, language net 0 (pass) |
+
+**Headline: one RTX 5090 sustains 28 multi-turn requests in flight for 30 minutes at E2E p90 8.59 s and p99 11.1 s,
+952 output tok/s, $0.204 per 1M output tokens at $0.70/GPU-h** (`sweep-final-hc-cp2048-lpm-20261006-052216`, section 3d; PB's
+build-server-2 soak of the same config also recommends C28). Past C28 the tail breaks (C32: p99 28.9 s here, 37 s on
+build-server-2, with 1.2% retractions) for <= 3% more throughput. Under chat think time the two in-flight flags do
+not help (section 3c); there, size by sessions per GPU.
 
 All on build-server-3; capacity points replicated on the same host. **final-hc headline: C28 sustained for 30
 minutes at E2E p90 8.92 s, 919 output tok/s, $0.212 per 1M output tokens** (9,353 requests, 0 failed, no memory
@@ -455,6 +463,33 @@ pessimistic bound.
 - The final in-flight config's two flags (chunked prefill 2048, LPM scheduling) are in-flight levers: under think
   time `final-hc-cp2048-lpm` loses host-tier hits (0.034 vs 0.116 at ~64 sessions) and its p90 is ~17% higher;
   PB's same-host control decides the cause.
+
+## 3d. The final config: `final-hc-cp2048-lpm` (fixed HiCache + chunked prefill 2048 + LPM scheduling)
+
+PB's C3 flags on top of `final-hc` (tree `a0491db764`, 28G scope); PB's KL / ABBA gates and PX's multi-turn
+exactness (12/12) passed on build-server-2. On build-server-3:
+
+| in flight | E2E p50 s | E2E p90 s | E2E p99 s | output tok/s | total tok/s | prefix-cache hit | retractions | $/1M output |
+|---|---|---|---|---|---|---|---|---|
+| 28 | 5.49 | 8.60 | 11.27 | 948 | 31,700 | 0.770 | 11 | 0.205 |
+| 32 | 6.51 | 8.85 | 28.86 | 974 | 30,327 | 0.784 | 10 | 0.200 |
+| 36 | 6.17 | 9.02 | 43.51 | 953 | 30,927 | 0.779 | 18 | 0.204 |
+
+(`sweep-final-hc-cp2048-lpm-20261006-050516-build-server-3-e485ea`, 240 s points, no failed request, GPU <= 31,298 MiB.)
+p90 meets 10 s to C36, but past C28 the tail breaks (p99 11.3 -> 28.9 -> 43.5 s) for <= 3% more throughput.
+
+**30-minute soak at C28, the operating point** (`sweep-final-hc-cp2048-lpm-20261006-052216-build-server-3-d12892`):
+9,656 requests, **0 failed**, 67 retractions (0.69%, requeued); E2E p50 5.54 s, **p90 8.59 s, p99 11.13 s**; **952
+output tok/s** (31,432 total), prefix-cache hit 0.768, **$0.204 per 1M output** at $0.70/GPU-h. No creep: decode
+1,232-1,258 tok/s per 5-minute bucket, server GPU memory flat at 31,250 MiB (peak 31,296), server RSS 17.540 ->
+17.547 GB, host MemAvailable 38.8-39.2 GB. Against final-hc's C28 soak: +3.6% output tok/s, p90 8.59 vs 8.92 s.
+
+**Role-play quality** (0.85 fraction, keeping its 2048-token chunks; `rp-quality-final-cpl-qr-20261006-050318`): reference
+NLL +0.0003 nats/token (budget 0.02); language adherence 68 vs 68/80, paired one flip each way (out: `s000794/0`,
+the mixed-language detector item), net 0, inside the band. Pass.
+
+Under chat think time the two flags are not a gain: at ~64 live sessions with 30 s think time the final config's
+hit rate is 0.034 against final-hc's 0.116 and its p90 9.40 vs 8.05 s (section 3c).
 
 ## 4. Code levers
 
