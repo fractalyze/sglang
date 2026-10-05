@@ -155,7 +155,8 @@ class _Run:
             rec.output_ids = list(body.get("output_ids") or [])
         return body.get("text", "")
 
-    async def session(self, http: aiohttp.ClientSession, start: SessionStart) -> None:
+    async def session(self, http: aiohttp.ClientSession, start: SessionStart) -> bool:
+        """Replays one session; True when it stopped because its next turn falls after the window."""
         s = self.sessions[start.session_index]
         replies = [t.reply for t in s.turns]
         due = start.t_start
@@ -164,7 +165,7 @@ class _Run:
             if k > start.first_turn:
                 due = self.now() + turn.think_s * self.load.think_scale
             if due >= self.t_end:
-                return
+                return True
             await self._sleep_until(due)
             msgs = chat.messages_for_turn(s, k, replies, start.nonce, self.nonce_at)
             ids = await asyncio.get_running_loop().run_in_executor(None, chat.prompt_ids, self.tokenizer, msgs)
@@ -174,16 +175,20 @@ class _Run:
             self.records.append(rec)
             text = await self._send(http, rec, ids)
             if text is None or not rec.ok:
-                return
+                return False
             if not self.scripted:
                 replies[k] = text
+        return False
 
     async def slot(self, http: aiohttp.ClientSession, starts: Iterator[SessionStart], t_first: float) -> None:
         await self._sleep_until(t_first)
         for st in starts:
             if self.now() >= self.t_end:
                 return
-            await self.session(http, msgspec.structs.replace(st, t_start=self.now()))
+            # A session cut by the window end must not hand its slot to a fresh session: with think time that
+            # would fire every slot's uncached first turn in the window's last think period.
+            if await self.session(http, msgspec.structs.replace(st, t_start=self.now())):
+                return
 
 
 async def _scrape(url: str, run: _Run, out: List[Dict]) -> None:

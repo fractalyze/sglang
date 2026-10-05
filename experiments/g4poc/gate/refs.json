@@ -29,7 +29,7 @@
   "env": {}
  },
  "c1-moe-tuned": {
-  "description": "C1: base + a fused_moe Triton config tuned on the bs2 RTX 5090 (fp8_w8a8 per-channel, E=128, N=704; compute/moe_tune.py, merged by compute/merge_moe_configs.py). Only the MoE tile configs change.",
+  "description": "C1: base + a fused_moe Triton config tuned on the bs2 RTX 5090 (fp8_w8a8 per-channel, E=128, N=704; compute/moe_tune.py, merged by compute/merge_moe_configs.py). Only the MoE tile configs change. Config file: experiments/g4poc/compute/moe-configs/c1/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_channel_quant=True.json (sha256 b3bcce12...9576); on a host, SGLANG_MOE_CONFIG_DIR is a copy of experiments/g4poc/compute/moe-configs/c1 at /data/jooman/g4poc/moe-configs/c1.",
   "extends": "base",
   "env": {
    "SGLANG_MOE_CONFIG_DIR": "/data/jooman/g4poc/moe-configs/c1"
@@ -65,12 +65,246 @@
   "commit": "9026c00478"
  },
  "final-mem-c1-c2a": {
-  "description": "bs2 final: PC's mem-final (memory/refs.json, d56fb9764a: stack1 flags, L8 FP8 vocab table, decode graphs to 48, expandable segments) + C1 tuned fused_moe config + C2-A sm120 FP8-KV extend tiles. Tree 1425761173 = mem-final's 53752c62aa + the C2-A tile commits (branch jumanzii/g4poc-final-c2).",
+  "description": "bs2 final: PC's mem-final (memory/refs.json, d56fb9764a: stack1 flags, L8 FP8 vocab table, decode graphs to 48, expandable segments) + C1 tuned fused_moe config + C2-A sm120 FP8-KV extend tiles. Tree 1425761173 = mem-final's 53752c62aa + the C2-A tile commits (branch jumanzii/g4poc-final-c2). Config file: experiments/g4poc/compute/moe-configs/c1/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_channel_quant=True.json (sha256 b3bcce12...9576); on a host, SGLANG_MOE_CONFIG_DIR is a copy of experiments/g4poc/compute/moe-configs/c1 at /data/jooman/g4poc/moe-configs/c1.",
   "extends": "mem-final",
   "commit": "1425761173",
   "env": {
    "SGLANG_MOE_CONFIG_DIR": "/data/jooman/g4poc/moe-configs/c1",
    "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1"
   }
+ },
+ "final-mem-c1-c2a-nocache": {
+  "description": "Fleet model input, not a candidate: final-mem-c1-c2a with the radix cache off, so every turn re-prefills its whole history (the policy where idle sessions' histories fall out of the device pool). Max running 24 (the sweep stops at 20 in flight): without the radix cache SGLang sizes the sliding pool from max running requests, and 64 leaves no room for the full pool (82K-token SWA cap, start aborted 10-05 21:08).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--disable-radix-cache",
+   "--max-running-requests",
+   "24"
+  ]
+ },
+ "final-hc-cp2048": {
+  "description": "final-hc + C3b chunk 2048 (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048"
+  ]
+ },
+ "final-hc-kvs16": {
+  "description": "final-hc + C4 decode kv-split cap 16 (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--triton-attention-num-kv-splits",
+   "16"
+  ]
+ },
+ "final-hc-lpm": {
+  "description": "final-hc + C3a lpm (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--schedule-policy",
+   "lpm"
+  ]
+ },
+ "final-hc-cp2048-kvs16": {
+  "description": "final-hc + C3b chunk 2048 + C4 decode kv-split cap 16 (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--triton-attention-num-kv-splits",
+   "16"
+  ]
+ },
+ "final-hc-cp2048-lpm": {
+  "description": "final-hc + C3b chunk 2048 + C3a lpm (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--schedule-policy",
+   "lpm"
+  ]
+ },
+ "final-hc-kvs16-lpm": {
+  "description": "final-hc + C4 decode kv-split cap 16 + C3a lpm (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--triton-attention-num-kv-splits",
+   "16",
+   "--schedule-policy",
+   "lpm"
+  ]
+ },
+ "final-hc-cp2048-kvs16-lpm": {
+  "description": "final-hc + C3b chunk 2048 + C4 decode kv-split cap 16 + C3a lpm (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--triton-attention-num-kv-splits",
+   "16",
+   "--schedule-policy",
+   "lpm"
+  ]
+ },
+ "final-hc-cp2048-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-cp2048 on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-cp2048",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-kvs16-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-kvs16 on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-kvs16",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-lpm-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-lpm on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-lpm",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-cp2048-kvs16-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-cp2048-kvs16 on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-cp2048-kvs16",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-cp2048-lpm-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-cp2048-lpm on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-cp2048-lpm",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-kvs16-lpm-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-kvs16-lpm on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-kvs16-lpm",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-cp2048-kvs16-lpm-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-cp2048-kvs16-lpm on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-cp2048-kvs16-lpm",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-cp2048": {
+  "description": "Exactness control for final-hc-cp2048: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-kvs16": {
+  "description": "Exactness control for final-hc-kvs16: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--triton-attention-num-kv-splits",
+   "16"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-lpm": {
+  "description": "Exactness control for final-hc-lpm: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--schedule-policy",
+   "lpm"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-cp2048-kvs16": {
+  "description": "Exactness control for final-hc-cp2048-kvs16: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--triton-attention-num-kv-splits",
+   "16"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-cp2048-lpm": {
+  "description": "Exactness control for final-hc-cp2048-lpm: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--schedule-policy",
+   "lpm"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-kvs16-lpm": {
+  "description": "Exactness control for final-hc-kvs16-lpm: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--triton-attention-num-kv-splits",
+   "16",
+   "--schedule-policy",
+   "lpm"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-cp2048-kvs16-lpm": {
+  "description": "Exactness control for final-hc-cp2048-kvs16-lpm: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--triton-attention-num-kv-splits",
+   "16",
+   "--schedule-policy",
+   "lpm"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-hc6": {
+  "description": "HS1' (host-RAM sizing slope, compute/PREREG.md): final-hc with a 6 GB host pool instead of 12 (--hicache-size 6), i.e. a storage bound of ~54 histories per GPU instead of ~77. Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--hicache-size",
+   "6"
+  ],
+  "numerics_unchanged": true
  }
 }

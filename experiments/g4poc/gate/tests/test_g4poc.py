@@ -318,6 +318,17 @@ class LoadgenTest(absltest.TestCase):
         rep2, _ = asyncio.run(_replay(sessions, load))
         self.assertEqual(rep["plan_digest"], rep2["plan_digest"])
 
+    def test_slots_with_think_time_start_no_session_after_a_cut(self):
+        # Think time 10 s (0.01 s x 1000) against a 0.5 s window: a slot sends its first turn, its next turn falls
+        # after the window, and the session is cut. A slot whose first session started on its last turn ends
+        # naturally and may start one more, so each slot sends at most 2 requests; before the fix every cut
+        # restarted a session at once and a slot sent until the window closed.
+        sessions = [_session(f"s{i}", n_turns=3) for i in range(6)]
+        load = config.SessionLoad(name="slots", arrival="slots", concurrency=3, warmup_s=0.0, window_s=0.5,
+                                  expected_session_s=0.0, think_scale=1000.0, drain_timeout_s=5.0)
+        rep, _ = asyncio.run(_replay(sessions, load))
+        self.assertBetween(len(rep["records"]), 3, 6)
+
     def test_slot_first_sends_spread_over_one_think_time(self):
         burst = config.SessionLoad(name="x", arrival="slots", concurrency=200, warmup_s=240.0, window_s=480.0,
                                    expected_session_s=0.0, think_scale=0.0)

@@ -309,5 +309,23 @@
    "0.25"
   ],
   "numerics_unchanged": true
+ },
+ "final-cpl-qr": {
+  "description": "Role-play quality arm for the final config final-hc-cp2048-lpm at a 0.85 static fraction, keeping its 2048-token prefill chunks (the numerics under test). 28G scope.",
+  "extends": "final-hc-cp2048-lpm",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-cpl-qr-c1024": {
+  "description": "Fallback for final-cpl-qr if the input-logprob requests do not fit with 2048-token chunks: 1024-token chunks as in every other role-play arm.",
+  "extends": "final-cpl-qr",
+  "server_args": [
+   "--chunked-prefill-size",
+   "1024"
+  ],
+  "numerics_unchanged": true
  }
 }
