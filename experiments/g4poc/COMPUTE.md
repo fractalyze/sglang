@@ -323,7 +323,8 @@ It was replicated twice on bs2 (`runs/sweep-final-hc-cp2048-lpm-20261006-012036-
 | final-hc | HiCache 12 GB host pool, both fixes | 32 | 952 | 0.204 | -12% |
 | **final-hc-cp2048-lpm (final)** | C3a lpm + C3b chunk 2048 | 36 (p90 8.9-9.0 s); cheapest at 32 | **971-988** | **0.197-0.200** | -3% |
 
-Base to final: **-42% per 1M output tokens.** mem-final's bs2 sweep is `runs/sweep-mem-final-20261006-001140-build-server-2-c8a62b`. bs3 agrees within ~1% at
+Base to final: **-42% per 1M output tokens** at the sweeps' cheapest point (32 in flight), **-41% at the
+30-min operating point** (28 in flight, $0.204). mem-final's bs2 sweep is `runs/sweep-mem-final-20261006-001140-build-server-2-c8a62b`. bs3 agrees within ~1% at
 every shared point.
 
 **What HiCache adds, bs2.** The control is the same stack without HiCache (`final-mem-c1-c2a`,
