@@ -1,29 +1,32 @@
-"""C4: the candidate to gate from the nested sweeps at 12 and 20 in flight, or "none".
+"""C4: the candidate to confirm from the nested sweeps against the final stack, or "none".
 
-Rule (registered in compute/PREREG.md before the sweeps): the highest E2E p90 gain at 12 in flight among
-candidates whose gain there exceeds MIN_GAIN_C12 and whose gain at 20 is at least MIN_GAIN_C20.
+Rule (registered in compute/PREREG.md before the sweeps): over the in-flight counts POINTS, the candidate
+with the highest mean log E2E p90 gain, if that mean exceeds log(MIN_MEAN_GAIN) and no point's gain is
+below MIN_POINT_GAIN.
 
   python compute/c4_pick.py --dir <sweep_nested out dir> <cand1> <cand2> ...
 """
 
 import argparse
 import json
+import math
 import os
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
-MIN_GAIN_C12 = 1.01
-MIN_GAIN_C20 = 0.99
+POINTS = (24, 32)
+MIN_MEAN_GAIN = 1.01
+MIN_POINT_GAIN = 0.99
 
 
-def pick(results: Dict[str, List[Dict]]) -> str:
-    best, best_gain = "none", MIN_GAIN_C12
+def pick(results: Dict[str, List[Dict]], points: Sequence[int] = POINTS) -> str:
+    best, best_score = "none", math.log(MIN_MEAN_GAIN)
     for cand, rows in results.items():
-        by_c = {r["concurrency"]: r for r in rows}
-        if 12 not in by_c or 20 not in by_c:
+        by_c = {r["concurrency"]: r["e2e_p90_gain"] for r in rows}
+        if any(c not in by_c for c in points) or min(by_c[c] for c in points) < MIN_POINT_GAIN:
             continue
-        g12, g20 = by_c[12]["e2e_p90_gain"], by_c[20]["e2e_p90_gain"]
-        if g12 > best_gain and g20 >= MIN_GAIN_C20:
-            best, best_gain = cand, g12
+        score = sum(math.log(by_c[c]) for c in points) / len(points)
+        if score > best_score:
+            best, best_score = cand, score
     return best
 
 
