@@ -1490,6 +1490,7 @@ class UnifiedRadixCache(BasePrefixCache):
             write_host, write_device, write_pools = (
                 self.cache_controller._move_write_operation(operation)
             )
+            self.cache_controller.fence_device_to_host()
             completion = self.cache_controller.l2_transfer_engine.submit_device_to_host(
                 self.cache_controller._l2_transfers(
                     write_host, write_device, write_pools

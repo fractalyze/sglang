@@ -360,8 +360,8 @@ class HiCacheController:
         self.write_queue: List[CacheOperation] = []
         self.ack_load_queue: List[HiCacheAck] = []
         # Set by the scheduler to the forward stream; gates load-back H2D
-        # behind in-flight forwards (see start_loading), and write-through D2H
-        # too under SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH (see start_writing).
+        # behind in-flight forwards (see start_loading), and D2H copies too
+        # under SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH (see fence_device_to_host).
         self.load_fence_stream = None
         self.ack_write_queue: List[HiCacheAck] = []
 
@@ -810,6 +810,23 @@ class HiCacheController:
         self.start_writing()
         return host_indices
 
+    def fence_device_to_host(self) -> None:
+        """Order the next D2H copy after the forwards already queued.
+
+        Under the overlap scheduler KV is handed to a D2H copy while the forward
+        that writes it may still be queued on the forward stream: a finished
+        request's last output token when it is cached, a retracted request's
+        last token when it is backed up. wait_stream orders the copy after the
+        work enqueued so far only, so later forwards still overlap with it.
+        """
+        if (
+            envs.SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH.get()
+            and self.load_fence_stream is not None
+        ):
+            self.l2_transfer_engine.device_to_host_stream.wait_stream(
+                self.load_fence_stream
+            )
+
     def start_writing(self) -> None:
         if len(self.write_queue) == 0:
             return
@@ -818,18 +835,7 @@ class HiCacheController:
         host_indices, device_indices, pool_transfers = self._move_write_operation(op)
         self.write_queue.clear()
 
-        if (
-            envs.SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH.get()
-            and self.load_fence_stream is not None
-        ):
-            # Under the overlap scheduler a finished request is cached while
-            # the next forward, which writes its last output token's KV, is
-            # still queued on the forward stream. wait_stream orders the copy
-            # after the work enqueued so far only, so later forwards still
-            # overlap with it.
-            self.l2_transfer_engine.device_to_host_stream.wait_stream(
-                self.load_fence_stream
-            )
+        self.fence_device_to_host()
 
         completion = self.l2_transfer_engine.submit_device_to_host(
             self._l2_transfers(host_indices, device_indices, pool_transfers)

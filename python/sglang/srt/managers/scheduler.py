@@ -620,12 +620,14 @@ class Scheduler(
         self.token_to_kv_pool_allocator = result.token_to_kv_pool_allocator
         self.disable_radix_cache = result.disable_radix_cache
         self.tree_cache = result.tree_cache
-        if self.enable_hierarchical_cache:
-            cache_controller = self.tree_cache.cache_controller
-            if cache_controller is not None:
-                cache_controller.load_fence_stream = (
-                    self.tp_worker.model_runner.forward_stream
-                )
+        # Any cache controller copies KV the overlap forward may still write:
+        # HiCache load-back and write-through, and the decode host-pool
+        # retraction backup, which builds one without hierarchical cache.
+        cache_controller = getattr(self.tree_cache, "cache_controller", None)
+        if cache_controller is not None:
+            cache_controller.load_fence_stream = (
+                self.tp_worker.model_runner.forward_stream
+            )
         self.emit_metrics_constants()
         self.maybe_init_hccl_dp_prewarm()
 
