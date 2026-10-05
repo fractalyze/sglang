@@ -1,6 +1,7 @@
 # PB state (compute levers on bs2) — read this first after a restart
 
-Owner: T3 thread 6d4ea636-228f-4a20-9be9-d006d6311a21 (PB). Coordinator: e7e4878e-4495-462c-8ed6-666a55c0bdae.
+Owner: PB2 (T3 delegated task, replaces PB thread 6d4ea636, dead 2026-10-05 11:55). Coordinator: e7e4878e-4495-462c-8ed6-666a55c0bdae.
+Coordinator rule: never call t3_thread_configure while background commands run (it killed PB).
 Timebox ends 2026-10-06 14:00 KST. Branch jumanzii/g4poc-b (push to `fractalyze`).
 Harness on bs2: /data/jooman/g4poc/harness-pb (gate/deploy.sh). Runs: /home/jooman/g4poc/runs. Logs: /home/jooman/g4poc/logs.
 Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
@@ -14,30 +15,23 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
 - Gated load = inflight-C12; noise is used only if measured at the same load.
 
 ## In flight / waiting (update on every launch)
-- C1 MoE tune (pruned): bs2 /data/jooman/g4poc/moe-tune/c1/run2.sh -> driver2.log, small/ (M 1-32,
-  BLOCK_M 16-64) and large/ (M 256-4096, BLOCK_M 64-256), 648 configs each; started 2026-10-05 11:44 KST,
-  ~65 min, holds host.lock per part. Done when driver2.log has "tune2 done". Then merge small+large JSON into
-  /data/jooman/g4poc/moe-configs/c1/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_channel_quant=True.json
-  (The first full 1,920-config run was stopped at 11:43: ~14 min per token count, 4 h total.)
-  Watcher: session-local background loop on driver2.log (lost on restart: just re-check the file).
-- C1 chain: bs2 harness-pb/compute/c1_chain.sh -> /home/jooman/g4poc/logs/pb-c1-chain.log, started 11:46 KST.
-  Steps (=== markers): wait tune -> merge -> kernel bench (moe-tune/c1/bench-tuned.log) -> calibrate ->
-  A/A aa-c12 + set-noise -> C1 gate (runs/c1-moe-tuned-*). Expected done ~15:00 KST. Ends with "=== ... done".
-  DO NOT gate/deploy.sh to harness-pb while the chain runs (bash reads the script as it goes).
-- C1 C8 check: waits for the chain's "done", then compute/sweep_abba.sh base c1-moe-tuned 8 ->
-  logs/pb-c1-c8.log and runs/c1-c8-abba.json (confirming, ~30 min). Host one-liner: logs/pb-state.txt.
-- Coordinator plan (2026-10-05): C1 <= 3 h; C1/C2 gate at C12 (deciding) + C8; C2 survey-first, no kernel
-  project; C3 chunked-prefill + --schedule-policy lpm checked at C8/C12/C16/C20 (sweep_abba); stretch HiCache
-  feasibility write-up only if 1-3 finish before 10-06 04:00. No new lever after 10-06 08:00; 08-11 final
-  stacked sweep C4-C32 + quality anchor on bs2; 11-13:30 COMPUTE.md report, push.
-- C2 (option A, default unless the coordinator says B; asked 2026-10-05 ~11:52): opt-in sm120 FP8-KV extend
-  tiles, SGLang commit b28a7ff6b7 (SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES, table
-  extend_attention._SM120_FP8_KV_EXTEND_TILES). Tree on bs2: /data/jooman/gemma4nv/trees/b28a7ff6b7e5
-  (fetch the branch first: GitHub refuses short-sha fetches). Microbench queued on the host lock:
-  /data/jooman/g4poc/c2/run-bench.sh -> c2/bench.log, c2/bench.json. Drop C2 if the hd512 mix gain < 15%.
-  trtllm_mha (bf16 KV only on sm120) dropped: halves the pool, cliff ~16 -> ~8 in flight.
+- 2026-10-05 12:34 calibrate OOMed (input logprobs in 2048-row chunks, 3 GiB fp32 over the 262K vocab with 1.7 GB
+  free); fixed by config.SERVER_ENV SGLANG_LOGPROB_CHUNK_SIZE=128 (ed56e65). Then weight_checksum crashed on the new
+  /weights_checker body (fixed 8782950). Calibrate passed 13:20 (reference/fidelity_thresholds.json).
+- C1 chain (resumable, skips finished steps): bs2 harness-pb/compute/c1_chain.sh -> logs/pb-c1-chain.log, started
+  13:18. Steps: A/A aa-c12 + set-noise -> mid tune 768/1536 (moe-tune/c1/mid) -> merge small+large+mid -> kernel bench
+  (bench-tuned-merged.log) -> C1 gate c1-moe-tuned at C12 -> C8 A-B-B-A (runs/c1-c8-abba.json) -> "=== ... done".
+  Expected ~16:15. Old logs pb-c1-chain-run1/run2.log.
+- C2-A share profile: compute/profile_extend_share.py --ref base --concurrency 12 --steps 500 (queued on the host lock,
+  runs after the A/A) -> logs/pb-profile-c12.log, runs/profile-base-C12-*/extend_share.json. Coordinator rule: send
+  the split + prediction (sum share x (1 - 1/s)) before gating; >= 5% -> C2-A before C3 (KL check, gate C8+C12, one
+  C16 point); 3-5% -> C3 first; < 3% -> drop C2-A with numbers. C2-A must start by 10-06 02:00.
+- C2 microbench done (c2/bench.json): hd512 best mix 2.93x (32,32,64,8,1; maxdiff 0.031), exact 2.68x (16,32,32,4,1;
+  maxdiff 0); hd256 best 2.02x (32,32,32,4,1; maxdiff 0.016), exact 1.62x (32,64,64,8,1).
+- C3 registered (PREREG.md 543f9beaad; vault g4poc-c3a ecab5ac, g4poc-c3b d85ff6d, workload wl-g4poc-rp-inflight-sweep):
+  compute/sweep_nested.sh base "c3-lpm c3-cp2048" 8,12,16,20 <out dir> (6 sweeps, ~2.3 h).
+- C2-A tools: compute/kl_check.py --candidate <ref> (8 long role-play prompts; A/A = base batched vs serial).
 - C1 prediction frozen: vault trial g4poc-c1 (b21c0d8), compute/PREREG.md (477d5ab0bc): E2E p90 -6..-1%.
-- C2 survey: Explore subagent reading SGLang attention backends for SM120 + Gemma-4 (session-local).
 
 ## Queue (GPU, in order)
 1. gate calibrate --ref base (fidelity reference + thresholds)
