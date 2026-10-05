@@ -14,12 +14,24 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
 - Gated load = inflight-C12; noise is used only if measured at the same load.
 
 ## In flight / waiting (update on every launch)
-- C1 MoE tune: bs2 /data/jooman/g4poc/moe-tune/c1/run.sh (driver.log, bench-default.log, tune.log),
-  started 2026-10-05 11:32 KST, holds host.lock. Done when driver.log has "tune rc=".
-  Watcher: session-local background `until grep -q "tune rc=" ...` (lost on restart: just re-check driver.log).
+- C1 MoE tune (pruned): bs2 /data/jooman/g4poc/moe-tune/c1/run2.sh -> driver2.log, small/ (M 1-32,
+  BLOCK_M 16-64) and large/ (M 256-4096, BLOCK_M 64-256), 648 configs each; started 2026-10-05 11:44 KST,
+  ~65 min, holds host.lock per part. Done when driver2.log has "tune2 done". Then merge small+large JSON into
+  /data/jooman/g4poc/moe-configs/c1/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_channel_quant=True.json
+  (The first full 1,920-config run was stopped at 11:43: ~14 min per token count, 4 h total.)
+  Watcher: session-local background loop on driver2.log (lost on restart: just re-check the file).
+- C1 prediction frozen: vault trial g4poc-c1 (b21c0d8), compute/PREREG.md (477d5ab0bc): E2E p90 -6..-1%.
+- C2 survey: Explore subagent reading SGLang attention backends for SM120 + Gemma-4 (session-local).
 
 ## Queue (GPU, in order)
 1. gate calibrate --ref base (fidelity reference + thresholds)
 2. A/A: gate run --control base --candidate base --pairs 4 (load inflight-C12), then gate set-noise
 3. C1 gate: base vs c1-moe-tuned (env SGLANG_MOE_CONFIG_DIR)
 4. C2 prefill attention backend, C3 chunked-prefill size — each preregister -> gate -> record
+
+## Vault notes
+- bs1 vault ~/fractalyze/optimization-world-model is authoritative; commit, never push. Commit only PB's paths.
+- `wm` must run as `uv run --quiet --project ~/fractalyze/optimization-world-model python $(cat ~/.local/state/world-model/wm-path) ...`
+  (system python3's old jsonschema breaks validation and wm does not re-exec under uv).
+- `--registered` must be a URL: https://github.com/fractalyze/sglang/blob/<commit>/experiments/g4poc/compute/PREREG.md
+- Pages: workload wl-g4poc-rp-inflight-c12, metric e2e_p90_s, baseline stack stack-ac6035c07-g4poc-mem-base (PC's; same r03 config).
