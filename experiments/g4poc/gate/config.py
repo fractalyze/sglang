@@ -110,7 +110,14 @@ INFLIGHT = SessionLoad(name="inflight", arrival="slots", concurrency=16, warmup_
 # Stability soak: the in-flight layer held for 30 min (pass the concurrency with --concurrency).
 SOAK = SessionLoad(name="soak", arrival="slots", concurrency=32, warmup_s=60.0, window_s=1800.0,
                    expected_session_s=0.0, think_scale=0.0)
-LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, SOAK)}
+# Chat sessions with think time: each slot is one live session (its turns sent think_s x think_scale after the
+# previous reply, the next session starting when one ends), so --concurrency is the number of concurrent sessions.
+# The session file's mean think time is 17.9 s (WORKLOAD.md); the scales give means of ~30 s and ~60 s.
+THINK30 = SessionLoad(name="think30", arrival="slots", concurrency=120, warmup_s=240.0, window_s=480.0,
+                      expected_session_s=0.0, think_scale=30.0 / 17.9)
+THINK60 = SessionLoad(name="think60", arrival="slots", concurrency=220, warmup_s=240.0, window_s=480.0,
+                      expected_session_s=0.0, think_scale=60.0 / 17.9)
+LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, SOAK, THINK30, THINK60)}
 GATED_LOAD = L64
 
 MIN_PAIRS = 4
