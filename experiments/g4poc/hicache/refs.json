@@ -1,0 +1,11 @@
+{
+  "mem-hc-dbg": {
+    "description": "mem-hc on a debug-only tree that logs SWA admission accounting (free/evictable sliding slots at select, load-back, commit, pre-alloc and alloc-time eviction), to locate the C28 SWA admission under-reservation. Run in a 28G scope.",
+    "extends": "mem-hc",
+    "commit": "0b7565cf482d7bdb030fc22ab29f419ecfd1ca8c",
+    "env": {
+      "G4POC_DEBUG_SWA_ADMISSION": "1"
+    },
+    "numerics_unchanged": true
+  }
+}
