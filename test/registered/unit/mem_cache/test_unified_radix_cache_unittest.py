@@ -42,7 +42,10 @@ from sglang.srt.mem_cache.base_prefix_cache import (
     zero_match_result,
 )
 from sglang.srt.mem_cache.cache_init_params import CacheInitParams
-from sglang.srt.mem_cache.common import available_and_evictable_str
+from sglang.srt.mem_cache.common import (
+    available_and_evictable_str,
+    free_swa_out_of_window_slots,
+)
 from sglang.srt.mem_cache.hicache_storage import (
     PoolHitPolicy,
     PoolName,
@@ -10072,7 +10075,9 @@ class TestSWAPrefillWindowMargin(CustomTestCase):
     An insert that keeps exactly one window of live SWA behind its end leaves
     less than a window behind that match point, so the validator refuses the
     whole prefix and every second turn of a chat re-prefills its history.
-    SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN keeps the extra SWA that covers it.
+    SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN keeps the extra SWA that covers it,
+    also for a prompt whose prefill insert stopped at an SWA branch point and
+    reaches the tree only at finish, after decode-time SWA eviction.
     """
 
     cfg = CacheConfig(
@@ -10085,14 +10090,20 @@ class TestSWAPrefillWindowMargin(CustomTestCase):
     prompt_len = 24
     # Generation-prompt tokens the next turn renders differently.
     template_cut = 3
+    margin = template_cut + 1
 
-    def _next_turn_match_len(self, margin: int) -> int:
-        cache, allocator, req_to_token_pool = build_fixture(self.cfg)
+    def _alloc(self, allocator, n):
+        full_indices = allocator.full_attn_allocator.alloc(n)
+        swa_indices = allocator.swa_attn_allocator.alloc(n)
+        allocator.full_to_swa_index_mapping[full_indices] = swa_indices
+        return full_indices
+
+    def _prefilled_req(self, cache, allocator, req_to_token_pool):
         req = Req(
             rid=0,
             origin_input_text="",
             origin_input_ids=array("q"),
-            sampling_params=SamplingParams(temperature=0, max_new_tokens=1),
+            sampling_params=SamplingParams(temperature=0, max_new_tokens=16),
         )
         req_to_token_pool.alloc([req])
         tokens = list(range(1, self.prompt_len + 1))
@@ -10100,18 +10111,27 @@ class TestSWAPrefillWindowMargin(CustomTestCase):
         req.output_ids = []
         req.full_untruncated_fill_ids = array("q", tokens)
         req.set_extend_range(0, self.prompt_len)
-        full_indices = allocator.full_attn_allocator.alloc(self.prompt_len)
-        swa_indices = allocator.swa_attn_allocator.alloc(self.prompt_len)
-        allocator.full_to_swa_index_mapping[full_indices] = swa_indices
         req_to_token_pool.write(
-            (req.kv.req_pool_idx, slice(0, self.prompt_len)), full_indices
+            (req.kv.req_pool_idx, slice(0, self.prompt_len)),
+            self._alloc(allocator, self.prompt_len),
         )
         req.kv.kv_committed_len = self.prompt_len
         req.last_node = cache.root_node_handle()
         req.kv.cache_protected_len = 0
         req.lock_receipt = DecLockRefParams()
         req.extra_key = None
+        return req, tokens
 
+    def _next_turn_match_len(self, cache, tokens) -> int:
+        next_turn = tokens[: self.prompt_len - self.template_cut] + [1000, 1001, 1002]
+        match = cache.match_prefix(
+            MatchPrefixParams(key=RadixKey(array("q", next_turn)))
+        )
+        return len(match.device_indices)
+
+    def _prompt_insert_match_len(self, margin: int) -> int:
+        cache, allocator, req_to_token_pool = build_fixture(self.cfg)
+        req, tokens = self._prefilled_req(cache, allocator, req_to_token_pool)
         with (
             envs.SGLANG_OPT_UNIFIED_CACHE_FREE_OUT_OF_WINDOW_SLOTS.override(True),
             envs.SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN.override(margin),
@@ -10120,27 +10140,64 @@ class TestSWAPrefillWindowMargin(CustomTestCase):
             # The prompt itself stays fully matchable either way.
             self.assertEqual(req.kv.cache_protected_len, self.prompt_len)
             cache.dec_lock_ref(req.last_node, req.lock_receipt)
-            next_turn = tokens[: self.prompt_len - self.template_cut] + [
-                1000,
-                1001,
-                1002,
-            ]
-            match = cache.match_prefix(
-                MatchPrefixParams(key=RadixKey(array("q", next_turn)))
-            )
+            matched = self._next_turn_match_len(cache, tokens)
         cache.sanity_check()
-        return len(match.device_indices)
+        return matched
 
     def test_margin_keeps_the_next_turn_prefix(self):
         self.assertEqual(
-            self._next_turn_match_len(margin=self.template_cut + 1),
+            self._prompt_insert_match_len(margin=self.margin),
             self.prompt_len - self.template_cut,
         )
 
     def test_without_margin_the_next_turn_prefix_is_refused(self):
         # The default (margin 0) keeps exactly one window: 8 live SWA tokens
         # behind the prompt end leave 5 behind the match point, short of 7.
-        self.assertEqual(self._next_turn_match_len(margin=0), 0)
+        self.assertEqual(self._prompt_insert_match_len(margin=0), 0)
+
+    def test_margin_survives_decode_after_a_branch_insert(self):
+        """The prefill insert stops at an SWA branch point (the admission match
+        ran past the last valid window), so the prompt stays request-owned and
+        decode-time eviction, which knows only the window, would free the margin
+        before the finish insert. The retain floor keeps window + margin."""
+        cache, allocator, req_to_token_pool = build_fixture(self.cfg)
+        req, tokens = self._prefilled_req(cache, allocator, req_to_token_pool)
+        req.swa_branching_seqlen = 2
+        num_output = 10
+        with (
+            envs.SGLANG_OPT_UNIFIED_CACHE_FREE_OUT_OF_WINDOW_SLOTS.override(True),
+            envs.SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN.override(self.margin),
+        ):
+            cache.cache_unfinished_req(req)
+            self.assertEqual(req.kv.cache_protected_len, 2)
+            # Decode num_output tokens, then the decode-path SWA eviction.
+            seq_len = self.prompt_len + num_output
+            req.output_ids = list(range(500, 500 + num_output))
+            req_to_token_pool.write(
+                (req.kv.req_pool_idx, slice(self.prompt_len, seq_len)),
+                self._alloc(allocator, num_output),
+            )
+            req.kv.kv_committed_len = seq_len
+            free_swa_out_of_window_slots(
+                req,
+                seq_len - 1,
+                sliding_window_size=self.cfg.sliding_window_size,
+                page_size=self.cfg.page_size,
+                req_to_token_pool=req_to_token_pool,
+                token_to_kv_pool_allocator=allocator,
+                retain_floor=cache.swa_retain_floor(req),
+            )
+            self.assertLessEqual(
+                req.kv.swa_evicted_seqlen,
+                self.prompt_len - self.cfg.sliding_window_size - self.margin,
+                "decode freed SWA inside the prompt's window + margin",
+            )
+            cache.cache_finished_req(req, owned_kv_len=seq_len)
+            self.assertEqual(
+                self._next_turn_match_len(cache, tokens),
+                self.prompt_len - self.template_cut,
+            )
+        cache.sanity_check()
 
 
 class TestUnifiedRadixCacheStorageAttachBackfill(CustomTestCase):
