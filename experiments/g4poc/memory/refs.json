@@ -104,5 +104,36 @@
    "SGLANG_DEBUG_SWA_POISON_RELEASED_WINDOW": "1"
   },
   "numerics_unchanged": true
+ },
+ "mem-stack3": {
+  "description": "L8 on stack2: the tied BF16 embedding/LM head replaced by one FP8 E4M3 table (per-row scales); decode graphs to bs 48 for batches above 32.",
+  "extends": "mem-stack2",
+  "commit": "53752c62aa0a05a09ff7038f358217912535e569",
+  "server_args": [
+   "--cuda-graph-max-bs-decode",
+   "48"
+  ],
+  "env": {
+   "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE": "1"
+  }
+ },
+ "mem-q-ctl": {
+  "description": "Quality control for L8: stack2's numerics on the L8 tree with the switch off, at a lower static fraction and 1024-token prefill chunks so the guards' input-logprob requests fit (pool size does not change numerics).",
+  "extends": "mem-stack2",
+  "commit": "53752c62aa0a05a09ff7038f358217912535e569",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85",
+   "--chunked-prefill-size",
+   "1024"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-q-l8": {
+  "description": "Quality candidate for L8: mem-q-ctl with SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE on.",
+  "extends": "mem-q-ctl",
+  "env": {
+   "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE": "1"
+  }
  }
 }
