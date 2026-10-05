@@ -104,7 +104,9 @@ exactly the in-flight forward writing the node; later forwards still overlap wit
 control, with identical `cached_tokens` (`exactmt-mem-hc-fix2-smallpool-rt-20261005-165852-...-5d434c`).
 All turn-0 prompts are chunked (4096 + rest), so stashed chunk nodes are covered. In the byte trace,
 every per-turn stale token is gone and every full-to-SWA mapping check passes. The in-flight
-throughput cost of the fence is measured separately (sweep of `mem-hc-fix2` against `mem-hc-fix`).
+throughput cost of the fence, from single runs against the unfenced build at C20-C32, is -1.0% to
+-1.8% output tok/s. That is consistent across points, so a small real cost cannot be excluded. The final
+configuration with both fixes (`final-hc`) runs 942 output tok/s at C32 under a 10 s p90.
 
 ## 3. Retraction backups copy KV the overlap forward is still writing (PD decode)
 

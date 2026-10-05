@@ -99,7 +99,10 @@ forward, which writes the request's last output token, is still queued on the fo
 (`load_fence_stream`); write-through had none. Fix 19e850a228: wait on the forward stream before each
 write submit. CPU regression `test_hicache_write_fence.py` fails without the fence. With the fence the
 byte trace has no per-turn stale token and exactness is 12/12
-(`exactmt-mem-hc-fix2-smallpool-20261005-174224`).
+(`exactmt-mem-hc-fix2-smallpool-20261005-174224`). Fence cost (`sweep-mem-hc-fix2-20261005-195323`
+against `mem-hc-fix`, single runs, no failures): C20 701 vs 714, C24 789 vs 797, C28 799 vs 813 and C32
+824 vs 835 output tok/s, i.e. -1.0% to -1.8%. That is within the registered band, but consistent across
+points, so a small real cost cannot be excluded.
 
 ## Bug 3 (PD decode only): retraction backups bypass the fence
 
@@ -120,4 +123,7 @@ this deployment runs with disaggregation off and never takes that path. See UPST
 
 - 10-05 18:50 KST: final-hc C20-C56 and exactness done.
 - 10-05 19:12 KST: replicate and the b′ role-play run done.
-- 10-05 19:52 KST: C36 done (misses 10 s). Fence-cost sweep queued (`memlogs/pc3-tail3.sh` on bs3).
+- 10-05 19:52 KST: C36 done (misses 10 s).
+- 10-05 20:16 KST: fence-cost sweep done. The queue script's trailing pattern pkill killed PC2's
+  `final-c1c2a-qr-r025` server, which had just taken the host lock. All pkill steps are removed; the
+  gate stops its own server.
