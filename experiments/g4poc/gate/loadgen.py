@@ -52,6 +52,8 @@ class RequestRecord(msgspec.Struct, kw_only=True):
     output_tokens: int = 0
     max_new_tokens: int = 0
     ok: bool = False
+    # Why a request failed: the exception class (client transport, HTTP status), "abort" or "abandoned".
+    error_type: str = ""
     error: str = ""
     finish_reason: str = ""
     output_ids: List[int] = []
@@ -139,7 +141,7 @@ class _Run:
                 if resp.status != 200:
                     raise RuntimeError(f"HTTP {resp.status}: {str(body)[:200]}")
         except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError, ValueError) as e:
-            rec.t_done, rec.error = self.now(), repr(e)[:300]
+            rec.t_done, rec.error_type, rec.error = self.now(), type(e).__name__, repr(e)[:300]
             return None
         rec.t_done = self.now()
         meta = body["meta_info"]
@@ -150,7 +152,7 @@ class _Run:
         rec.finish_reason = fr.get("type", "") if isinstance(fr, dict) else str(fr or "")
         rec.ok = rec.finish_reason != "abort"
         if not rec.ok:
-            rec.error = str(fr)[:300]
+            rec.error_type, rec.error = "abort", str(fr)[:300]
         if self.keep_outputs:
             rec.output_ids = list(body.get("output_ids") or [])
         return body.get("text", "")
@@ -255,8 +257,22 @@ async def replay(url: str, sessions: Sequence[Session], load: config.SessionLoad
     for r in run.records:
         if r.t_done == 0.0:
             r.t_done, r.error, abandoned = wall, "abandoned after drain timeout", abandoned + 1
+            r.error_type = "abandoned"
     errors = [t.exception() for t in done if not t.cancelled() and t.exception() is not None]
     if errors:
         raise RuntimeError(f"{len(errors)} session tasks crashed; first: {errors[0]!r}")
-    return {"records": [msgspec.to_builtins(r) for r in run.records], "wall_s": wall, "abandoned": abandoned,
-            "plan_digest": digest, "metric_samples": samples}
+    records = [msgspec.to_builtins(r) for r in run.records]
+    return {"records": records, "wall_s": wall, "abandoned": abandoned, "plan_digest": digest,
+            "metric_samples": samples, "failed": failed_records(records)}
+
+
+# Failed requests whose details a run summary keeps (the rest are counted in n_failed).
+FAILED_RECORDS_KEPT = 20
+_FAILED_FIELDS = ("session_id", "turn", "t_due", "t_send", "t_done", "error_type", "error", "finish_reason",
+                  "prompt_tokens", "output_tokens")
+
+
+def failed_records(records: Sequence[Dict], limit: int = FAILED_RECORDS_KEPT) -> List[Dict]:
+    """The first `limit` failed requests in send order, with why they failed."""
+    failed = sorted((r for r in records if not r["ok"]), key=lambda r: r["t_send"])
+    return [{k: r[k] for k in _FAILED_FIELDS} for r in failed[:limit]]

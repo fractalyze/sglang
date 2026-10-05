@@ -200,9 +200,10 @@ class SourcesTest(absltest.TestCase):
 
 
 class FakeServer:
-    def __init__(self):
+    def __init__(self, fail_every: int = 0):
         self.seen = []
         self.requests = []
+        self.fail_every = fail_every  # every k-th request gets HTTP 500 (0: none)
 
     def cached(self, ids):
         best = 0
@@ -220,6 +221,9 @@ class FakeServer:
 
         body = await request.json()
         ids, sp = body["input_ids"], body["sampling_params"]
+        if self.fail_every and (len(self.requests) + 1) % self.fail_every == 0:
+            self.requests.append(body)
+            return web.json_response({"error": "boom"}, status=500)
         cached = self.cached(ids)
         out = [7] * sp["max_new_tokens"]
         self.seen.append(ids + out)
@@ -237,10 +241,10 @@ class FakeServer:
                                  f"sglang:num_retracted_requests_total 0\nsglang:num_running_reqs 1\n")
 
 
-async def _replay(sessions, load, seed="p0", **kw):
+async def _replay(sessions, load, seed="p0", fake=None, **kw):
     from aiohttp import web
 
-    fake = FakeServer()
+    fake = fake or FakeServer()
     app = web.Application()
     app.router.add_post("/generate", fake.generate)
     app.router.add_get("/metrics", fake.metrics)
@@ -317,6 +321,25 @@ class LoadgenTest(absltest.TestCase):
         self.assertLessEqual(occ["max"], 3)
         rep2, _ = asyncio.run(_replay(sessions, load))
         self.assertEqual(rep["plan_digest"], rep2["plan_digest"])
+
+    def test_failed_requests_keep_why(self):
+        sessions = [_session(f"s{i}", n_turns=3) for i in range(6)]
+        rep, fake = asyncio.run(_replay(sessions, _FAST, fake=FakeServer(fail_every=3)))
+        failed = [r for r in rep["records"] if not r["ok"]]
+        self.assertNotEmpty(failed)
+        self.assertLen(rep["failed"], min(len(failed), loadgen.FAILED_RECORDS_KEPT))
+        first = rep["failed"][0]
+        self.assertEqual(first["error_type"], "RuntimeError")
+        self.assertIn("HTTP 500", first["error"])
+        self.assertTrue(all(r["ok"] for r in rep["records"] if r not in failed))
+
+    def test_failed_records_are_capped_in_send_order(self):
+        recs = [{"ok": i % 2 == 0, "t_send": 100.0 - i, "session_id": f"s{i}", "turn": 0, "t_due": 0.0,
+                 "t_done": 0.0, "error_type": "ClientOSError", "error": "x", "finish_reason": "",
+                 "prompt_tokens": 1, "output_tokens": 0} for i in range(60)]
+        kept = loadgen.failed_records(recs, limit=5)
+        self.assertLen(kept, 5)
+        self.assertEqual([r["session_id"] for r in kept], ["s59", "s57", "s55", "s53", "s51"])
 
     def test_slots_with_think_time_start_no_session_after_a_cut(self):
         # Think time 10 s (0.01 s x 1000) against a 0.5 s window: a slot sends its first turn, its next turn falls

@@ -53,7 +53,8 @@ def _replay_summary(srv, sessions, tok, load, seed: str, nonce_at: str) -> dict:
     leg = runner.replay_leg(srv, sessions, tok, load, seed, nonce_at)
     return {"load": msgspec.to_builtins(load), "summary": leg["summary"], "retractions": leg["retractions"],
             "gauges": leg["gauges"], "counter_delta": leg["counter_delta"], "decode_steps": leg["decode_steps"],
-            "plan_digest": leg["replay"]["plan_digest"], "abandoned": leg["replay"]["abandoned"]}
+            "plan_digest": leg["replay"]["plan_digest"], "abandoned": leg["replay"]["abandoned"],
+            "failed": leg["replay"]["failed"]}
 
 
 def _smoke(args) -> None:
