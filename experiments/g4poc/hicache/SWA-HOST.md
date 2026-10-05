@@ -305,3 +305,49 @@ expected prefix and the usable match is 13-15 tokens.
    - SW1 says the binding retention would gain only ~12% from rebalancing, so this is low priority.
 5. **Harness.** Persist failed requests' `error` / `finish_reason`, so a single failure can be
    classified.
+
+## 5. Bug 4 fix: SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN, preregistration (2026-10-06 ~01:45 KST)
+
+**Change** (`jumanzii/g4poc-swa-margin` = `d93fea83df` on a0491db764; log-only variant
+`jumanzii/g4poc-swa-margin-dbg` = `6cccdbe4e9` = d93fea83df + the c6f392a28b admission log).
+- `SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN` (int, default 0 = unchanged): a tree insert keeps
+  window + margin SWA tokens live behind its end. The lock cap on a fresh in-window leaf widens by the
+  same amount, so the margin stays in the node the window-bounded LRU refresh keeps.
+- Decode-time eviction is unchanged.
+- Regression test: `test_unified_radix_cache_unittest.py::TestSWAPrefillWindowMargin`. A 24-token
+  prompt with window 7 and a next-turn prefix cut 3 tokens short matches 21 tokens with margin 4
+  and 0 without.
+
+**Runs (bs2 from ~04:45, harness-pc4 = bs3's fd08bf8fbf harness copy, 28G scope, refs in
+`swahost/refs.json`).**
+- (a) The unified radix, prefill-adder and write-fence unit tests (they need a CUDA device), on the
+  margin tree and on a0491db764.
+- (b) C1 multi-turn exactness: `swamargin-ctl` (final-mem-c1-c2a, no HiCache) vs
+  `swamargin-smallpool` (final-hc-smallpool), both at margin 128.
+- (c) SW4: `swamargin-dbg` think30 x 32, 48.
+- (d) SW5: `swamargin-dbg-off` in-flight C24.
+- (e) Same-host control `swamargin-dbg-off` think30 x 48, if time allows.
+
+### SW4 (`swamargin-dbg`, think30 x 32, 48; margin 128)
+
+- **Mechanism.** A turn after a first turn with a <= 4096-token prompt (gap < 30 s) hits >= 80% at
+  32 sessions. SW3 hit 0 of 67.
+- **32 sessions:** hit 0.62-0.72 (SW3 0.547 on bs3); E2E p90 -5% to -25% vs SW3's 4.75 s.
+- **48 sessions:** hit 0.28-0.38 (SW1 0.284); E2E p90 -15% to +5% vs SW1's 7.35 s. Capacity still
+  binds here, and the margin costs ~128 more SWA tokens per cached prompt.
+- **Same host:** at 48, the margin-on hit rate is >= the margin-off arm's (e) + 0.02.
+- **Exactness (b):** 12/12 token-identical with identical `cached_tokens`. No failed request at any point.
+
+**Falsified if** the mechanism check is < 50%, the 32-session hit rate is < 0.60, exactness is < 12/12,
+or any point has a failed request.
+
+Cross-host caveat: SW1/SW3 ran on bs3. Earlier final-hc replicates differ by <= 0.3% tok/s between
+the hosts. (e) is the same-host control at 48.
+
+### SW5 (`swamargin-dbg-off`, in-flight C24): do second turns miss at a ~0 s gap?
+
+The code read finds no time dependence, so second turns should miss in-flight too: >= 90% of turns
+after a <= 4096-token first turn are swa_gone. Against that, final-hc's in-flight hit rate
+(0.71-0.74 at C20-C32) is above the ~0.66 ceiling such misses would allow.
+
+**Falsified if** >= 50% of those turns hit.
