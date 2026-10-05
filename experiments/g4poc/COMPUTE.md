@@ -173,7 +173,65 @@ control/candidate for E2E p90 and candidate/control for output tok/s, geometric 
 
 Vault: `g4poc-c3a`, `g4poc-c3b` (kept on the base, predictions falsified on magnitude).
 
-## 3. Harness fixes found on the way (2026-10-05)
+## 4. The study's final stack on bs2: final-hc
+
+`final-hc` (gate ref in `hicache/refs.json`; SGLang a0491db764 on `jumanzii/g4poc-final-hicache`; 28G scope)
+combines four parts:
+- PC's mem-final: the stack1 flags (RoPE tables to 16K, max running 64, mem 0.955, swa ratio 0.268), the L8 FP8
+  vocab table, decode graphs to 48 and expandable segments;
+- PB's C1 fused_moe config;
+- PB's C2-A extend tiles;
+- HiCache: a 12 GB pinned host pool (write-through, kernel io, page_first) with PC3's two fixes (SWA admission
+  pin, write-through fence).
+
+The coordinator confirmed it as the final on 10-05 after PC3's multi-turn load-back exactness (12/12).
+
+**In-flight sweep, bs2** (`runs/sweep-final-hc-20261005-194341-build-server-2-8b113a`; 0 failed requests at
+every point):
+
+| in flight | 4 | 8 | 12 | 16 | 20 | 24 | 28 | 32 | 40 |
+|---|---|---|---|---|---|---|---|---|---|
+| E2E p90 (s) | 3.59 | 4.54 | 5.44 | 6.25 | 7.27 | 7.78 | 8.83 | 9.50 | 11.41 |
+| output tok/s | 324 | 523 | 647 | 754 | 816 | 920 | 927 | 952 | 909 |
+| prefix hit | 0.77 | 0.76 | 0.73 | 0.73 | 0.71 | 0.74 | 0.71 | 0.72 | 0.70 |
+
+The host tier holds the histories the device pool cannot, so the hit rate stays at ~0.72 through 40 in flight.
+On the base it fell to 0.22 at 16 and 0 from 20. The bs3 replicate (PC2) agrees: C24 7.98 s / 905 tok/s, C32
+9.55 s / 942.
+
+**Cost table, bs2** (`compute/cost_table.py`; cheapest point = most output goodput meeting the SLO; prices per
+GPU-hour are illustrative):
+
+| stack | E2E p90 SLO | max in flight | cheapest point | out / total tok/s | p90 | hit | $/1M output (0.40 / 0.70 / 1.00 / 1.50) | $/1M total |
+|---|---|---|---|---|---|---|---|---|
+| base | 6 s | 8 | 8 | 468 / 15,626 | 5.12 s | 0.74 | 0.237 / 0.415 / 0.593 / 0.889 | 0.0071 / 0.0124 / 0.0178 / 0.0267 |
+| base | 10 s | 12 | 12 | 568 / 18,005 | 6.31 s | 0.70 | 0.196 / 0.343 / 0.489 / 0.734 | 0.0062 / 0.0108 / 0.0154 / 0.0231 |
+| base | 15 s | 20 | 12 | 568 / 18,005 | 6.31 s | 0.70 | 0.196 / 0.343 / 0.489 / 0.734 | 0.0062 / 0.0108 / 0.0154 / 0.0231 |
+| final-hc | 6 s | 12 | 12 | 647 / 20,504 | 5.44 s | 0.72 | 0.172 / 0.301 / 0.430 / 0.644 | 0.0054 / 0.0095 / 0.0135 / 0.0203 |
+| final-hc | 10 s | 32 | 32 | 952 / 30,313 | 9.50 s | 0.72 | 0.117 / 0.204 / 0.292 / 0.438 | 0.0037 / 0.0064 / 0.0092 / 0.0137 |
+| final-hc | 15 s | 40 | 32 | 952 / 30,313 | 9.50 s | 0.72 | 0.117 / 0.204 / 0.292 / 0.438 | 0.0037 / 0.0064 / 0.0092 / 0.0137 |
+
+- **Headline.** At a 10 s p90 SLO, one RTX 5090 serves 32 requests in flight at 952 output tok/s: **$0.204 per 1M
+  output tokens at $0.70/GPU-hour, against the base's $0.343 (-40.5%)**. bs3 gives -41%.
+- **Other SLOs.** At 6 s, -27% ($0.301 vs $0.415). At 15 s the most in flight is 40, but the cheapest point
+  stays at 32.
+
+**Memory, deployable rule** (`compute/mem_check.py`, 100 ms samples over the whole sweep). Peak and plateau are
+31,514 MiB against bs2's limit of 31,599 MiB (torch capacity 32,111 MiB - 512). The 85 MiB margin is enough, so
+mem 0.955 is deployable on bs2 as on bs3. bs2 has no GPU co-tenant and no periodic GPU job.
+
+**Quality** (`gate quality`, greedy, against the base anchor run on bs2 the same evening):
+
+| | GSM8K (full split, 1,319) | tool JSON |
+|---|---|---|
+| base | 96.13% | 40/40 |
+| final-hc | 96.74% | 40/40 |
+| paired delta | +0.61 pt, CI95 [-0.07, +1.28], McNemar p 0.12 | 0 |
+
+The pair passes. PC2's bs3 anchor also passed (96.36 vs 96.21). Language adherence of role-play replies is
+still under investigation (PC).
+
+## 5. Harness fixes found on the way (2026-10-05)
 
 Both broke the gate's first use on this SGLang commit (91132098df) and are fixed before any gated number.
 
