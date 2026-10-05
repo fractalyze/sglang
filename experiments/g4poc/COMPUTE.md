@@ -394,10 +394,13 @@ final shows two gaps:
   sliding-window node of up to ~1K tokens (~0.1 GB), and write_through copies it to the SWA host pool. Fewer hits
   mean more uncached tokens and more chunks. In flight (no think time) the same boundaries raise the *device* hit
   (0.74 -> 0.79, C3), so the flag's sign flips with think time.
-- **At the 10 s edge: +14-16% E2E p90** (9.31 / 10.46 s against final-hc's 8.05 / 9.02 s at C64 / C80). Host-tier
-  hits do not explain this one. The stack without HiCache, also near zero hit there, runs 8.19 / 8.99 s. So either
-  bs2 is slower than bs3 under this load, or a turn that re-prefills its whole ~5.6K history costs more in 2048-token
-  chunks (3 passes instead of 2). On the base at 20 in flight and zero hit, chunk 2048 was not slower (C3).
+- **At the 10 s edge: +14-16% E2E p90** (9.31 / 10.46 s against final-hc's 8.05 / 9.02 s at C64 / C80). The
+  stack without HiCache, at near zero hit there, runs 8.19 / 8.99 s. The host is not the cause: per-step decode
+  rates from the two server logs match at every batch size from 4 to 16 (bs2 within +1% of bs3, e.g. 77.1 vs
+  76.3 steps/s at batch 8). The prefill work differs. In C64's timed window the final ran **1.79x the prefill
+  passes** (3,227 vs 1,805; 1,815 vs 2,996 new tokens per pass) and 8% more uncached tokens (5.86M vs 5.41M, hit
+  0.04 vs 0.12). Near saturation that extra prefill time goes straight into queueing. On the base at 20 in flight
+  and zero hit, chunk 2048 was not slower (C3); with think time, fewer requests decode at once to amortise each pass.
 
 lpm acts only on a waiting queue, which averaged 0.03 requests at 48 sessions. bs2 and bs3 agree within ~1% in
 flight, but these comparisons still cross hosts. HS2 (`compute/PREREG.md`, vault `g4poc-hs2`) runs final-hc at the
