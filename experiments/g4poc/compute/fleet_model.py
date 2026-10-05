@@ -125,16 +125,15 @@ def host_gb_needed(compute_sessions: float, device_tokens: float, per_session: f
     return max(0.0, compute_sessions * per_session - device_tokens) / HOST_FULL_TOKENS_PER_GB
 
 
-def policies(cached: Dict, nocache: Dict, hicache: Optional[Dict] = None,
+def policies(cached: Dict, nocache: Optional[Dict] = None, hicache: Optional[Dict] = None,
              host_gb: Sequence[float] = HOST_GB, hicache_points: Optional[str] = None) -> List[Dict]:
     below, past = split_at_cliff(points(cached))
     per_session = tokens_per_session(below)
     n_cap = int(cached["server_info"]["max_total_num_tokens"]) / per_session
-    out = [
-        {"name": "a_sticky_device", "points": below, "cap": n_cap},
-        {"name": "b_drop_idle", "points": points(nocache), "cap": None},
-        {"name": "b_lru_oversubscribed", "points": past, "cap": None},
-    ]
+    out = [{"name": "a_sticky_device", "points": below, "cap": n_cap}]
+    if nocache is not None:
+        out.append({"name": "b_drop_idle", "points": points(nocache), "cap": None})
+    out.append({"name": "b_lru_oversubscribed", "points": past, "cap": None})
     if hicache is not None or hicache_points:
         hc = points(hicache) if hicache is not None else points_from_triples(hicache_points, below)
         hc_per_session = tokens_per_session(hc)
@@ -161,7 +160,7 @@ def crossover(capped: Dict, other: Dict, slo_s: float, step_s: float = 0.25, max
 def model(pols: List[Dict], sessions: int = 2200, slo_s: float = 10.0, think: Sequence[float] = THINK_S) -> Dict:
     rows = [{"think_s": t, **{p["name"]: policy_row(best(p["points"], slo_s, t, p["cap"]), t, sessions, p["cap"])
                               for p in pols}} for t in think]
-    drop = next(p for p in pols if p["name"] == "b_drop_idle")
+    drop = next((p for p in pols if p["name"] == "b_drop_idle"), None)
     host = [p for p in pols if p.get("host_gb") is not None]
     sizing = []
     if host:
@@ -178,7 +177,7 @@ def model(pols: List[Dict], sessions: int = 2200, slo_s: float = 10.0, think: Se
         "sessions": sessions, "slo_s": slo_s,
         "caps_sessions_per_gpu": {p["name"]: p["cap"] for p in pols},
         "pending": {p["name"]: p["pending"] for p in pols if p.get("pending")},
-        "crossover_vs_drop_idle_s": {p["name"]: crossover(p, drop, slo_s) for p in pols if p["cap"]},
+        "crossover_vs_drop_idle_s": {p["name"]: crossover(p, drop, slo_s) for p in pols if p["cap"]} if drop else {},
         "rows": rows,
     }
 
@@ -217,7 +216,7 @@ def _fmt(r: Optional[Dict]) -> str:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--cached", required=True, help="sweep.json with the prefix cache on")
-    p.add_argument("--nocache", required=True, help="sweep.json of the same stack with --disable-radix-cache")
+    p.add_argument("--nocache", help="sweep.json of the same stack with --disable-radix-cache (policy b)")
     p.add_argument("--hicache", help="sweep.json of a HiCache stack")
     p.add_argument("--hicache-points", help='instead of --hicache: "C:p90:out_tok_s,..." of a HiCache sweep')
     p.add_argument("--sessions", type=int, default=2200)
