@@ -712,10 +712,10 @@ class Envs:
     # the load-back locks it uncharged, and the allocator can come up short.
     SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW = EnvBool(False)
     # HiCache under the overlap scheduler: order each write-through D2H copy
-    # after the forwards already queued on the forward stream. Off: a node
-    # inserted while its KV is still being written (a finished request's last
-    # token, a stashed prefill chunk) can be copied to host half-written, and a
-    # later load-back restores that stale KV.
+    # after the forwards already queued on the forward stream. Off: a finished
+    # request is cached while the next forward still writes its last output
+    # token's KV, the copy can read it half-written, and a later load-back
+    # restores that stale KV.
     SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH = EnvBool(False)
 
     # ===================================================================

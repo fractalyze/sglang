@@ -822,11 +822,11 @@ class HiCacheController:
             envs.SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH.get()
             and self.load_fence_stream is not None
         ):
-            # Under the overlap scheduler a node is inserted (a finished
-            # request's last token, a chunk stashed for its next pass) while
-            # the forward writing its KV is still queued on the forward stream.
-            # wait_stream orders the copy after the work enqueued so far only,
-            # so later forwards still overlap with it.
+            # Under the overlap scheduler a finished request is cached while
+            # the next forward, which writes its last output token's KV, is
+            # still queued on the forward stream. wait_stream orders the copy
+            # after the work enqueued so far only, so later forwards still
+            # overlap with it.
             self.l2_transfer_engine.device_to_host_stream.wait_stream(
                 self.load_fence_stream
             )
