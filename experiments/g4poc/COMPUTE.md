@@ -59,3 +59,19 @@ fidelity on pair 0; no regression of output tok/s. Predictions: `compute/PREREG.
 `g4poc-c<N>`.
 
 ### C1 Tuned Triton fused_moe config — pending
+
+## 3. Harness fixes found on the way (2026-10-05)
+
+Both broke the gate's first use on this SGLang commit (91132098df) and are fixed before any gated number.
+
+- **Input logprobs ran out of GPU memory** (calibrate, 12:33 KST). The teacher-forced fidelity pass puts ~15 short
+  prompts in one prefill batch; their ~2,900 logprob rows were scored in SGLang's default 2,048-row chunks, and one
+  chunk's fp32 logits over the 262,144-token vocab is 2 GiB on top of its bf16 copy, with 1.7 GB left outside the
+  static pools at mem 0.93. Every gate server now gets `SGLANG_LOGPROB_CHUNK_SIZE=128` (`gate/config.py`
+  `SERVER_ENV`; a ref may not set it). Only the input-logprob path reads it, so timed legs and the KV pool are
+  unchanged, and the LM-head GEMM shapes it fixes are the same for every arm. Any stack at a higher mem fraction
+  (PC's 0.955) needs this even more: the default chunk cannot fit there at all.
+- **`/weights_checker` changed its body.** `per_engine_checksum` is now one sha256 string and the per-tensor
+  checksums sit under `ranks`; the gate still read gemma4nv's older list form and raised after calibrate's fidelity
+  passes, and would have ended every `gate run` leg (weights checked at load and at the end). The parser now reads
+  the current body and reports `ok: false` without a digest, so two missing digests no longer compare equal.
