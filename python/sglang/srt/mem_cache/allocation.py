@@ -153,7 +153,11 @@ def alloc_token_slots(
     num_tokens: int,
 ):
     allocator = tree_cache.token_to_kv_pool_allocator
+    from sglang.srt.mem_cache import swa_admission_debug as _swadbg
+
+    _swadbg.snap("alloc.pre_evict", allocator, tree_cache, need=num_tokens)
     evict_from_tree_cache(tree_cache, num_tokens)
+    _swadbg.snap("alloc.post_evict", allocator, tree_cache, need=num_tokens)
 
     out_cache_loc = allocator.alloc(num_tokens)
 
