@@ -536,6 +536,23 @@ class RefsTest(absltest.TestCase):
         self.assertIn("base", refs)
         for name in refs:
             self.assertEqual(server.load_ref(name)["name"], name)
+            self.assertFalse(set(server.load_ref(name)["env"]) & set(config.SERVER_ENV), name)
+
+    def _server(self, env):
+        srv = server.Server.__new__(server.Server)  # skips the git lookups of __init__
+        srv.ref, srv.tree, srv.extra_env = {"env": env}, "/trees/abc", {"X_EXTRA": "1"}
+        return srv
+
+    def test_launch_env_carries_gate_env_and_ref_env(self):
+        env = self._server({"SGLANG_MOE_CONFIG_DIR": "/c1"}).launch_env({"PYTHONPATH": "/p"})
+        self.assertEqual(env["SGLANG_LOGPROB_CHUNK_SIZE"], config.SERVER_ENV["SGLANG_LOGPROB_CHUNK_SIZE"])
+        self.assertEqual(env["SGLANG_MOE_CONFIG_DIR"], "/c1")
+        self.assertEqual(env["X_EXTRA"], "1")
+        self.assertEqual(env["PYTHONPATH"], "/trees/abc/python" + os.pathsep + "/p")
+
+    def test_ref_may_not_set_gate_env(self):
+        with self.assertRaisesRegex(ValueError, "SGLANG_LOGPROB_CHUNK_SIZE"):
+            self._server({"SGLANG_LOGPROB_CHUNK_SIZE": "2048"}).launch_env({})
 
 
 class CheckpointTest(absltest.TestCase):

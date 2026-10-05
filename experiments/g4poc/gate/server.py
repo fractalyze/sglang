@@ -188,13 +188,21 @@ class Server:
             *self.extra_args,
         ]
 
-    def start(self, timeout_s: int = 900) -> None:
-        self.preflight = hostwatch.wait_preflight()
-        env = dict(os.environ)
+    def launch_env(self, base: Dict[str, str]) -> Dict[str, str]:
+        owned = sorted(set(self.ref["env"]) & set(config.SERVER_ENV))
+        if owned:
+            raise ValueError(f"ref sets gate-owned env {owned} (config.SERVER_ENV)")
+        env = dict(base)
         env["MAX_JOBS"] = str(config.JIT_MAX_JOBS)
+        env.update(config.SERVER_ENV)
         env.update(self.ref["env"])
         env.update(self.extra_env)
         env["PYTHONPATH"] = os.path.join(self.tree, "python") + os.pathsep + env.get("PYTHONPATH", "")
+        return env
+
+    def start(self, timeout_s: int = 900) -> None:
+        self.preflight = hostwatch.wait_preflight()
+        env = self.launch_env(dict(os.environ))
         self._log_file = open(self.log_path, "w")
         self.proc = subprocess.Popen(
             self.command(), stdout=self._log_file, stderr=subprocess.STDOUT, env=env, start_new_session=True

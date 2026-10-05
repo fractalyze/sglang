@@ -47,6 +47,14 @@ MAX_START_TEMP_C = 50
 QUIESCE_TIMEOUT_S = 1800
 QUIESCE_POLL_S = 10
 
+# Env every gate server gets; a ref may not set these keys. Input logprobs (the teacher-forced
+# fidelity pass, role-play NLL) are computed over the 262,144-token vocab in chunks of this many
+# rows. SGLang's default of 2048 rows makes a ~3 GiB fp32 transient; the FP8 base at mem 0.93
+# keeps 1.7 GB outside the static pools and OOMed on it (calibrate, 2026-10-05). The value only
+# changes the input-logprob path (and its LM-head GEMM shapes, identical for every arm), never
+# the timed replay or the KV pool size.
+SERVER_ENV = {"SGLANG_LOGPROB_CHUNK_SIZE": "128"}
+
 # ---------------------------------------------------------------------------
 # Workload shape (workload/generate.py defaults). Input ~5K typical, 10K max,
 # output <= 300 tokens, non-streaming multi-turn role-play.
