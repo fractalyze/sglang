@@ -197,3 +197,6 @@ Amendment (10-06 ~05:45, coordinator; before (c) starts): the C32 soak is the wr
 reference is the final's own 30-min C28 soak, PC2 on bs3 (same config, cross-host), finishing ~05:56, before any
 M128 run starts. (c) passes if -m128 fails no request, its retraction rate is <= 2x that soak's and its p99 is
 <= 1.3x that soak's p99. (a)'s A-B-B-A gives the same-host C28 pairs.
+Reference values (PC2, bs3, `runs/sweep-final-hc-cp2048-lpm-20261006-052216-build-server-3-d12892`, soak-C28, read
+10-06 ~05:57 before (c) starts): 9,656 requests, 0 failed, p90 8.59 s, p99 11.13 s, 952 tok/s, hit 0.768, 67
+retracted (0.69%). So (c) passes if -m128 fails no request, retracts <= 1.39% of requests and keeps p99 <= 14.47 s.
