@@ -294,13 +294,21 @@ def retention_s(sessions: float, mean_think_s: float, e2e_s: float, host_gb: flo
     return host_gb * (mean_think_s + e2e_s) / (sessions * w_gb)
 
 
+# Poisson session arrivals queue more than the sweeps' closed in-flight loop: at p90 ~9 s PC2's bs3 poisson think-time
+# loads (final-mem-c1-c2a, no cache hits) ran 2.30-2.37 turns/s per GPU, against 2.91 at p90 9.55 s for the bs2
+# no-cache sweep. The GPU turn rate at the SLO is derated by this factor for session traffic.
+POISSON_ARRIVAL_DERATE = 2.35 / 2.91
+
+
 def retention_capacity(cached: Dict, nocache: Dict, host_gb: float, think_scale: float, slo_s: float,
-                       w_gb: float, turns_per_session: float = 5.15, max_sessions: int = 2000) -> Optional[Dict]:
+                       w_gb: float, turns_per_session: float = 5.15, max_sessions: int = 2000,
+                       arrival_derate: float = POISSON_ARRIVAL_DERATE) -> Optional[Dict]:
     """The most sessions per GPU meeting the SLO when the hit rate follows the retention model.
 
     The GPU's turn rate at the SLO interpolates by hit rate between its cached SLO point (final stack, hit h_max)
     and its no-cache SLO point (every turn re-prefills); a session count n is served if n / (think + E2E) does not
-    exceed that rate. First turns (1 in turns_per_session) have no think time and never hit.
+    exceed that rate. First turns (1 in turns_per_session) have no think time and never hit. The sweeps' turn rates
+    are closed-loop; `arrival_derate` scales them to independent (poisson) session arrivals.
     """
     fastest = lambda pts: max((q for q in pts if q["e2e_p90_s"] <= slo_s), key=lambda q: q["turns_per_s"], default=None)
     c, b = fastest(points(cached)), fastest(points(nocache))
@@ -315,7 +323,7 @@ def retention_capacity(cached: Dict, nocache: Dict, host_gb: float, think_scale:
             r_ret = retention_s(n, mean_think, e, host_gb, w_gb)
             hit = h_max * think_cdf(max(r_ret - e, 0.0), think_scale)
             f = hit / h_max if h_max else 0.0
-            rate = 1 / (f / c["turns_per_s"] + (1 - f) / b["turns_per_s"])
+            rate = arrival_derate / (f / c["turns_per_s"] + (1 - f) / b["turns_per_s"])
             e_new = f * c["e2e_mean_s"] + (1 - f) * b["e2e_mean_s"]
             if abs(e_new - e) < 1e-3:
                 break

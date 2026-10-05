@@ -106,13 +106,21 @@ class FleetModelTest(absltest.TestCase):
 
     def test_retention_capacity_between_drop_idle_and_cached(self):
         # Cached SLO point: 3 turns/s at 8 s mean E2E (hit 0.74); no-cache: 1.25 turns/s at 6.4 s.
-        big = fm.retention_capacity(HICACHE, NOCACHE, host_gb=1e6, think_scale=30 / 17.9, slo_s=10.0, w_gb=0.3)
-        small = fm.retention_capacity(HICACHE, NOCACHE, host_gb=1e-3, think_scale=30 / 17.9, slo_s=10.0, w_gb=0.3)
+        big = fm.retention_capacity(HICACHE, NOCACHE, host_gb=1e6, think_scale=30 / 17.9, slo_s=10.0, w_gb=0.3,
+                                    arrival_derate=1.0)
+        small = fm.retention_capacity(HICACHE, NOCACHE, host_gb=1e-3, think_scale=30 / 17.9, slo_s=10.0, w_gb=0.3,
+                                      arrival_derate=1.0)
         t = 30 * (1 - 1 / 5.15)
         self.assertAlmostEqual(big["hit"], 0.74, places=2)  # huge host: every returning turn hits
         self.assertEqual(big["sessions_per_gpu"], int(3.0 * (t + 8.0)))
         self.assertAlmostEqual(small["hit"], 0.0)  # no host: every turn re-prefills
         self.assertEqual(small["sessions_per_gpu"], int(1.25 * (t + 6.4)))
+
+    def test_poisson_derate_scales_capacity(self):
+        t = 30 * (1 - 1 / 5.15)
+        small = fm.retention_capacity(HICACHE, NOCACHE, host_gb=1e-3, think_scale=30 / 17.9, slo_s=10.0, w_gb=0.3,
+                                      arrival_derate=0.8)
+        self.assertEqual(small["sessions_per_gpu"], int(0.8 * 1.25 * (t + 6.4)))
 
     def test_failed_or_empty_points_are_dropped(self):
         sweep = _sweep([(8, 2.0, 4.0, 5.0, 0.7)])
