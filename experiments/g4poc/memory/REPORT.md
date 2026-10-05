@@ -48,7 +48,7 @@ and retry the start on that error (the study's queues do all three that the host
 | output tok/s at the operating point | 558 | 677 | 833 | 919 | **952** (+71%) |
 | $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | 0.212 (-39%) | **0.204 (-41%)** |
 | multi-turn exactness at concurrency 1 (12 later turns) | - | - | 12/12 control | 12/12 identical to control | 12/12 (PX) |
-| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: no regression shown (section 5) | role-play: NLL +0.0003, language net 0 (pass) |
+| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: no regression shown (section 5) | role-play here: NLL +0.0003, language net 0, pass; KL gate on build-server-2 (PB) |
 
 **Headline: one RTX 5090 sustains 28 multi-turn requests in flight for 30 minutes at E2E p90 8.59 s and p99 11.1 s,
 952 output tok/s, $0.204 per 1M output tokens at $0.70/GPU-h** (`sweep-final-hc-cp2048-lpm-20261006-052216`, section 3d; PB's
@@ -56,12 +56,11 @@ build-server-2 soak of the same config also recommends C28). Past C28 the tail b
 build-server-2, with 1.2% retractions) for <= 3% more throughput. Under chat think time the two in-flight flags do
 not help (section 3c); there, size by sessions per GPU.
 
-All on build-server-3; capacity points replicated on the same host. **final-hc headline: C28 sustained for 30
-minutes at E2E p90 8.92 s, 919 output tok/s, $0.212 per 1M output tokens** (9,353 requests, 0 failed, no memory
-creep). C32 meets the 10 s SLO only at the edge (30-minute p90 9.92 s, 899 tok/s), so C28 is the operating point.
-final-hc's sweep points are PC3's runs (`hicache/PREREG.md` HC4); the soaks and its quality anchor are in section 5. Server GPU memory
-stays under the 31,642 MiB rule (512 MiB below what CUDA can use) in every config; on a GPU shared with another
-job, use `--mem-fraction-static 0.94` (section 3).
+All on build-server-3; capacity points replicated on the same host. The previous stage, `final-hc`, sustained C28
+for 30 minutes at p90 8.92 s and 919 output tok/s ($0.212 per 1M); its C32 soak met 10 s only at the edge (p90
+9.92 s, 899 tok/s). Its sweep points are PC3's runs (`hicache/PREREG.md` HC4); its soaks and quality anchor are in
+section 5. Server GPU memory stays under the 31,642 MiB rule (512 MiB below what CUDA can use) in every config; on
+a GPU shared with another job, use `--mem-fraction-static 0.94` (section 3).
 
 What each part does:
 - **Memory levers (mem-final):** L9 sizes the RoPE tables to the served context, L10 shrinks the request table, the
@@ -74,9 +73,10 @@ What each part does:
   under-reserves sliding-window slots on a load-back) and loaded back stale KV (write-through raced the overlap
   scheduler's forward); both are fixed behind default-off switches, with regression tests.
 
-Not kept: L5 (sliding-window release; it frees the very window the next turn resumes from, for chat clients too),
-chunked prefill 2048 (-2 sessions), a running-request cap (no effect on the cache cliff). L6 and L11 were
-analysed, not built.
+Not kept: L5 (sliding-window release; it frees the very window the next turn resumes from, for chat clients too);
+chunked prefill 2048 as a memory lever (-2 burst sessions; as PB's in-flight latency lever it is in the final
+config); a running-request cap (no effect on the cache cliff); the SWA prefill window margin on top of chunk 2048 +
+LPM (a validated fix, but +0.6% tok/s for 3.9x retractions; section 3d). L6 and L11 were analysed, not built.
 
 The cliff past the capacity point is the prefix cache: once more sessions' histories compete for the pool than it
 holds, every turn re-prefills ~5K tokens and goodput falls. **With realistic think time that is the normal regime
@@ -253,9 +253,11 @@ below the cache capacity: ~20 per RTX 5090 with mem-final for a 10 s p90 (24 for
 queueing past it. The sweep has no think time, so there every cached session is also in flight; real role-play
 sessions sit idle between turns while their histories still hold the pool, so cached-session capacity, not
 in-flight capacity, sets the GPU count, unless idle histories are allowed to fall out and be recomputed on their
-next turn. PB's fleet model (`gate pd-model`, WORKLOAD.md section 4; COMPUTE.md) quantifies that trade-off.
+next turn. Section 3c measures it: with independent sessions and 30 s / 60 s mean think time one GPU serves ~70 /
+~113-119 sessions at a 10 s p90, nearly all of them recomputed per turn; PB's fleet model (`gate pd-model`,
+WORKLOAD.md section 4; COMPUTE.md) turns that into a GPU count.
 
-**Deployable: `mem-final` at 0.955.** The server's own GPU memory stayed flat at 31,556-31,570 MiB over the
+**The memory stack meets the memory rule at 0.955 (`mem-final`, the base of every later stage).** The server's own GPU memory stayed flat at 31,556-31,570 MiB over the
 whole sweep (2 s samples), under the rule's 31,642 MiB. Burst capacity 29 sessions (mem-base 17).
 
 **Quality anchor, mem-final vs mem-base** (both arms at a 0.85 static fraction; role-play arms with 1,024-token
@@ -303,7 +305,7 @@ With the canary on top, the card reached 32,079 MiB, 75 MiB under the CUDA-visib
 failed. On a host that shares the GPU with another job, leave that job's headroom: the fallback is
 `mem-final-f094` (`--mem-fraction-static 0.94`, ~470 MiB less pool, not measured).
 
-## 3b. The combined final on this host: memory + compute levers (`final-mem-c1-c2a`)
+## 3b. Memory + compute levers on this host (`final-mem-c1-c2a`)
 
 PB's combined final = mem-final + C1 (tuned Triton fused-MoE config for this checkpoint,
 `SGLANG_MOE_CONFIG_DIR`) + C2-A (sm120 FP8-KV extend-attention tiles,
@@ -586,7 +588,7 @@ dequantizes; the head runs the tuned Triton FP8 vocab-head kernel (`triton_small
 | L6 | full-layer V from K (`attention_k_eq_v`) | -5,120 B/token full = -27 MB/session (-14%) | changes (FP8 rounding of V) | not an alias: K = RoPE(k_norm(x) * w_k), V = v_norm(x) without scale, from the same projection. Storing K only needs the Triton decode and extend kernels to rebuild V by un-rotating each key by its position (128 rotated dims) and dividing by w_k |
 | L11 | FP4 KV (`--kv-cache-dtype fp4_mx_block16`) | -44% KV bytes | changes (long-context risk) | accepted with Triton as "plain" access, but the pool then dequantizes the whole layer buffer to BF16 on every attention call (`_get_key_buffer`): ~0.8 GiB transient and many GB of traffic per decode step. A usable L11 needs an FP4-reading Triton kernel |
 
-## 5. HiCache (host-RAM prefix cache): stock HiCache fails, fixed HiCache is the final config
+## 5. HiCache (host-RAM prefix cache): stock HiCache fails; fixed HiCache is part of the final config
 
 Code reading of this tree (paths under `python/sglang/srt/`):
 - `--enable-hierarchical-cache` builds two pinned host pools for a hybrid-SWA model, full and SWA
@@ -752,7 +754,8 @@ need reproducible outputs should know this.
   fresh-prefill, so they cannot catch a lever that corrupts reused KV (HiCache load-back did, see section 5). Any
   cache or offload lever needs a multi-turn exactness check: greedy, concurrency 1, several sessions x turns,
   later turns served from the reused prefix, compared token for token against the same turns with the lever off.
-  mem-final's own device prefix hits are assumed exact; PC3's mem-final A/A arm of that check confirms it.
+  The device-only path passes it (PC3: device-only A/A 12/12); every HiCache config in the final stack was checked
+  against it (12/12).
 - **When batched outputs reproduce.** At a fixed config the role-play quality run (80 prompts, up to 32 in
   flight) was token-identical across runs (80/80, twice). Two runs of the exactness tool at concurrency 16 on
   the same config matched 6/16: there the batch composition varied between runs, and so does it in the
@@ -764,6 +767,14 @@ need reproducible outputs should know this.
   issue/PR, not posted. One open item remains there: a node that adopts a later request's FULL slots on SWA
   tombstone recovery keeps its old FULL host copy (numerics-level, two computations of the same prefix), which
   matters only for bitwise reproducibility if that node is evicted and loaded back.
+- **Load-generator fixes made during the study** (both in `gate/loadgen.py`, with tests): (1) with think time, a
+  `slots` session cut by the window end handed its slot to a fresh session at once, so each slots point ended in a
+  burst of uncached first turns (the think-time slots tables in section 3c are pessimistic; the poisson tables are
+  not affected); (2) the client kept idle connections 15 s against SGLang's 5 s server keep-alive, which under think
+  time failed a request now and then with a disconnect before anything ran (now 2 s).
+- **HiCache host-pool sizing under think time.** With 12 GB of host pool, HiCache adds no session capacity at 30-60 s
+  think time (section 3c). Whether a different split or a larger pool changes that is PC4's `swahost/` investigation
+  and PB's retention model (larger pools: model only).
 - **L5 variant.** Releasing only windows that slide out during decode past the prompt's end (keeping the
   prompt's last window, the next turn's resume point) might keep L5's burst gain without the hit-rate loss.
   Not implemented.
@@ -784,6 +795,15 @@ experiments/g4poc/gate/deploy.sh build-server-3 /data/jooman/g4poc/harness-pc
 /data/jooman/g4poc/memlogs/quality.sh rp-quality mem-qr-final
 # HiCache needs a 28G scope (SGLang keeps 10 GiB of headroom beyond the pinned host pool)
 G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/sweep.sh mem-hc 24,28,32
+# final config (tree a0491db764): 240 s points, 30-min soak at the operating point, role-play quality arm
+G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/sweep.sh final-hc-cp2048-lpm 8,12,28,32,36
+G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/sweep.sh final-hc-cp2048-lpm 28 --load soak
+G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/quality.sh rp-quality final-cpl-qr
+# chat sessions with think time (independent arrivals): concurrency = target live sessions
+/data/jooman/g4poc/memlogs/sweep.sh final-mem-c1-c2a 48,64,72,76 --load pthink30
+/data/jooman/g4poc/memlogs/sweep.sh final-mem-c1-c2a 96,120,144 --load pthink60
+# before each HiCache launch: read the weight shards outside the server's cgroup (see the deploy note in section 0)
+cat /data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/shards/text-*.safetensors > /dev/null
 # GPU memory: 2 s samples, total and per process (the per-process file separates a co-tenant)
 while true; do echo "$(date +%T),$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)"; sleep 2; done
 ```
