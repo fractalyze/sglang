@@ -78,8 +78,9 @@ M 1-32 (BLOCK_M 16-64), prefill M 256-4096 (BLOCK_M 64-256), and M 768/1536 afte
 | A-B-B-A sweeps, 8 in flight | -1.0% (control drift 0.3%) | +0.5% | |
 
 Kernel (fused_moe, us): M 1 31 -> 21, M 4-512 -2..-5%, M 1024 +3%, M 1536-4096 -6..-8% (`runs/c1-moe-config/`).
-Fidelity and leg integrity pass. Why small: the default config is already near the HBM bound at decode sizes and
-MoE is ~21% of GPU time, so E2E moves by about a fifth of the kernel gain. Records: `compute/runs/`, vault
+Fidelity and leg integrity pass. Why small: the default config is already near the HBM bound at decode sizes, so
+the tuned tiles take only 2-8% off the kernel. fused_moe is ~33% of GPU time at 12 in flight (the C2-A profile;
+the registration's basis assumed ~21%), so E2E moves by about a third of that. Records: `compute/runs/`, vault
 `g4poc-c1` (kept).
 
 ### C2-A sm120 FP8-KV Triton extend tiles — kept (+11.5% E2E p90 at 12 in flight)
