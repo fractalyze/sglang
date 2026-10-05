@@ -35,7 +35,10 @@ PORT = 31000
 # are gemma4nv's so the two studies never launch engines on one host at once.
 HOST_LOCK = os.environ.get("G4POC_HOST_LOCK", "/data/jooman/gemma4nv/host.lock")
 GPU_LOCK = os.environ.get("G4POC_GPU_LOCK", "/data/jooman/gemma4nv/gpu.lock")
-SERVER_MEMORY_MAX = "24G"
+# The engine's memory scope. A run may raise it (up to SERVER_MEMORY_MAX_CEILING) when it has a measured need,
+# e.g. a pinned HiCache host pool: SGLang keeps 10 GiB of the scope's headroom free beyond the pool it pins.
+SERVER_MEMORY_MAX = os.environ.get("G4POC_SERVER_MEMORY_MAX", "24G")
+SERVER_MEMORY_MAX_CEILING_GB = 28
 MIN_HOST_AVAILABLE_GB = 30
 MAX_SWAP_USED_GB = 2
 MAX_FOREIGN_GPU_GB = 4

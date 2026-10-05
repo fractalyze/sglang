@@ -2,13 +2,14 @@ import asyncio
 import os
 import sys
 import tempfile
+from unittest import mock
 
 import msgspec
 from absl.testing import absltest, parameterized
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from gate import checkpoint, config, loadgen, metrics, pd, rpquality, runner, server, stats  # noqa: E402
+from gate import checkpoint, config, hostwatch, loadgen, metrics, pd, rpquality, runner, server, stats  # noqa: E402
 from workload import chat, generate, personas, schema, sources  # noqa: E402
 from workload.schema import Message, Session, Turn  # noqa: E402
 
@@ -513,6 +514,23 @@ class RunnerTest(absltest.TestCase):
     def test_metrics_flag_added_once(self):
         self.assertEqual(runner.server_extra_args({"server_args": []}), ["--enable-metrics"])
         self.assertEqual(runner.server_extra_args({"server_args": ["--enable-metrics"]}), [])
+
+
+class MemoryCapTest(parameterized.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.enter_context(mock.patch.object(hostwatch.shutil, "which", return_value="/usr/bin/systemd-run"))
+
+    @parameterized.parameters("24G", "28G")
+    def test_cap_within_ceiling(self, cap):
+        with mock.patch.object(config, "SERVER_MEMORY_MAX", cap):
+            self.assertIn(f"MemoryMax={cap}", hostwatch.memory_cap_prefix())
+
+    @parameterized.parameters("29G", "32768M", "")
+    def test_cap_refused(self, cap):
+        with mock.patch.object(config, "SERVER_MEMORY_MAX", cap):
+            with self.assertRaises(hostwatch.HostUnsafe):
+                hostwatch.memory_cap_prefix()
 
 
 class RefsTest(absltest.TestCase):

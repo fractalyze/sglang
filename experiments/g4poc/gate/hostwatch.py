@@ -132,6 +132,10 @@ def wait_preflight(timeout_s: float = 3600, poll_s: float = 30) -> Dict:
 def memory_cap_prefix() -> List[str]:
     if shutil.which("systemd-run") is None:
         raise HostUnsafe("systemd-run not found; refusing to launch an uncapped engine")
+    m = re.fullmatch(r"(\d+)G", config.SERVER_MEMORY_MAX)
+    if m is None or int(m.group(1)) > config.SERVER_MEMORY_MAX_CEILING_GB:
+        raise HostUnsafe(f"server memory cap {config.SERVER_MEMORY_MAX!r} is not <= "
+                         f"{config.SERVER_MEMORY_MAX_CEILING_GB}G")
     return ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={config.SERVER_MEMORY_MAX}",
             "-p", "MemorySwapMax=0"]
 
