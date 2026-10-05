@@ -262,6 +262,19 @@ mem 0.955 is deployable on bs2 as on bs3. bs2 has no GPU co-tenant and no period
 The pair passes. PC2's bs3 anchor also passed (96.36 vs 96.21). Language adherence of role-play replies is
 still under investigation (PC).
 
+**Where the saving comes from, bs2** (10 s p90 SLO, cheapest point; every row measured on bs2):
+
+| stack | adds | capacity | out tok/s | $/1M output @ $0.70 | step |
+|---|---|---|---|---|---|
+| base (PA's r03) | | 12 in flight | 568 | 0.343 | |
+| mem-final (PC) | memory levers: RoPE to 16K, max running 64, mem 0.955, swa ratio 0.268, FP8 vocab table, decode graphs to 48 | 20 | 679 | 0.286 | -17% |
+| final-mem-c1-c2a | C1 MoE config + C2-A extend tiles | 24 | 838 | 0.232 | -19% |
+| final-hc | HiCache 12 GB host pool, both fixes | 32 | 952 | 0.204 | -12% |
+| **final-hc-cp2048-lpm (final)** | C3a lpm + C3b chunk 2048 | 32 (p90 8.57 s) | **981** | **0.198** | -3% |
+
+Base to final: **-42% per 1M output tokens.** mem-final's bs2 sweep is `runs/sweep-mem-final-20261006-001140-build-server-2-c8a62b`. bs3 agrees within ~1% at
+every shared point.
+
 **What HiCache adds, bs2.** The control is the same stack without HiCache (`final-mem-c1-c2a`,
 `runs/sweep-final-mem-c1-c2a-20261005-203524-build-server-2-332ae0`; its memory peak is 31,484 MiB, also inside
 the rule):
