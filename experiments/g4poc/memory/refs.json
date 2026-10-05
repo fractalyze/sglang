@@ -2,14 +2,64 @@
  "mem-base": {
   "description": "PC's control: PA's r03 (BASELINE-FP8.md) on bs3. FP8 text checkpoint (G4POC_MODEL_DIR=.../gemma-4-26B-A4B-it-fp8ch/text), FP8 KV, Triton attention, decode graphs to bs 32, no prefill graph.",
   "commit": "ac6035c07f",
-  "server_args": ["--kv-cache-dtype", "fp8_e4m3", "--cuda-graph-max-bs-decode", "32", "--context-length", "16384",
-                  "--mem-fraction-static", "0.93", "--swa-full-tokens-ratio", "0.3", "--disable-prefill-cuda-graph"],
+  "server_args": [
+   "--kv-cache-dtype",
+   "fp8_e4m3",
+   "--cuda-graph-max-bs-decode",
+   "32",
+   "--context-length",
+   "16384",
+   "--mem-fraction-static",
+   "0.93",
+   "--swa-full-tokens-ratio",
+   "0.3",
+   "--disable-prefill-cuda-graph"
+  ],
   "env": {}
  },
- "mem-l4-r027": {
-  "description": "L4: sliding/full pool ratio fit to the measured per-session mix (1,414 / 5,281 = 0.27).",
+ "mem-l9-rope16k": {
+  "description": "L9: max_position_embeddings 262144 -> 16384 so the FP32 RoPE cos/sin caches (0.75 GiB) are sized to the served context; frequencies do not depend on it.",
   "extends": "mem-base",
-  "server_args": ["--swa-full-tokens-ratio", "0.27"],
+  "server_args": [
+   "--json-model-override-args",
+   "{\"max_position_embeddings\": 16384}"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-l7-f096": {
+  "description": "L7: --mem-fraction-static 0.96 turns unused activation slack into KV pool.",
+  "extends": "mem-base",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.96"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-l7-f097": {
+  "description": "L7 probe beyond the safety rule: --mem-fraction-static 0.97.",
+  "extends": "mem-base",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.97"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-l10-c64": {
+  "description": "L10: --max-running-requests 64 shrinks req_to_token (2818 x 16384 int32) to 65 rows.",
+  "extends": "mem-base",
+  "server_args": [
+   "--max-running-requests",
+   "64"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-l4-r0276": {
+  "description": "L4: --swa-full-tokens-ratio 0.276 fit to the measured per-session mix (full 5,299; sliding 1,322 N + 2,544).",
+  "extends": "mem-base",
+  "server_args": [
+   "--swa-full-tokens-ratio",
+   "0.276"
+  ],
   "numerics_unchanged": true
  }
 }
