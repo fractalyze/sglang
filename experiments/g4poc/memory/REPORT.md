@@ -348,6 +348,12 @@ C16/C20/C24 at E2E p90 6.32 / 7.52 / 8.58 s (first 6.33 / 7.59 / 8.59) and 743 /
 
 ## 3c. Chat sessions with think time: sessions per GPU for sizing
 
+**Result (independent sessions, the poisson tables below): at a 10 s p90 one RTX 5090 serves ~70 live chat sessions
+with a 30 s mean think time and ~113-119 with 60 s, at ~2.3-2.5 turns/s and ~430 output tok/s (~$0.45 per 1M output
+at $0.70/GPU-h).** HiCache with a 12 GB host pool adds nothing there, so for chat with think time >= 30 s the
+recommended deployment is device-only `final-mem-c1-c2a`. The first runs used closed `slots` sessions and give a
+pessimistic bound; they come first below because they ran first.
+
 Every number above comes from the in-flight layer with zero think time: each live session always has a request in
 flight. Real role-play sessions sit idle between turns while their histories still compete for the cache. This
 section replays live sessions with think time: load `think30` / `think60` (`gate/config.py`), each slot one live
@@ -380,14 +386,14 @@ Runs: `sweep-final-hc-20261005-215152-build-server-3-d847de` (48-96), `sweep-fin
 (120, the overload reference; a co-tenant CI job ran on the host during it), `sweep-final-mem-c1-c2a-20261005-211313-build-server-3-3fe265`.
 
 - **Pessimistic bound (slots): ~60-65 sessions at a 10 s p90 with 30 s mean think time** (interpolated between 48 and 72),
-  for both configs. At 48 sessions a GPU delivers ~330 output tok/s, **about $0.58 per 1M output tokens** at
-  $0.70/GPU-h, roughly 2.7x the zero-think cost: idle histories do not stay cached (hit rate <= 0.29), so nearly
+  for both configs. At 48 sessions a GPU delivered ~330 output tok/s (~$0.58 per 1M output at $0.70/GPU-h, an
+  overstatement of the cost, see the poisson tables): idle histories do not stay cached (hit rate <= 0.29), so nearly
   every turn re-prefills ~5.8K tokens, and throughput saturates near 3 turns/s (~17K uncached prefill tok/s).
 - **HiCache as configured gives no meaningful capacity gain here** (p90 7.07 vs 7.50 s at 48 sessions, 11.41 vs
   11.12 s at 72). A 12 GB host pool plus the device pool should hold roughly 80 sessions' histories, yet the hit
-  rate at 48 sessions is 0.29; why is under investigation (SWA host-pool split, first-turn misses, churn).
-- Two numbers to keep apart: the zero-think C28 result (919 output tok/s, $0.212 per 1M) is the **per-GPU
-  throughput ceiling**; sessions per GPU at realistic think time is the number to **size the fleet** with.
+  rate at 48 sessions is 0.29 (open item, section 6).
+- Two numbers to keep apart: the zero-think C28 result (final config: 952 output tok/s, $0.204 per 1M) is the
+  **per-GPU throughput ceiling**; sessions per GPU at realistic think time is the number to **size the fleet** with.
 
 **Mean think time 60 s** (no failed request; `sweep-final-hc-20261005-223037-*`, `sweep-final-mem-c1-c2a-20261005-230954-*`):
 
@@ -402,8 +408,7 @@ Runs: `sweep-final-hc-20261005-215152-build-server-3-d847de` (48-96), `sweep-fin
 
 \*The T60 p90s are inflated by the load-generator bug above: each point ends in a 2-4 minute burst (queue
 41-116, uncached prefill pinned at its ~16.5K tok/s ceiling) although the average prefill demand is ~9-10K tok/s. The means (turns/s, in-flight, hit rate) are usable;
-the T60 session capacity at a 10 s p90 is not measured (by the means, likely ~100-120 sessions with independent
-arrivals). The T30 points have no mid-window bursts at 48 sessions. What T60 does show: histories are evicted
+the T60 session capacity comes from the poisson runs below (~113-119 sessions). The T30 points have no mid-window bursts at 48 sessions. What T60 does show: histories are evicted
 almost entirely (hit <= 0.07 with HiCache, <= 0.01 without), throughput follows the turn rate, and HiCache again
 gives no gain.
 
