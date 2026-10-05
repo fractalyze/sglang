@@ -262,6 +262,23 @@ mem 0.955 is deployable on bs2 as on bs3. bs2 has no GPU co-tenant and no period
 The pair passes. PC2's bs3 anchor also passed (96.36 vs 96.21). Language adherence of role-play replies is
 still under investigation (PC).
 
+**The study's final config: `final-hc-cp2048-lpm`** (final-hc + `--chunked-prefill-size 2048 --schedule-policy
+lpm`; promoted 10-05 ~23:55 after the confirming A-B-B-A, the KL check and HiCache load-back exactness 12/12).
+It was replicated twice on bs2 (`runs/sweep-final-hc-cp2048-lpm-20261006-012036-*` and `runs/sweep-final-hc-cp2048-lpm-20261006-015225-build-server-2-813fa1`),
+0 failed requests:
+
+| in flight | 16 | 24 | 28 | 32 | 36 | 40 |
+|---|---|---|---|---|---|---|
+| E2E p90 (s), rep 1 / rep 2 | 6.17 / 6.16 | 7.53 / 7.55 | 8.51 / 8.62 | 8.62 / 8.41 | 9.03 / 8.89 | 10.52 / 9.94 |
+| output tok/s, rep 1 / rep 2 | 766 / 766 | 942 / 941 | 959 / 953 | 971 / 988 | 956 / 965 | 940 / 949 |
+| prefix hit | 0.78 | 0.79 | 0.77 | 0.78 | 0.78 | 0.77 |
+
+- **Headline (bs2).** At a 10 s p90 SLO, one RTX 5090 serves up to 36 requests in flight (40 is on the edge).
+  The cheapest point is 32 in flight at 971-988 output tok/s: **$0.197-0.200 per 1M output tokens at
+  $0.70/GPU-hour, -42% against the base's $0.343**. The confirming run gave 981 tok/s at p90 8.57 s.
+- **Memory.** Peak and plateau are 31,266 MiB, inside bs2's 31,599 MiB rule (`runs/morning-final-hc-cp2048-lpm/`).
+  That is 250 MiB below final-hc: chunk 2048 halves the prefill transient.
+
 **Where the saving comes from, bs2** (10 s p90 SLO, cheapest point; every row measured on bs2):
 
 | stack | adds | capacity | out tok/s | $/1M output @ $0.70 | step |
@@ -270,7 +287,7 @@ still under investigation (PC).
 | mem-final (PC) | memory levers: RoPE to 16K, max running 64, mem 0.955, swa ratio 0.268, FP8 vocab table, decode graphs to 48 | 20 | 679 | 0.286 | -17% |
 | final-mem-c1-c2a | C1 MoE config + C2-A extend tiles | 24 | 838 | 0.232 | -19% |
 | final-hc | HiCache 12 GB host pool, both fixes | 32 | 952 | 0.204 | -12% |
-| **final-hc-cp2048-lpm (final)** | C3a lpm + C3b chunk 2048 | 32 (p90 8.57 s) | **981** | **0.198** | -3% |
+| **final-hc-cp2048-lpm (final)** | C3a lpm + C3b chunk 2048 | 36 (p90 8.9-9.0 s); cheapest at 32 | **971-988** | **0.197-0.200** | -3% |
 
 Base to final: **-42% per 1M output tokens.** mem-final's bs2 sweep is `runs/sweep-mem-final-20261006-001140-build-server-2-c8a62b`. bs3 agrees within ~1% at
 every shared point.
