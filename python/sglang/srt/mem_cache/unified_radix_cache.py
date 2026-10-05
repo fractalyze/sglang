@@ -1673,6 +1673,10 @@ class UnifiedRadixCache(BasePrefixCache):
             ack_id
         )
         self.tree_core.finish_write_through(publish_node_ids, ack_id)
+        from sglang.srt.mem_cache import hicache_roundtrip_debug as _hcrt
+
+        if _hcrt.ENABLED:
+            _hcrt.check_path("backup", self, lock_node_id)
         if lock_params is not None:
             self.dec_lock_ref(lock_node_id, lock_params)
         if self.enable_storage:
@@ -3330,6 +3334,10 @@ class UnifiedRadixCache(BasePrefixCache):
                 ):
                     continue
                 node, lock_params, host_lock_params = self.ongoing_load_back.pop(ack_id)
+                from sglang.srt.mem_cache import hicache_roundtrip_debug as _hcrt
+
+                if _hcrt.ENABLED:
+                    _hcrt.check_path("load", self, node)
                 self.dec_lock_ref(node, lock_params)
                 self.dec_host_lock_ref(node, host_lock_params)
                 # Unpin the loaded nodes; host copies stay as reclaimable duplicates.
