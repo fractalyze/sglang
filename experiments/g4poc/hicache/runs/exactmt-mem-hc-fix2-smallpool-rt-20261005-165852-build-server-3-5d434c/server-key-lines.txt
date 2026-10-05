@@ -1,0 +1,45 @@
+[2026-10-05 17:41:08] server_args={'model_path': '/data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/text', 'tokenizer_path': '/data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/text', 'tokenizer_mode': 'auto', 'tokenizer_backend': 'huggingface', 'tokenizer_worker_num': 1, 'detokenizer_worker_num': 1, 'skip_tokenizer_init': False, 'load_format': 'auto', 'model_loader_extra_config': '{}', 'trust_remote_code': False, 'context_length': 16384, 'is_embedding': False, 'enable_multimodal': None, 'revision': None, 'model_impl': 'auto', 'model_config_parser': 'auto', 'json_model_override_args': '{"max_
+[2026-10-05 17:41:20] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 16384, K size: 0.08 GB, V size: 0.08 GB
+[2026-10-05 17:41:20] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 16384, K size: 0.78 GB, V size: 0.78 GB
+[2026-10-05 17:41:40] Allocating full hierarchical KV host pool: 106535 tokens, 1.09 GB host memory.
+[2026-10-05 17:41:47] Allocating swa hierarchical KV host pool: 106535 tokens, 10.91 GB host memory.
+[2026-10-05 17:42:07] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:07] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:07] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:07] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:09] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:09] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:10] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:10] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:10] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:10] HCRT load MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:10] HCRT load checked node=36 tokens={'full': 6228, 'swa': 1387, 'mapped': 1387}
+[2026-10-05 17:42:10] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:12] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:12] HCRT load MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:12] HCRT load checked node=41 tokens={'full': 5119, 'swa': 1385, 'mapped': 1385}
+[2026-10-05 17:42:12] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:13] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:13] HCRT load MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:13] HCRT load checked node=46 tokens={'full': 4478, 'swa': 1385, 'mapped': 1385}
+[2026-10-05 17:42:13] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:15] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:15] HCRT load MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:15] HCRT load checked node=48 tokens={'full': 4084, 'swa': 1258, 'mapped': 1258}
+[2026-10-05 17:42:15] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:16] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:16] HCRT load MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:16] HCRT load checked node=52 tokens={'full': 6377, 'swa': 1535, 'mapped': 1535}
+[2026-10-05 17:42:16] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:18] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:18] HCRT load MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:18] HCRT load checked node=54 tokens={'full': 5268, 'swa': 1534, 'mapped': 1534}
+[2026-10-05 17:42:18] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:19] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:19] HCRT load MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:19] HCRT load checked node=56 tokens={'full': 4627, 'swa': 1534, 'mapped': 1534}
+[2026-10-05 17:42:20] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:21] HCRT backup MISMATCH node=42 full n=228 bad={'k': (228, [0, 1, 2, 3, 4]), 'v': (228, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:21] HCRT load MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
+[2026-10-05 17:42:21] HCRT load checked node=58 tokens={'full': 4233, 'swa': 1407, 'mapped': 1407}
+[2026-10-05 17:42:21] HCRT backup MISMATCH node=47 full n=229 bad={'k': (229, [0, 1, 2, 3, 4]), 'v': (229, [0, 1, 2, 3, 4])}
