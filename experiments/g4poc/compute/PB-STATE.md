@@ -24,6 +24,12 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
   Steps (=== markers): wait tune -> merge -> kernel bench (moe-tune/c1/bench-tuned.log) -> calibrate ->
   A/A aa-c12 + set-noise -> C1 gate (runs/c1-moe-tuned-*). Expected done ~15:00 KST. Ends with "=== ... done".
   DO NOT gate/deploy.sh to harness-pb while the chain runs (bash reads the script as it goes).
+- C1 C8 check: waits for the chain's "done", then compute/sweep_abba.sh base c1-moe-tuned 8 ->
+  logs/pb-c1-c8.log and runs/c1-c8-abba.json (confirming, ~30 min). Host one-liner: logs/pb-state.txt.
+- Coordinator plan (2026-10-05): C1 <= 3 h; C1/C2 gate at C12 (deciding) + C8; C2 survey-first, no kernel
+  project; C3 chunked-prefill + --schedule-policy lpm checked at C8/C12/C16/C20 (sweep_abba); stretch HiCache
+  feasibility write-up only if 1-3 finish before 10-06 04:00. No new lever after 10-06 08:00; 08-11 final
+  stacked sweep C4-C32 + quality anchor on bs2; 11-13:30 COMPUTE.md report, push.
 - C1 prediction frozen: vault trial g4poc-c1 (b21c0d8), compute/PREREG.md (477d5ab0bc): E2E p90 -6..-1%.
 - C2 survey: Explore subagent reading SGLang attention backends for SM120 + Gemma-4 (session-local).
 
