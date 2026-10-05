@@ -404,6 +404,12 @@ It reproduces 0.28 at 48 sessions (measured 0.286) and 0.10 at 72 (0.076). On HS
   T30) is the bound with no think-time spread.
 - **Calibration caveats.** w is calibrated on bs3 final-hc. Chunk 2048, in the final, adds chunk-boundary windows
   and may shorten retention.
+- **The hit ceiling with think time is ~0.66, not ~0.8** (PC4, 10-06). In think mode every session's second turn
+  misses its whole prefix: the cached match ends 1,020 contiguous sliding-window tokens into the window, short of
+  the 1,023 SGLang needs (`free_out_of_window_slots` at prefill plus the template's 4-token cut). This holds with
+  or without HiCache and is part of every measured think-time hit rate. The model's h_max (0.72, from the
+  zero-think sweep) therefore overstates the think-mode ceiling, and the hit rates in the table above are a little
+  optimistic. PC4 is testing a default-off margin switch; if it validates, the ceiling rises toward ~0.8.
 
 **HS1'' (bs2, registered before the run).** final-hc at 30 s think x 36 sessions (slots with the window-cut fix),
 6 GB vs 12 GB host pool. 36 sessions lies between the two storage bounds: 6 GB adds nothing over the device
