@@ -492,8 +492,16 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
 # bs1 -> bs3; the harness is copied with the commit stamp
 experiments/g4poc/gate/deploy.sh build-server-3 /data/jooman/g4poc/harness-pc
 # on bs3 (cap.sh sources gate/env.sh and points G4POC_MODEL_DIR at the FP8 text checkpoint)
-/data/jooman/g4poc/memlogs/cap.sh mem-stack1 22,24,25,26,27,28,30 --long 10000x6
-/data/jooman/g4poc/memlogs/sweep.sh mem-stack1 8,12,16,20,24,28,32
+/data/jooman/g4poc/memlogs/cap.sh mem-final 26,27,28,29,30,31,32 --long 10000x6
+/data/jooman/g4poc/memlogs/sweep.sh mem-final 8,12,16,20,24,28,32
+/data/jooman/g4poc/memlogs/quality.sh quality mem-qa-base --gsm8k-n all --set-baseline
+/data/jooman/g4poc/memlogs/quality.sh quality mem-qa-final --gsm8k-n all
+/data/jooman/g4poc/memlogs/quality.sh rp-quality mem-qr-base --set-baseline
+/data/jooman/g4poc/memlogs/quality.sh rp-quality mem-qr-final
+# HiCache needs a 28G scope (SGLang keeps 10 GiB of headroom beyond the pinned host pool)
+G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/sweep.sh mem-hc 24,28,32
+# GPU memory: 2 s samples, total and per process (the per-process file separates a co-tenant)
+while true; do echo "$(date +%T),$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)"; sleep 2; done
 ```
 
 Every launch holds the host lock and runs in the gate's memory-capped scope (`gate/server.py`).
