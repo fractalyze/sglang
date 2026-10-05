@@ -266,6 +266,7 @@ the count moves with the config, not the arithmetic. Measured:
 | A/A, same config, run twice (mem-qr-base; mem-qr-final) | 80/80; 80/80 | 0; 0 |
 | numerics-neutral change: mem-base vs mem-q-ctl (pool sizes, RoPE table length, L5 on, L8 off) | 4/80 | 1 |
 | numerics-neutral change: mem-base at swa ratio 0.3 vs 0.25 (`mem-qr-base-r025`) | 3/80 | 1 |
+| numerics-neutral change: mem-base vs final-mem-c1-c2a at swa ratio 0.25 (`final-c1c2a-qr-r025`) | 3/80 | 0 |
 | mem-final vs mem-base | 4/80 | 1 |
 
 All three non-A/A pairs flip the same item, `s000794/0`, a request to translate a Japanese line into Chinese. Every
@@ -538,7 +539,9 @@ answered in English, where mem-base and final-mem-c1-c2a answer in Chinese.
 
 Language adherence across three final-hc runs: 65, 67, 68/80 (mem-base 68;
 `rp-quality-final-hc-qr-20261005-185028`, `-194522`, and PC3's log-only-tree run `rp-quality-final-hc-qr-pfx-20261005-190542`,
-same numerics). One run falls outside the neutral band (3 flips, p = 0.25), two sit inside it (1 each). HiCache
+same numerics). One run falls outside the neutral band (3 flips, p = 0.25), two sit inside it (1 each). The band rests on three
+numerics-neutral pairs with net adherent-to-non-adherent changes of 1, 1 and 0 (the third:
+final-mem-c1-c2a at swa ratio 0.25 vs mem-base, `rp-quality-final-c1c2a-qr-r025-20261005-204923`). HiCache
 makes batched outputs vary run to run (A/A 66/80 token-identical), and the outlier flip did not reproduce
 (`s000135/0` answers in Chinese in the other two runs). Per-request load-back logs show no flipped item was caused by
 a load-back (the one flip in the logged run, `s000794/0`, was Chinese from its first token on a plain device-hit
