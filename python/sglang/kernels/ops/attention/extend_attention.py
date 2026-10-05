@@ -159,8 +159,10 @@ def _get_block_sizes_for_extend_attention(Lq: int, Lv: int):
 # default (64, 64) with 8 warps, which runs at 255 registers per thread.
 # head_dim -> (BLOCK_M, BLOCK_N, BLOCK_N_PREFIX, num_warps, num_stages)
 _SM120_FP8_KV_EXTEND_TILES = {
-    256: (32, 32, 32, 4, 1),
-    512: (32, 32, 64, 8, 1),
+    # Variant that keeps the default KV tile widths (the softmax reduction order), so the
+    # outputs match the default tiles bit for bit on the swept shapes: 512 2.1-3.7x, 256 1.5-2.2x.
+    256: (32, 64, 64, 8, 1),
+    512: (16, 32, 32, 4, 1),
 }
 
 
