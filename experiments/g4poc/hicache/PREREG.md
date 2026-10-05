@@ -76,3 +76,12 @@ Control: final-mem-c1-c2a on bs3 (PC2's sweep: C24 833 tok/s, p90 8.59 s; C28 61
 - Multi-turn exactness (`final-hc-smallpool` vs `final-mem-c1-c2a`, C1): 12/12.
 
 **Falsified if** any failure, C28 <= 616 tok/s, C24 below 808 tok/s, C20 p90 > 10 s, or exactness < 12/12.
+
+## Erratum (added 2026-10-05 ~17:50, predictions unchanged)
+
+HC3's root-cause paragraph attributes the two whole-node FULL mismatches (prompt nodes of 228/229
+tokens) to the write-through race. The fenced byte trace
+(`exactmt-mem-hc-fix2-smallpool-rt-20261005-165852-build-server-3-5d434c`) still shows them while every
+per-turn stale token is gone: they come from SWA tombstone recovery, where a node adopts a later
+request's FULL slots and keeps its old host copy (UPSTREAM.md, open item). HC4's tree is a0491db764
+(85ad37af45 plus a comment-only correction to the same effect).
