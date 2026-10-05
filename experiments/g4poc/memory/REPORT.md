@@ -305,7 +305,15 @@ Code reading of this tree (paths under `python/sglang/srt/`):
 - Host RAM at 3x stack3's device pool would be ~18 GB pinned (5.5 GB full + 12.5 GB SWA), above the 24G
   scope together with the server's ~7 GB RSS; the step-2 run uses `--hicache-size 12`.
 
-**Step 2 result: not kept; a large gain at C24, then a scheduler crash at C28.**
+**Step 2 result: not kept; a large gain at C24, then a scheduler crash at C28, and load-back is not exact.**
+
+> [!warning] Every HiCache throughput number in this section (mem-hc C24, the running-cap probe, the $ per 1M
+> output derived from them) is **numerics unverified: load-back is inexact at concurrency 1.** In a greedy
+> multi-turn check (4 sessions x 3 turns, later turns loading their prefix back from host, PC3), 7 of 8 later
+> turns diverged within 0-15 tokens with identical cached-token counts, and the drift is semantic (a German
+> character answers in English, steps out of character); first-turn fresh prefills are identical. Degraded
+> continuations can change output lengths, so the goodput below may not be comparable to the device-only arm.
+> Attribution (admission fix vs plain HiCache, io backend / layout, this tree vs upstream) is open.
 `mem-hc` = mem-final + `--enable-hierarchical-cache --hicache-size 12 --hicache-write-policy write_through
 --hicache-io-backend kernel --hicache-mem-layout page_first` (`sweep-mem-hc-20261005-145932-build-server-3-803de2`).
 Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x each device pool.
@@ -318,7 +326,8 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
 | mem-hc C28 | - | - | - | - | - | scheduler crash; every request failed |
 
 - At C24 the host pool keeps prefixes the device pool had to evict: hit rate 0.61 -> 0.74, +18% output tok/s,
-  p90 under 10 s. The 10 s capacity would be 24 (mem-final 20), at $0.243 vs $0.287 per 1M output at $0.70/GPU-h.
+  p90 under 10 s. The 10 s capacity would be 24 (mem-final 20), at $0.243 vs $0.287 per 1M output at $0.70/GPU-h
+  (numerics unverified, see the warning above).
 - At C28 the scheduler admitted a prefill the SWA pool could not hold: `alloc_token_slots` raised
   `Out of memory ... Try to allocate 2318 tokens. Available swa: 2270 (available_size=2270 +
   component_evictable_size_=0)`, with 7,949 full tokens free. Without HiCache the same overload retracts
@@ -336,7 +345,7 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   | 28 | 6.42 | 10.16 | 782 | 0.714 | 4.0 | 0 |
   | 32 | 8.01 | 10.87 | 804 | 0.714 | 8.0 | 0 |
 
-  Goodput stays at ~800 tok/s from C24 to C32 (mem-final: 468-476 at C28/C32 with p90 18-19 s). The cap does not
+  Numerics unverified (warning above). Goodput stays at ~800 tok/s from C24 to C32 (mem-final: 468-476 at C28/C32 with p90 18-19 s). The cap does not
   remove the admission bug; it kept the scheduler under it for 3 x 5 min of overload, so it is a flag-only
   fallback, not a fix.
 
@@ -356,14 +365,20 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   reply. Real chat clients end at the same point: the generation prompt's empty thought channel after
   `<|turn>model\n` never appears in a past turn (section 4). The measured hit rates therefore hold for chat
   clients; only token-level clients that resend the exact generated tokens would match further.
+- **Quality anchors never exercise cache reuse.** GSM8K, tool-JSON and the role-play guard are single-turn or
+  fresh-prefill, so they cannot catch a lever that corrupts reused KV (HiCache load-back did, see section 5). Any
+  cache or offload lever needs a multi-turn exactness check: greedy, concurrency 1, several sessions x turns,
+  later turns served from the reused prefix, compared token for token against the same turns with the lever off.
+  mem-final's own device prefix hits are assumed exact; PC3's mem-final A/A arm of that check confirms it.
 - **When batched outputs reproduce.** At a fixed config the role-play quality run (80 prompts, up to 32 in
   flight) was token-identical across runs (80/80, twice). Two runs of the exactness tool at concurrency 16 on
   the same config matched 6/16: there the batch composition varied between runs, and so does it in the
   scheduling-dependent in-flight sweeps. Any config change, including numerics-neutral ones (pool sizes), re-rolls
   batched outputs (3-4/80 identical). So exactness is checked at concurrency 1, and batched quality is compared
   per item against a numerics-neutral config-change band, not against an A/A.
-- **HiCache with a fixed SWA admission charge** is the largest remaining cost lever measured here (+18% output
-  tok/s at C24, 10 s capacity 20 -> 24). It needs the prefill admission to reserve the sliding slots a host
+- **HiCache with a fixed SWA admission charge and exact load-back** would be the largest remaining cost lever
+  measured here (+18% output tok/s at C24, 10 s capacity 20 -> 24, numerics unverified). It first needs load-back
+  to reproduce the device-resident continuation token for token at concurrency 1. It needs the prefill admission to reserve the sliding slots a host
   load-back or chunked continuation takes, a regression test at the C28 overload, and the C24-C32 points re-run.
 - **L5 variant.** Releasing only windows that slide out during decode past the prompt's end (keeping the
   prompt's last window, the next turn's resume point) might keep L5's burst gain without the hit-rate loss.
