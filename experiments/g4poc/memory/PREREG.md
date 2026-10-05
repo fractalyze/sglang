@@ -86,3 +86,24 @@ interval (~1,041), so the slope drops to ~1,164 and the budget of 5.25 GB fits ~
 | trial | metric | prediction | falsified if |
 |---|---|---|---|
 | g4poc-l5 | max_clean_sessions (burst 5K/300) | stack1 25 -> **stack2 29 (+16%)**, interval 27-30; peak sliding tokens per running session in the 5K bursts <= 1,250 (stack1: ~1,470) | capacity < 27, or any outputs differ from stack1 on the same scripted turns (exactness), or a tree sanity failure |
+
+## 2026-10-05, L8: FP8 E4M3 vocab table for both the embedding lookup and the tied LM head (code, numerics change)
+
+Change, behind `SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE` (default off): after load, quantize the tied BF16
+table (262,144 x 2,816, 1.375 GiB) to E4M3 with one fp32 scale per row (0.6875 GiB + 1 MiB), drop the
+BF16 table before the KV pool is sized, embed by gathering FP8 rows and dequantizing, and compute logits
+with the tree's Triton FP8 vocab-head kernel (`triton_small_m_fp8_vocab_head`, max M 48) over 48-row
+chunks. Unlike the existing `SGLANG_OPT_GEMMA4_FP8_LM_HEAD` (an extra FP8 copy for speed, +0.74 GB),
+this removes the BF16 table.
+
+Prior evidence (vault, other checkpoint): gemma4nv-b2-tspec6c ran the same per-row FP8 head on this
+model's tied head (NVFP4 experts): full GSM8K +0.08 pt (CI -0.44..+0.59), tool-JSON 40/40, logit KL
+mean 0.00043, argmax agreement 99.5%. L8 additionally quantizes the input embedding.
+
+Ref `mem-stack3` = the best stack at run time (stack2 if L5 holds, else stack1) + switch on +
+`--cuda-graph-max-bs-decode 48` (decode batches above 32 would otherwise run eager).
+
+| trial | metric | prediction | falsified if |
+|---|---|---|---|
+| g4poc-l8 | max_clean_sessions (burst 5K/300) | weights line -0.69 GiB (24.43 -> ~23.74); **+4 sessions** over the stack it extends (interval +3..+5; stack2 29 -> 33) | weights drop < 0.6 GiB, or gain < 3 sessions |
+| g4poc-l8 (quality guard) | GSM8K 200 greedy, tool-JSON 40, role-play reference NLL (gate quality / rp-quality vs the same stack without the switch) | GSM8K within -1.0 pt; tool-JSON 40/40; rp NLL rise <= 0.02 nats/token; rp language rate not lower | any guard fails |
