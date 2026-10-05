@@ -142,3 +142,21 @@ Points C24, C28, C32 of the in-flight sweep.
 | run | prediction | falsified if |
 |---|---|---|
 | mem-hc vs mem-hc-ctl | device-only control: hit rate collapses by C28 (<= 0.2); with HiCache the next turn loads its prefix back from host: hit rate >= 0.6 at C24 and C28, E2E p90 at C28 at least 30% lower than the control; at C32 both are bound by the sliding pool for in-flight requests (~29 sessions without L5) | HiCache hit rate at C28 < 0.5, or its p90 at C28 not lower than the control's, or the server fails to start/pin inside the scope |
+
+## 2026-10-05 14:05, L5 retired on the real workload; final stack = stack1 + L8 (before it runs)
+
+stack2's sweep (`sweep-mem-stack2-20261005-132151-build-server-3-cbfe29`) kept stack1's hit rate at C8/C12
+(0.755/0.722) but lost it under pressure (C16 0.362 vs 0.691, C20 0.252 vs 0.656; 10 s capacity 12 vs 20).
+In scripted mode a session's next turn carries the scripted reply, not the generated one, so its match ends
+at the previous prompt's end and needs that prompt's last SWA window: exactly what L5 releases. Released
+windows survive only until the SWA LRU needs room (from C16). L5 is off from here.
+
+`mem-final` = stack1 + L8 + `--cuda-graph-max-bs-decode 48` + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`
+(L5 off, ratio 0.268; the HiCache control `mem-hc-ctl` is this same config, so its C24/C28/C32 points come
+from this sweep; the chunk-2048 probe moves to `mem-final-c2048`).
+
+| run | prediction | falsified if |
+|---|---|---|
+| cap mem-final | KV budget as stack3 (5.99 GB); at ratio 0.268 the sliding pool binds: **29** (interval 28-30; mem-base 17) | < 28 |
+| sweep mem-final 8-32 | 10 s capacity **20-24** (stack1 20; +14% pool moves the collapse past C24 only if C24's p90 stays under 10 s); 15 s capacity 24-28; whole-sweep GPU peak (2 s samples) <= 31,642 MiB with expandable segments | 10 s capacity < 20, or peak > 31,642 MiB, or a failed request |
+| cap mem-final-c2048 | 29 -> 30 (interval 29-31) | < 29 or > 31 |

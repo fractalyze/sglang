@@ -152,20 +152,13 @@
   ]
  },
  "mem-hc-ctl": {
-  "description": "HiCache control: stack3-xs with L5 off (HiCache would turn it off) and the ratio refit for the larger per-session sliding hold.",
-  "extends": "mem-stack3-xs",
-  "server_args": [
-   "--swa-full-tokens-ratio",
-   "0.268"
-  ],
-  "env": {
-   "SGLANG_OPT_SWA_RELEASE_SLID_WINDOW": "0"
-  },
+  "description": "HiCache control: identical to mem-final (L5 off, ratio 0.268); its points come from mem-final's sweep.",
+  "extends": "mem-final",
   "numerics_unchanged": true
  },
  "mem-hc": {
   "description": "mem-hc-ctl with HiCache: a 12 GB pinned host pool (write-through, kernel io, page_first) keeps evicted prefixes for load-back on the session's next turn.",
-  "extends": "mem-hc-ctl",
+  "extends": "mem-final",
   "server_args": [
    "--enable-hierarchical-cache",
    "--hicache-size",
@@ -178,5 +171,26 @@
    "page_first"
   ],
   "numerics_unchanged": true
+ },
+ "mem-final": {
+  "description": "Final stack candidate: stack1 (L9 RoPE 16K, L10 max running 64, mem 0.955, ratio 0.268) + L8 FP8 vocab table + decode graphs to bs 48 + expandable segments; L5 off (it costs the prompt-end cache point under the scripted multi-turn load).",
+  "extends": "mem-stack1",
+  "commit": "53752c62aa0a05a09ff7038f358217912535e569",
+  "server_args": [
+   "--cuda-graph-max-bs-decode",
+   "48"
+  ],
+  "env": {
+   "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE": "1",
+   "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
+  }
+ },
+ "mem-final-c2048": {
+  "description": "Step-0 probe (coordinator): mem-final with --chunked-prefill-size 2048.",
+  "extends": "mem-final",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048"
+  ]
  }
 }
