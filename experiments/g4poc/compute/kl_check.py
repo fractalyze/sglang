@@ -13,6 +13,11 @@ scored in one extend over the ~5K-token prompt):
 Pass: the candidate's KL mean and p99 are at most FACTOR x the A/A level (with the gate's KL
 floors), and its worst per-prompt top-1 agreement is at most AGREEMENT_SLACK below the A/A's.
 
+Greedy token identity is checked one prompt at a time only (batched outputs are not
+run-to-run deterministic on this engine): the base twice (its own determinism) and the
+candidate once. It is reported, not gated: a change that reorders a reduction may flip a
+near-tie, so each divergence carries the base's top-1 minus top-2 logprob at that token.
+
   python compute/kl_check.py --candidate <ref> [--control base] [--n 8]
 """
 
@@ -56,6 +61,21 @@ def verdict(aa: Dict, cand: Dict, kl_mean_floor: float, kl_p99_floor: float) -> 
     return {"pass": all(checks.values()), "checks": checks, "limits": limits}
 
 
+def serial_identity(control: List[Dict], other: List[Dict]) -> Dict:
+    """Greedy outputs one prompt at a time: identical prompts, and per divergence the control's top-2 margin."""
+    from gate import fidelity
+
+    rows = []
+    for c, o in zip(control, other):
+        i = fidelity.first_divergence(c["output_ids"], o["output_ids"])
+        row = {"id": c["id"], "first_divergence": i}
+        if 0 <= i < len(c["top_logprobs"]):
+            top = sorted((lp for lp, _ in c["top_logprobs"][i]), reverse=True)
+            row["control_top2_margin"] = top[0] - top[1] if len(top) > 1 else None
+        rows.append(row)
+    return {"n_identical": sum(r["first_divergence"] < 0 for r in rows), "n": len(rows), "per_prompt": rows}
+
+
 def _summary(cmp: Dict) -> Dict:
     return {k: cmp[k] for k in ("kl_mean", "kl_p99", "min_top1_agreement", "mean_top1_agreement")}
 
@@ -93,9 +113,15 @@ def main() -> None:
             ctrl_batched = forced(srv.url, reference, n)
             srv.flush_cache()
             ctrl_serial = forced(srv.url, reference, 1)
+            srv.flush_cache()
+            ctrl_greedy_1 = asyncio.run(client.greedy_batch(srv.url, prompts, MAX_NEW_TOKENS, k, 1))
+            srv.flush_cache()
+            ctrl_greedy_1b = asyncio.run(client.greedy_batch(srv.url, prompts, MAX_NEW_TOKENS, k, 1))
             control_commit = srv.commit
         with serve(args.candidate, "candidate") as srv:
             cand_batched = forced(srv.url, reference, n)
+            srv.flush_cache()
+            cand_greedy_1 = asyncio.run(client.greedy_batch(srv.url, prompts, MAX_NEW_TOKENS, k, 1))
             candidate_commit = srv.commit
 
     aa = fidelity.compare_forced(reference, ctrl_batched, ctrl_serial)
@@ -106,12 +132,20 @@ def main() -> None:
         "items": [{"id": it["id"], "language": it["language"], "prompt_tokens": len(it["input_ids"]),
                    "reply_tokens": len(r["output_ids"])} for it, r in zip(items, reference)],
         "aa": _summary(aa), "candidate_vs_control": _summary(cand),
+        "serial_token_identity": {
+            "aa": serial_identity([{"id": it["id"], **o} for it, o in zip(items, ctrl_greedy_1)], ctrl_greedy_1b),
+            "candidate": serial_identity([{"id": it["id"], **o} for it, o in zip(items, ctrl_greedy_1)],
+                                         cand_greedy_1),
+        },
         "per_prompt": {"aa": aa["per_prompt"], "candidate": cand["per_prompt"]},
         "verdict": verdict(_summary(aa), _summary(cand), config.KL_MEAN_FLOOR, config.KL_P99_FLOOR),
     }
     with open(os.path.join(out_dir, "kl_check.json"), "w") as f:
         json.dump(res, f, indent=1)
     print(json.dumps({k: res[k] for k in ("items", "aa", "candidate_vs_control", "verdict")}, indent=1))
+    print(json.dumps({role: {k: v for k, v in r.items() if k != "per_prompt"} | {
+        "divergences": [p for p in r["per_prompt"] if p["first_divergence"] >= 0]}
+        for role, r in res["serial_token_identity"].items()}, indent=1))
     print(f"run dir: {out_dir}", file=sys.stderr)
 
 

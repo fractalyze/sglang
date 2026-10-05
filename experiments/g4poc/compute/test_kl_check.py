@@ -18,6 +18,18 @@ class PickItemsTest(absltest.TestCase):
         self.assertLen(kl_check.pick_items([{"id": "a", "language": "en"}], 8), 1)
 
 
+class SerialIdentityTest(absltest.TestCase):
+    def test_identical_and_diverged_with_margin(self):
+        top = [[(-0.1, 5), (-2.4, 6)], [(-0.6, 7), (-0.8, 8)]]
+        control = [{"id": "a", "output_ids": [5, 7], "top_logprobs": top},
+                   {"id": "b", "output_ids": [5, 7], "top_logprobs": top}]
+        other = [{"output_ids": [5, 7]}, {"output_ids": [5, 8]}]
+        res = kl_check.serial_identity(control, other)
+        self.assertEqual((res["n_identical"], res["n"]), (1, 2))
+        self.assertEqual(res["per_prompt"][1]["first_divergence"], 1)
+        self.assertAlmostEqual(res["per_prompt"][1]["control_top2_margin"], 0.2)
+
+
 class VerdictTest(absltest.TestCase):
     def test_at_the_aa_level_passes(self):
         self.assertTrue(kl_check.verdict(AA, dict(AA), 1e-3, 1e-2)["pass"])

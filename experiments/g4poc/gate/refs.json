@@ -50,5 +50,13 @@
    "--chunked-prefill-size",
    "2048"
   ]
+ },
+ "c2-extend-tiles": {
+  "description": "C2-A: base + the sm120 FP8-KV Triton extend tiles (SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES=1; table from compute/extend_attn_bench.py: head_dim 512 (32, 32, 64, 8, 1), 256 (32, 32, 32, 4, 1)). Python differs from base's commit only in extend_attention.py and environ.py; with the env off it runs the base's tiles.",
+  "extends": "base",
+  "commit": "a10694ad32",
+  "env": {
+   "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1"
+  }
  }
 }
