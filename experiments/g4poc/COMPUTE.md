@@ -355,7 +355,7 @@ margin through decode for a branch-inserted prompt (PC4; tree cbf56143b5 = a0491
 `jumanzii/g4poc-swa-margin`; default off). Ref `final-hc-cp2048-lpm-m128`. Prediction: `compute/PREREG.md` M128,
 vault `g4poc-m128f`.
 
-**(a) A-B-B-A at 28 in flight, bs2** (`runs/m128/abba-c28.json`, control drift 0.55%; the second A-B-B-A (e) below):
+**(a) A-B-B-A at 28 in flight, bs2** (`runs/m128/abba-c28.json`, control drift 0.55%):
 
 | | final | final + margin 128 | gain (geomean of 2 pairs) |
 |---|---|---|---|
@@ -366,12 +366,12 @@ vault `g4poc-m128f`.
 | retracted per 240 s window | 11 / 14 (~1.0%) | 25 / 34 (~2.3%) | 2.4x |
 | failed | 0 / 0 | 0 / 0 | |
 
-**(e) A second A-B-B-A** (`runs/m128/abba-c28-2.json`, control drift 1.1%) repeats it: p90 gain 1.007, tok/s
+A second A-B-B-A, run after the soak (`runs/m128/abba-c28-2.json`, control drift 1.1%), repeats it: p90 gain 1.007, tok/s
 +1.3%, p99 +3%, retractions 16 -> 62. Over all four pairs: **p90 gain 1.014** (pairs 1.026, 1.015, 1.014, 1.001),
 **output tok/s +1.3%**, **p99 +5.2%**, **retractions 41 -> 121 (2.95x)**, hit 0.77 -> 0.80, 0 failed.
 
 The gain is a third of PC4's on final-hc (+7.1% tok/s, hit 0.71 -> 0.80): chunk 2048 already took most of the hit
-headroom (0.77). Retractions rise 2.4x and set the p99; PC4 attributes them to the extra SWA tokens the margin holds
+headroom (0.77). Retractions rise ~3x and set the p99; PC4 attributes them to the extra SWA tokens the margin holds
 through decode (the pool runs out mid-decode more often).
 
 **(b) Quality** (paired against the base anchor, bs2): GSM8K (full 1,319) 96.44% vs 96.13% (+0.30 pt, CI95
@@ -390,9 +390,9 @@ GPU memory on bs2 stayed flat at 31,262 MiB, inside the rule (`runs/m128/soak-me
 the final's rate, past the 1.39% limit, for +0.6-1.7% output tok/s and -1.4..-2.6% p90. **Not promoted: the final
 stays `final-hc-cp2048-lpm`.** The margin's retraction cost interacts with chunk 2048 + lpm, which already retract
 more under load than final-hc (above); on final-hc alone PC4 measured +7.1% tok/s and -7.3% p90 at 28 in flight with
-retractions 2-3 -> 7-8 per 240 s. It ships as an opt-in lever (env, default off): worth it on final-hc, and wherever
-the second-turn prefix miss matters more than the retraction tail (think-time traffic: PC4, hit +0.044 at 30 s x 48
-sessions). Vault: `g4poc-m128f` (parked), PC4's `g4poc-sw4`.
+retractions 2-3 -> 7-8 per 240 s. It ships as an opt-in lever (env, default off). It pays more on final-hc (PC4's numbers above, with ~3x
+retractions there too and no soak), and wherever the second-turn prefix miss matters more than the retraction tail
+(think-time traffic: PC4, hit +0.044 at 30 s x 48 sessions). Vault: `g4poc-m128f` (parked), PC4's `g4poc-sw4`.
 
 ## 4. Prefill/decode split model (`gate pd-measure`, `gate pd-model`)
 
