@@ -182,3 +182,58 @@ Returning turns by idle gap, as the share that hit, missed for SWA, and missed f
 - A miss re-prefills the whole history and rewrites ~2K SWA tokens, so the thrash feeds itself.
 - `--chunked-prefill-size 2048` (c3b-hc) doubles the boundaries per ~5K prompt. Its effect under
   think-time load with HiCache is unmeasured; expect a shorter SWA retention.
+
+### SW2: `--swa-full-tokens-ratio 0.2` (run `sweep-swahost-r020-20261006-001914-build-server-3-8a4dfc`)
+
+Pools: device 196,752 Full + 39,350 SWA tokens; host 390,623 Full (4.00 GB) + 78,126 SWA (8.00 GB).
+
+| sessions | hit (SW1) | E2E p90 (SW1) | out tok/s (SW1) | hit turns | swa_gone | full_gone | failed |
+|---|---|---|---|---|---|---|---|
+| 48 | 0.226 (0.284) | 7.54 s (7.35) | 331 (334) | 186 | 269 | 217 | 1 |
+| 72 | 0.064 (0.075) | 11.64 s (11.44) | 432 (434) | 70 | 298 | 585 | 0 |
+
+**Falsified, in the direction SW1's retention numbers predicted.**
+- The smaller SWA host shortens SWA retention. At 48, returning turns with a 20-30 s gap hit 37% vs SW1's 57%.
+- The 23% larger Full host does not reduce full_gone: 217 vs 216 turns at 48.
+
+**Leaf-first eviction strips session tails.** Both tiers evict leaf-first.
+- On device, D-leaves are evicted LRU-first. On host, only H-leaves are evictable: nodes already evicted from device and childless (`unified_tree_core.py:2128-2167`).
+- An idle session therefore loses its newest node first: the dead reply leaf, then the prompt tail, which holds the session's only SWA window. Its older head stays resident on device and, mirrored, on host.
+- A session becomes unusable after ~500 evicted tokens while ~5K tokens of its head still occupy both tiers.
+- In SW2-48, 81% of full_gone turns still had >50% of their prefix (median 91%, ~500 tokens missing). In SW1-48, 32% did; SW1-72 has almost none (94% had nothing left).
+- A bigger device pool pins more heads, so the host must evict more tails. That is why the larger Full host did not help.
+
+**The failed request (48, end of window) was not a server failure.**
+- 3 retractions ("KV cache pool is full", 00:32:38-52) hit three first-turn requests during the generator's end-of-window arrival spike. All three were re-admitted and answered.
+- Every admitted load request got HTTP 200: 3,240 `/generate` responses plus the server warmup and one health check. There is no traceback, abort or error log line.
+- So the failure was client-side (most likely a transport or body error) and left no server trace. The harness does not persist the error text.
+- 15 other think-time points tonight, with up to 3 retractions each, had 0 failures. Not an upstream candidate.
+
+## 4. Open items (code; none implemented tonight)
+
+1. **Exclusive host tiering for hybrid SWA (upstream-relevant).**
+   - write_through mirrors the device, so distinct capacity is the host pool.
+   - write_back is exclusive (+50% distinct here: 478K Full + 128K SWA tokens), but tombstoning an
+     internal node's device SWA drops it with no backup (`swa.py:713-766`).
+   - The fix: write_back plus an SWA backup when a device SWA node is tombstoned, and the
+     load-back exactness check (PC3's `exactness_mt` 12/12 pattern).
+   - Expected: both retentions x1.5 (SWA ~37 s, Full ~57 s at 48 sessions).
+2. **Session-granular eviction for hybrid SWA.**
+   - A multi-turn session is usable only while its tail window survives, so leaf-first eviction
+     kills it after ~500 tokens and leaves its head as dead weight.
+   - Options:
+     - When a node's SWA window is evicted, also evict the Full ancestors that can no longer end a
+       valid match, i.e. those with no SWA window left behind them.
+     - Order host eviction by session (path) instead of by leaf.
+3. **Stop writing dead SWA to host.** About a third of SWA host writes are dead on arrival:
+   - **Decode-output leaves.** A default-off switch could skip caching output tokens when the chat
+     template re-renders them (Gemma-4 drops the empty thought channel). ~10-15% of SWA host.
+   - **Chunk-boundary windows.** Free a chunked prompt's boundary window once the next chunk is
+     prefilled, unless it is still inside the final window. ~1K SWA tokens per boundary.
+     `--chunked-prefill-size 2048` doubles these per prompt.
+4. **A separate host split knob.**
+   - `--hicache-size` splits by device bytes, so moving host bytes between Full and SWA also moves
+     the device split, and the device SWA pool is what admits concurrent windows.
+   - SW1 says the binding retention would gain only ~12% from rebalancing, so this is low priority.
+5. **Harness.** Persist failed requests' `error` / `finish_reason`, so a single failure can be
+   classified.
