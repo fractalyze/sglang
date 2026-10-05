@@ -29,16 +29,19 @@ def _pols(**kw):
 class FleetModelTest(absltest.TestCase):
     def test_policies_and_caps(self):
         pols = _pols()
-        self.assertAlmostEqual(pols["a_sticky_device"]["cap"], 10.0)
+        self.assertAlmostEqual(pols["a_sticky_device"]["cap"], 60000 / fm.TOKENS_PER_STORED_SESSION)
         self.assertIsNone(pols["b_drop_idle"]["cap"])
         self.assertEqual([p["inflight"] for p in pols["b_lru_oversubscribed"]["points"]], [16])
-        # Device full pool (60,000 tokens) plus the 12 GB host pool, per 6,000-token history.
-        self.assertAlmostEqual(pols["c_sticky_host_12gb"]["cap"], (60000 + fm.HOST_FULL_TOKENS_PER_GB * 12) / 6000.0)
+        # The host pool mirrors the device (write_through): the larger of the two, per stored session.
+        self.assertAlmostEqual(pols["c_sticky_host_12gb"]["cap"],
+                               fm.HOST_FULL_TOKENS_PER_GB * 12 / fm.TOKENS_PER_STORED_SESSION)
+        self.assertAlmostEqual(fm.storage_cap(60000, 1), 60000 / fm.TOKENS_PER_STORED_SESSION)
 
     def test_zero_think_time_is_the_inflight_point(self):
         row = fm.model(list(_pols().values()), sessions=100, slo_s=10.0, think=[0])["rows"][0]
         a, b = row["a_sticky_device"], row["b_drop_idle"]
-        self.assertAlmostEqual(a["sessions_per_gpu"], 10.0)  # 2.4 x 5 = 12 in flight, capped by the pool at 10
+        cap = 60000 / fm.TOKENS_PER_STORED_SESSION  # ~9.2 stored sessions
+        self.assertAlmostEqual(a["sessions_per_gpu"], cap)  # 2.4 x 5 = 12 in flight, capped by the pool
         self.assertTrue(a["capped"])
         self.assertAlmostEqual(b["sessions_per_gpu"], 8.0)  # 1.25 x 6.4
         self.assertEqual(b["gpus"], 13)
@@ -46,9 +49,9 @@ class FleetModelTest(absltest.TestCase):
         self.assertAlmostEqual(row["c_sticky_host_12gb"]["sessions_per_gpu"], 24.0)  # compute-bound at T = 0
 
     def test_crossover_where_dropping_matches_the_memory_cap(self):
-        # n_b(T) = max(1.0 (T + 4), 1.25 (T + 6.4)) reaches the cap of 10 at T = 10 / 1.25 - 6.4 = 1.6 s.
+        # n_b(T) = 1.25 (T + 6.4) reaches the cap of 60,000 / 6,500 = 9.23 at T = 9.23 / 1.25 - 6.4 = 0.98 s.
         m = fm.model(list(_pols().values()), sessions=100, slo_s=10.0, think=[0, 30])
-        self.assertAlmostEqual(m["crossover_vs_drop_idle_s"]["a_sticky_device"], 1.75)  # first 0.25 s step past 1.6
+        self.assertAlmostEqual(m["crossover_vs_drop_idle_s"]["a_sticky_device"], 1.0)  # first 0.25 s step past 0.98
         late = m["rows"][1]
         self.assertLess(late["b_drop_idle"]["gpus"], late["a_sticky_device"]["gpus"])
 
@@ -71,13 +74,13 @@ class FleetModelTest(absltest.TestCase):
         m = fm.model(list(_pols().values()), sessions=100, slo_s=10.0, think=[30])
         z = m["host_sizing"][0]
         self.assertAlmostEqual(z["compute_bound_sessions_per_gpu"], 3.0 * (30 + 8.0))  # 114 sessions
-        self.assertAlmostEqual(z["host_gb_needed"], (114 * 6000 - 60000) / fm.HOST_FULL_TOKENS_PER_GB)
-        self.assertAlmostEqual(fm.storage_cap(60000, z["host_gb_needed"], 6000.0), 114.0)
+        self.assertAlmostEqual(z["host_gb_needed"], 114 * fm.TOKENS_PER_STORED_SESSION / fm.HOST_FULL_TOKENS_PER_GB)
+        self.assertAlmostEqual(fm.storage_cap(60000, z["host_gb_needed"]), 114.0)
 
     def test_validation_uses_the_closed_population_think_time(self):
         v = fm.validate(["t30-120:120:30:5:532:24.3:0.002"], list(_pols().values()), 10.0)[0]
         self.assertAlmostEqual(v["think_eff_s"], 24.0)  # turn 0 of each 5-turn session has no think time
-        self.assertTrue(v["past_storage_bound"])  # 120 > (60,000 + 318,445) / 6,000 = 63
+        self.assertTrue(v["past_storage_bound"])  # 120 > 318,445 / 6,500 = 49
 
     def test_measured_capacity_conservative_and_interpolated(self):
         specs = ["final-hc:30:5.15:48:334:7.07:0.286", "final-hc:30:5.15:72:434:11.41:0.076",

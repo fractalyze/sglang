@@ -134,3 +134,19 @@ absorbs the re-prefill at this load).
 
 Falsified if the 6 GB arm's hit rate is within 0.15 of the 12 GB arm's, or the 12 GB arm's hit rate is under 0.40.
 With PC2's queue24 bracket (12 GB at 48/72/96 sessions, bs3) this gives two points on the storage-bound line.
+
+## HS1'': host-RAM sizing re-aimed between the inclusive-mirror bounds (registered 2026-10-05 ~23:00 KST)
+
+PC4's code read (tree a0491db764): under write_through the host pool mirrors the device, so a GPU holds
+max(device, host) tokens of history, at ~6.5K tokens per stored session: **~25 sessions at 6 GB** (the 6 GB host
+pool, 159K tokens, is no larger than the device pool, 160K, so it adds nothing) and **~49 at 12 GB**. HS1' (64
+sessions) lies past both bounds and cannot separate them; it stays registered and runs after HS1'' if time allows.
+
+Arms: `final-hc` (12 GB) and `final-hc-hc6` (6 GB), each `gate sweep --load think30 --concurrency 36` (36 sessions,
+~24 s mean think per turn), 28G scope, build-server-2.
+
+Prediction, 12 GB arm (36 < 49, the live histories fit): prefix hit 0.29 .. 0.75 (PC2 measured 0.29 at 48 sessions,
+at the bound), E2E p90 <= 7 s, output 200-290 tok/s (36 / (24 s + ~2.5 s) x ~181 tokens).
+Prediction, 6 GB arm (36 > 25): thrashes like the stack without HiCache: prefix hit <= 0.15, E2E p90 +10% .. +150%
+over the 12 GB arm.
+Falsified if the 6 GB arm's hit rate is within 0.10 of the 12 GB arm's, or the 12 GB arm's hit rate is under 0.29.

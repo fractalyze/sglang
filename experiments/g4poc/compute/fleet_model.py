@@ -20,11 +20,14 @@ held:
     final-hc, hit rate 0.002, p90 24 s), so the storage bound is a hard cap at any SLO under ~20 s.
 
 Sessions per GPU = min(compute bound, storage bound). `host_gb_needed` gives, per think time, the host pool per
-GPU at which storage stops binding (the sizing rule). CAVEAT (10-05 ~22:30): measured think-time loads on bs3
-(PC2) contradict the storage bound -- final-hc's hit rate is 0.29 at 48 sessions with 30 s think, where the bound
-says ~77 histories fit. The leading hypothesis is that the host pool's sliding-window share (~85K tokens of the 12
-GB) binds at ~15 sessions when write-through keeps whole prefixes' SWA KV (PC4 checks it). Until that is fixed the
-sizing rule is a model of a fixed HiCache, not of the measured one.
+GPU at which storage stops binding (the sizing rule).
+
+Storage (PC4's code read of tree a0491db764, 10-05 ~22:50): under write_through the host pool is an inclusive mirror
+of the device (host eviction removes only nodes already gone from the device), so the distinct histories one GPU
+holds are max(device, host) tokens over ~6.5K tokens per stored session (a live history plus its dead reply leaves,
+and ended sessions not yet aged out). At 12 GB that is ~49 sessions, which matches the measured think-time loads
+(PC2, bs3: HiCache stops helping past ~48 sessions at 30 s think). The sizing rule (~0.25 GB of host pool per
+session) is derived from this; its only measured anchor is the 12 GB point.
 
 Measured session loads (`--session-point`) give the capacity that holds today: per config and think time, the most
 sessions per GPU that meet the SLO (the largest measured point, and the interpolated point where p90 = SLO).
@@ -52,6 +55,10 @@ BELOW_CLIFF_HIT_SHARE = 0.5
 # 8.74 GB hold sliding-window KV in the device pools' ratio), i.e. ~37.7 KB of host pool per history token.
 HOST_FULL_TOKENS_PER_GB = 318445 / 12
 HOST_GB = (12, 24, 48, 96, 128)
+# Tokens a stored session occupies in the radix tree: its history plus the dead reply leaves of earlier turns (the
+# next prompt re-renders the reply, so the generated tokens stay as a branch) and the share of ended sessions not yet
+# aged out (PC4, 10-05).
+TOKENS_PER_STORED_SESSION = 6500
 
 
 def points(sweep: Dict) -> List[Dict]:
@@ -122,33 +129,33 @@ def policy_row(p: Optional[Dict], think_s: float, sessions: int, cap: Optional[f
     }
 
 
-def storage_cap(device_tokens: float, host_gb: float, per_session: float) -> float:
-    """Histories one GPU can hold: its device full pool plus a host pool of `host_gb` (--hicache-size)."""
-    return (device_tokens + HOST_FULL_TOKENS_PER_GB * host_gb) / per_session
+def storage_cap(device_tokens: float, host_gb: float, per_session: float = TOKENS_PER_STORED_SESSION) -> float:
+    """Histories one GPU can hold: the host pool mirrors the device (write_through), so the larger of the two."""
+    return max(device_tokens, HOST_FULL_TOKENS_PER_GB * host_gb) / per_session
 
 
-def host_gb_needed(compute_sessions: float, device_tokens: float, per_session: float) -> float:
-    """The host pool per GPU at which the storage bound reaches the compute bound."""
-    return max(0.0, compute_sessions * per_session - device_tokens) / HOST_FULL_TOKENS_PER_GB
+def host_gb_needed(compute_sessions: float, device_tokens: float,
+                   per_session: float = TOKENS_PER_STORED_SESSION) -> float:
+    """The host pool per GPU at which the storage bound reaches the compute bound (0 if the device alone holds them)."""
+    need = compute_sessions * per_session
+    return 0.0 if need <= device_tokens else need / HOST_FULL_TOKENS_PER_GB
 
 
 def policies(cached: Dict, nocache: Optional[Dict] = None, hicache: Optional[Dict] = None,
              host_gb: Sequence[float] = HOST_GB, hicache_points: Optional[str] = None) -> List[Dict]:
     below, past = split_at_cliff(points(cached))
-    per_session = tokens_per_session(below)
-    n_cap = int(cached["server_info"]["max_total_num_tokens"]) / per_session
+    n_cap = int(cached["server_info"]["max_total_num_tokens"]) / TOKENS_PER_STORED_SESSION
     out = [{"name": "a_sticky_device", "points": below, "cap": n_cap}]
     if nocache is not None:
         out.append({"name": "b_drop_idle", "points": points(nocache), "cap": None})
     out.append({"name": "b_lru_oversubscribed", "points": past, "cap": None})
     if hicache is not None or hicache_points:
         hc = points(hicache) if hicache is not None else points_from_triples(hicache_points, below)
-        hc_per_session = tokens_per_session(hc)
         hc_device = int((hicache or cached)["server_info"]["max_total_num_tokens"])
         for gb in host_gb:
             out.append({"name": f"c_sticky_host_{gb:g}gb", "points": hc, "host_gb": gb,
-                        "device_tokens": hc_device, "tokens_per_session": hc_per_session,
-                        "cap": storage_cap(hc_device, gb, hc_per_session)})
+                        "device_tokens": hc_device, "tokens_per_session": TOKENS_PER_STORED_SESSION,
+                        "cap": storage_cap(hc_device, gb)})
     return out
 
 
@@ -177,7 +184,7 @@ def model(pols: List[Dict], sessions: int = 2200, slo_s: float = 10.0, think: Se
             if b is not None:
                 n = sessions_per_gpu(b, t, None)
                 sizing.append({"think_s": t, "compute_bound_sessions_per_gpu": n,
-                               "host_gb_needed": host_gb_needed(n, h["device_tokens"], h["tokens_per_session"]),
+                               "host_gb_needed": host_gb_needed(n, h["device_tokens"]),
                                "gpus_for_sessions": math.ceil(sessions / n)})
     return {
         "host_sizing": sizing,
