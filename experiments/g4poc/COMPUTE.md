@@ -303,6 +303,9 @@ It was replicated twice on bs2 (`runs/sweep-final-hc-cp2048-lpm-20261006-012036-
   retracted, and they make the p99 tail; the 4-min sweep windows do not show it. **Operating point: 28 in flight**
   (p90 ~8.5 s, ~955 tok/s, ~$0.20/1M), as on bs3 (PC2's 30-min soaks: C28 919 tok/s at p90 8.92 s, C32 899 at
   9.92 s). 32 maximizes p90-bounded goodput but carries the retraction tail.
+  The tail is the final's flags under overload. final-hc's 30-min soaks on bs3 retracted 0.3% at C32 (p99 11.0 s)
+  and 0.2% at C28 (p99 9.9 s), against the final's 1.2% and p99 37.1 s at C32: chunk 2048 + lpm retract
+  more at the edge, another reason the operating point is 28.
 
 **Where the saving comes from, bs2** (10 s p90 SLO, cheapest point; every row measured on bs2):
 
