@@ -53,5 +53,58 @@
    "G4POC_DEBUG_PREFIX_SPLIT": "1"
   },
   "numerics_unchanged": true
+ },
+ "swamargin-dbg-ctl": {
+  "description": "Diagnostic only: swamargin-ctl (final-mem-c1-c2a, no HiCache, margin 128) on the log-only tree 6cccdbe4e9, to see the per-admission match fields of the exactness sessions (G4POC_DEBUG_PREFIX_SPLIT=1).",
+  "extends": "final-mem-c1-c2a",
+  "commit": "6cccdbe4e9cfbc4574965ffc23a6132632e89940",
+  "env": {
+   "SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN": "128",
+   "G4POC_DEBUG_PREFIX_SPLIT": "1"
+  },
+  "numerics_unchanged": true
+ },
+ "swamargin2-ctl": {
+  "description": "Exactness control, margin v2 tree 7d296525fc (jumanzii/g4poc-swa-margin: d93fea83df + the decode retain floor for branch-inserted prompts): final-mem-c1-c2a (no HiCache), margin 128.",
+  "extends": "final-mem-c1-c2a",
+  "commit": "7d296525fc3ab795c755d1d9058969c3e3b96f08",
+  "env": {
+   "SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN": "128"
+  },
+  "numerics_unchanged": true
+ },
+ "swamargin2-smallpool": {
+  "description": "Exactness candidate, margin v2 tree 7d296525fc (jumanzii/g4poc-swa-margin: d93fea83df + the decode retain floor for branch-inserted prompts): final-hc-smallpool, margin 128. Control: swamargin2-ctl. 28G scope.",
+  "extends": "final-hc-smallpool",
+  "commit": "7d296525fc3ab795c755d1d9058969c3e3b96f08",
+  "env": {
+   "SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN": "128"
+  },
+  "numerics_unchanged": true
+ },
+ "swamargin2-dbg": {
+  "description": "Margin v2 lever, log-only tree af3f720cb1 (jumanzii/g4poc-swa-margin-dbg = 6cccdbe4e9 + the v2 retain floor): final-hc, margin 128, G4POC_DEBUG_PREFIX_SPLIT=1. 28G scope.",
+  "extends": "final-hc",
+  "commit": "af3f720cb10f7d216b4a6dfc9c5abce71e9456ab",
+  "env": {
+   "SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN": "128",
+   "G4POC_DEBUG_PREFIX_SPLIT": "1"
+  },
+  "numerics_unchanged": true
+ },
+ "swamargin2-hc-on": {
+  "description": "In-flight cost check, margin v2 tree 7d296525fc (jumanzii/g4poc-swa-margin: d93fea83df + the decode retain floor for branch-inserted prompts): final-hc with margin 128. Pair: swamargin2-hc-off (same tree). 28G scope.",
+  "extends": "final-hc",
+  "commit": "7d296525fc3ab795c755d1d9058969c3e3b96f08",
+  "env": {
+   "SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN": "128"
+  },
+  "numerics_unchanged": true
+ },
+ "swamargin2-hc-off": {
+  "description": "In-flight cost check control, margin v2 tree 7d296525fc (jumanzii/g4poc-swa-margin: d93fea83df + the decode retain floor for branch-inserted prompts): final-hc with the margin off (default 0), i.e. final-hc behaviour on the v2 tree. 28G scope.",
+  "extends": "final-hc",
+  "commit": "7d296525fc3ab795c755d1d9058969c3e3b96f08",
+  "numerics_unchanged": true
  }
 }

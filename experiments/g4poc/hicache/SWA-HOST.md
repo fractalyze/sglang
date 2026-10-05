@@ -357,3 +357,53 @@ pair with `exactness_mt --template-cut 4`. The next turn then matches 4 tokens s
 prompt, the path the margin changes. Prediction: 12/12 identical outputs and identical
 `cached_tokens`, with every turn-2 `cached_tokens` = prompt - 4 in both arms (a hit through the
 margin).
+
+## 6. Margin v2: hold the window through decode for branch-inserted prompts (preregistration, 2026-10-06 ~04:20 KST)
+
+**Why v1 was not enough** (SW4 partial, 32 sessions, margin 128).
+- Turns after a first turn hit 100% when the first prompt was chunked (23/23 at 4097-5119 tokens,
+  32/32 at >= 5120).
+- After an unchunked first prompt (<= 4096 tokens) they hit only when the admission match did not
+  run past the SWA-valid hit: 14 of 18 (8 more were full_gone at long gaps).
+- When it did, they hit **0 of 47**. In those cases `full_kv` exceeds the device hit by 2 tokens: a
+  nonce-prefix collision with another session's tombstoned path.
+- `swa_branching_seqlen` then truncates the single prefill insert at that branch point, so the prompt
+  stays request-owned. Decode-time eviction, which knows only the window, frees the margin before
+  the finish insert.
+- The same path explains the exactness cut-4 miss: a shared 235-token persona prefix as the branch
+  point.
+
+**Change** (`7d296525fc` on `jumanzii/g4poc-swa-margin`; log-only `af3f720cb1`).
+- With the margin set, `UnifiedRadixCache.swa_retain_floor` also returns
+  `len(origin_input_ids) - window - margin`. Neither decode nor insert frees that span.
+- Prompts already inserted at prefill are tree-owned below the floor and are unaffected.
+- A branch-inserted request holds up to its reply length more SWA during decode.
+- Test `TestSWAPrefillWindowMargin::test_margin_survives_decode_after_a_branch_insert`: a branch
+  insert, decode-path eviction, then the finish insert. It must keep >= window + margin and fails
+  on v1.
+
+**Runs (bs2, queue-pc4c, after queue-pc4b).**
+- Unit tests: the v2 class; the same class against v1 code (the branch case must fail); the full files.
+- Exactness std + cut4 (`swamargin2-ctl` vs `swamargin2-smallpool`).
+- SW6: think30 x 48 on `swamargin2-dbg`.
+- SW7: in-flight C28 `swamargin2-hc-on` vs `-off` on the same tree, ABBA if it fits, else A-B.
+- think30 x 32 if time allows.
+
+### SW6 (think30 x 48, v2)
+
+- **Mechanism.** >= 80% of turns after a <= 4096-token first turn (gap < 30 s) hit, branched or not.
+- **Hit rate** >= the same-host margin-off arm (queue-pc4b step e) + 0.03.
+- **E2E p90** -15% to +5% vs that arm.
+- **Exactness:** cut-4 pair 12/12 identical `cached_tokens`, with every turn-2 hit = prompt - 4. The
+  output match is 11/12 or 12/12, because the one known host-copy residue case may reappear.
+
+**Falsified if** the mechanism check is < 50%, the hit rate is below the off arm, or any request fails.
+
+### SW7 (in-flight C28, margin on vs off, v2 tree; required cost check)
+
+- **Pass:** output tok/s on vs off within -2% to +5%, and E2E p90 within +3%.
+- SW5 (in-flight, margin off) shows whether in-flight second turns miss. If they do, the margin can
+  gain in-flight throughput too.
+
+**Falsified (cost found) if** tok/s is < -2% or p90 is > +3%. Then the recommendation keeps the switch
+off for in-flight traffic.
