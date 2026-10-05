@@ -168,6 +168,15 @@ neighbours, run 70 min after the first sweep):
 Run-to-run spread is within 0.5% on output tok/s and 0.12 s on p90; the 10 s capacity is C20 in both runs and
 C24 misses 10 s by 0.94-0.95 s in both, so the capacity verdict does not depend on the run.
 
+**Fleet rule (what sets the GPU count).** The cliff is set by how many sessions' histories compete for the device
+pool, not by the running batch: capping running requests at 24 left the C28 collapse unchanged (section 5). Route
+sessions sticky to a replica and keep the sessions whose history must stay cached per GPU (active and idle) at or
+below the cache capacity: ~20 per RTX 5090 with mem-final for a 10 s p90 (24 for 15 s); add replicas rather than
+queueing past it. The sweep has no think time, so there every cached session is also in flight; real role-play
+sessions sit idle between turns while their histories still hold the pool, so cached-session capacity, not
+in-flight capacity, sets the GPU count, unless idle histories are allowed to fall out and be recomputed on their
+next turn. PB's fleet model (`gate pd-model`, WORKLOAD.md section 4; COMPUTE.md) quantifies that trade-off.
+
 **Deployable: `mem-final` at 0.955.** The server's own GPU memory stayed flat at 31,556-31,570 MiB over the
 whole sweep (2 s samples), under the rule's 31,642 MiB. Burst capacity 29 sessions (mem-base 17).
 
@@ -349,8 +358,19 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   remove the admission bug; it kept the scheduler under it for 3 x 5 min of overload, so it is a flag-only
   fallback, not a fix.
 
-> [!gap] Attribution pending: `mem-final-c24` (mem-final + `--max-running-requests 24`, no HiCache) at C20-C32
-> splits the overload hold between the admission cap and the host cache.
+- **The hold comes from the host cache, not the cap.** Control `mem-final-c24` (mem-final +
+  `--max-running-requests 24`, no HiCache, `sweep-mem-final-c24-20261005-162807-build-server-3-ac8796`):
+
+  | in flight | E2E p90 s | output tok/s | prefix-cache hit | mem-final (uncapped): p90 / tok/s / hit |
+  |---|---|---|---|---|
+  | 20 | 8.80 | 674 | 0.652 | 8.77 / 677 / 0.659 |
+  | 24 | 11.06 | 675 | 0.605 | 10.95 / 681 / 0.608 |
+  | 28 | 18.15 | 447 | 0.052 | 18.05 / 468 / 0.114 |
+
+  Split: the cap alone changes nothing (C20/C24 within replicate spread, the C28 collapse unchanged); the host
+  cache alone gives the C24 gain; with both, the C28/C32 hold is the host cache's, and the cap only keeps the
+  scheduler below the admission bug. A request waiting in the server queue still belongs to a live session whose
+  prefix competes for the device pool, so a running-batch cap does not protect the cache. Not kept.
 
 - Host memory: SGLang keeps 10 GiB of the cgroup headroom free beyond a pinned host pool
   (`HICACHE_HOST_MEMORY_RESERVE_BYTES` in `mem_cache/pool_host/base.py`), so the 8.74 GB SWA host pool failed
