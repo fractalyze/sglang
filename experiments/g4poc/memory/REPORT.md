@@ -42,6 +42,7 @@ and retry the start on that error (the study's queues do all three that the host
 | | mem-base | mem-final (memory levers) | + compute levers (`final-mem-c1-c2a`) | + fixed HiCache (`final-hc`) | + chunk 2048, LPM (**`final-hc-cp2048-lpm`**) |
 |---|---|---|---|---|---|
 | burst capacity (5K in / 300 out, no shared prefix) | 17 | 29 | - | - | - |
+| multi-turn in-flight capacity at E2E p90 <= 6 s (240 s sweep points) | 8 | 8 | 12 | - | **12 (647 tok/s, $0.300 per 1M)** |
 | multi-turn in-flight capacity at E2E p90 <= 10 s (240 s sweep points) | 12 | 20 | 24 | 32 (p90 9.55 s) | 36 (p90 9.02 s, p99 43.5 s) |
 | **operating point, sustained 30 min** | - | - | - | C28: p90 8.92 s | **C28: p90 8.59 s, p99 11.13 s, 0 failures** |
 | output tok/s at the operating point | 558 | 677 | 833 | 919 | **952** (+71%) |
@@ -476,6 +477,9 @@ exactness (12/12) passed on build-server-2. On build-server-3:
 | 36 | 6.17 | 9.02 | 43.51 | 953 | 30,927 | 0.779 | 18 | 0.204 |
 
 (`sweep-final-hc-cp2048-lpm-20261006-050516-build-server-3-e485ea`, 240 s points, no failed request, GPU <= 31,298 MiB.)
+For the 6 s SLO (`sweep-final-hc-cp2048-lpm-20261006-064035-build-server-3-f18b9e`): C8 p50 / p90 / p99 2.89 / 4.56 / 4.99 s,
+517 output tok/s; **C12 3.35 / 5.47 / 6.04 s, 647 output tok/s, $0.300 per 1M output** at $0.70/GPU-h (mem-base at
+6 s: C8, 468 tok/s, $0.415); no retraction or failure.
 p90 meets 10 s to C36, but past C28 the tail breaks (p99 11.3 -> 28.9 -> 43.5 s) for <= 3% more throughput.
 
 **30-minute soak at C28, the operating point** (`sweep-final-hc-cp2048-lpm-20261006-052216-build-server-3-d12892`):
