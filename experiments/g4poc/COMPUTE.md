@@ -343,6 +343,37 @@ Without HiCache the device pool (~160K full-layer tokens, ~27 histories) is the 
 12 GB host pool moves it past 40. At the 10 s SLO, capacity goes from 24 in flight (838 tok/s, $0.232/1M at
 $0.70) to 32 (952, $0.204).
 
+### PC4's bug-4 fix on the final (M128, 10-06 morning)
+
+**What it fixes.** Gemma-4's chat template renders a past assistant turn without the generation prompt's tail, so
+the next turn's prompt matches a few tokens short of the inserted one. With no margin, the sliding window behind
+that match point is incomplete and SGLang refuses the whole prefix (the ~0.66 think-mode hit ceiling, section 5).
+`SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN=128` keeps 128 SWA tokens below the window at tree inserts and holds window +
+margin through decode for a branch-inserted prompt (PC4; tree cbf56143b5 = a0491db764 + three commits on
+`jumanzii/g4poc-swa-margin`; default off). Ref `final-hc-cp2048-lpm-m128`. Prediction: `compute/PREREG.md` M128,
+vault `g4poc-m128f`.
+
+**(a) A-B-B-A at 28 in flight, bs2** (`runs/m128/abba-c28.json`, control drift 0.55%):
+
+| | final | final + margin 128 | gain (geomean of 2 pairs) |
+|---|---|---|---|
+| E2E p90 (s) | 8.58 / 8.53 | 8.36 / 8.41 | 1.020 (pairs 1.026, 1.015) |
+| E2E p99 (s) | 11.47 / 12.34 | 13.18 / 12.42 | 0.930 (+7.5%; pairs +15%, +0.7%) |
+| output tok/s | 955 / 953 | 971 / 963 | +1.3% |
+| prefix hit | 0.773 / 0.768 | 0.798 / 0.799 | |
+| retracted per 240 s window | 11 / 14 (~1.0%) | 25 / 34 (~2.3%) | 2.4x |
+| failed | 0 / 0 | 0 / 0 | |
+
+The gain is a third of PC4's on final-hc (+7.1% tok/s, hit 0.71 -> 0.80): chunk 2048 already took most of the hit
+headroom (0.77). Retractions rise 2.4x and set the p99; PC4 attributes them to the extra SWA tokens the margin holds
+through decode (the pool runs out mid-decode more often).
+
+**(b) Quality** (paired against the base anchor, bs2): GSM8K (full 1,319) 96.44% vs 96.13% (+0.30 pt, CI95
+[-0.23, +0.84], McNemar p 0.39), tool JSON 40/40: pass.
+
+**(c) 30-min soak at 28 in flight**: running (pass = 0 failed, <= 1.39% retracted, p99 <= 14.47 s: twice the
+final's bs3 soak retraction rate, 1.3x its p99).
+
 ## 4. Prefill/decode split model (`gate pd-measure`, `gate pd-model`)
 
 Rates are measured on one GPU. **Prefill:** uncached prompts of 5,120 and 10,240 tokens at 1-8 in flight.
