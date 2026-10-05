@@ -1,0 +1,6 @@
+/home/jooman/g4poc/runs/sweep-base-20261005-172224-build-server-2-5f7416
+/home/jooman/g4poc/runs/sweep-c3-lpm-20261005-174350-build-server-2-ed2477
+/home/jooman/g4poc/runs/sweep-c3-cp2048-20261005-180515-build-server-2-2adae5
+/home/jooman/g4poc/runs/sweep-c3-cp2048-20261005-182642-build-server-2-9a2ba2
+/home/jooman/g4poc/runs/sweep-c3-lpm-20261005-184808-build-server-2-ef87f5
+/home/jooman/g4poc/runs/sweep-base-20261005-190933-build-server-2-3f13d6
