@@ -10,7 +10,8 @@ point, they agree within ~1%.
 $0.70/GPU-hour, -41% against the FP8 base ($0.343)**, quality unchanged (bs3 soak, PC2; bs2's same-load sweep
 agrees: p90 8.57 s, p99 11.5 s, 955 tok/s). The 4-min sweeps' cheapest point, 32 in flight at $0.197-0.200, carries
 a retraction tail over 30 min (p99 37 s), so 28 is the operating point. Chat sessions with 30-60 s of think time cost
-~$0.45 per 1M output tokens (~70 sessions per GPU at 30 s, ≥ 118 at 60 s), and there the device prefix cache alone
+~$0.45-0.47 per 1M output tokens (~70 sessions per GPU at 30 s, held 30 min on both hosts at ~68; ≥ 118 at
+60 s), and there the device prefix cache alone
 (`final-mem-c1-c2a`) does as well as HiCache with a 12 GB host pool (section 5).
 
 ## 1. Baseline capacity curve (base, bs2)
@@ -466,6 +467,19 @@ arrival plan on both hosts:
 | final-mem-c1-c2a (bs3) | 60 s | 120 / 144 | 113 / **118** | 2.30 / 2.41 | 8.65 / **9.37 s** | 0.002 |
 | final-hc (bs3) | 60 s | 96 | 82 | 1.68 | 6.70 s | 0.04 |
 | final-hc (bs3) | 60 s | 120 / 144 | 113 / 119 | 2.31 / 2.43 | 9.73 / 10.43 s | 0.01 / 0.01 |
+
+**Held for 30 min on both hosts** (load `psoak30`: pthink30 with a 1,800 s window; device-only `final-mem-c1-c2a`
+at C72, the same plan on both hosts, 2.32 turns/s offered; bs2 `runs/sweep-final-mem-c1-c2a-20261006-071254-build-server-2-b5c7d2`,
+bs3 PC2's `sweep-final-mem-c1-c2a-20261006-065616-build-server-3-e7cc9b`):
+
+| host | live sessions | requests | failed | turns/s | p50 / p90 / p99 | out tok/s | $/1M @ $0.70 | retracted | GPU memory |
+|---|---|---|---|---|---|---|---|---|---|
+| bs2 | 67.5 | 4,182 | 0 | 2.32 | 4.77 / **8.96** / 12.45 s | 410 | 0.474 | 0 | flat 31,480 MiB (rule 31,599) |
+| bs3 | 67.8 | 4,179 | 0 | 2.32 | 4.92 / **9.26** / 12.90 s | 410 | 0.474 | 1 | |
+
+~68 live chat sessions per GPU at 30 s think hold a 10 s p90 for 30 min on both hosts, with no failures and no
+retraction tail (hit 0.007: every turn re-prefills). This plan offers 2.32 turns/s, a little under the ~2.45 of the
+edge points, so its cost per token is a little higher than theirs.
 
 **C sets the arrival rate, but the plan's random draw sets the offered load.** `gate sweep` seeds each C's plan
 separately (`sweep-<C>`). Replaying a plan's turn schedule with a constant E2E (`compute/plan_offer.py`) reproduces

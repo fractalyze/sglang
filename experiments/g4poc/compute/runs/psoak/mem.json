@@ -1,0 +1,10 @@
+{
+ "n_samples": 21133,
+ "peak_mib": 31480,
+ "plateau_mib": 31480,
+ "limit_mib": 31599,
+ "capacity_mib": 32111,
+ "plateau_ok": true,
+ "peak_ok": true,
+ "seconds_near_peak": 2083.779000043869
+}
