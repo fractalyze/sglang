@@ -417,6 +417,13 @@ It reproduces 0.28 at 48 sessions (measured 0.286) and 0.10 at 72 (0.076). On HS
 The prediction held (vault `g4poc-hs1b`). Throughput barely moves at this load (3-4 in flight): losing the cache
 costs latency and prefill work, not goodput, until the load nears the SLO edge.
 
+**HS1'** (the same arms at 64 sessions, registered before PC4's mirror finding). It predicted 12 GB holds,
+assuming ~77 histories (device plus host). It is **falsified**: both arms thrash (hit 0.11 vs 0.01, p90 7.77 vs
+8.52 s, 409 vs 406 tok/s; vault `g4poc-hs1`). The retention model predicts 0.14 for the 12 GB arm.
+
+With PC2's window-cut fix, **64 sessions at 30 s think meet the 10 s SLO** on final-hc (p90 7.8 s, 10 in flight).
+The 48-64 sessions read from the earlier slots points was a lower bound.
+
 - **No config lever.** The host pool's full/SWA split is near balance, and write_back is not safe (SWA tombstoning
   drops windows without a backup).
 - **Code levers (open).** ~1/3 of the SWA host writes are dead: decode-output leaves the template never reuses,
