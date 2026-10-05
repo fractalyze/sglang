@@ -41,7 +41,7 @@ cgroup >= 32 GB in deployment, or retry the start on that error (the study's que
 | output tok/s at that point | 558 | 677 | 833 | **942** |
 | $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | **0.206 (-41%)** |
 | multi-turn exactness at concurrency 1 (12 later turns) | - | - | 12/12 control | 12/12 identical to control |
-| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: see section 5 |
+| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: no regression shown (section 5) |
 
 All on build-server-3; capacity points replicated on the same host. final-hc's numbers are PC3's runs
 (`hicache/PREREG.md` HC4); its quality anchor and a 30-minute soak at C32 are in section 5. Server GPU memory
@@ -528,8 +528,19 @@ band of 1 (net 1 in each neutral pair). Two of the three are the mixed-language 
 (`s000794/0`, `s001101/0`); the third, `s000135/0`, is a real one: a Chinese role-play opening ("I'm Kelly...")
 answered in English, where mem-base and final-mem-c1-c2a answer in Chinese.
 
-> [!gap] Language attribution running: A/A of the final-hc role-play arm, a third numerics-neutral pair, and a
-> run with per-request load-back logging (PC3) decide between a config re-roll and a HiCache effect.
+Language adherence across three final-hc runs: 65, 67, 68/80 (mem-base 68;
+`rp-quality-final-hc-qr-20261005-185028`, `-194522`, and PC3's log-only-tree run `rp-quality-final-hc-qr-pfx-20261005-190542`,
+same numerics). One run falls outside the neutral band (3 flips, p = 0.25), two sit inside it (1 each). HiCache
+makes batched outputs vary run to run (A/A 66/80 token-identical), and the outlier flip did not reproduce
+(`s000135/0` answers in Chinese in the other two runs). Per-request load-back logs show no flipped item was caused by
+a load-back (the one flip in the logged run, `s000794/0`, was Chinese from its first token on a plain device-hit
+prefill; none of the 48 load-backs restored a tombstone-recovered copy). No regression shown; not excluded at n = 80.
+
+*Reproducibility with HiCache.* Batched outputs are not bit-reproducible run to run: which path serves a shared
+prefix (device hit, host load-back, or recompute) depends on the timing of asynchronous host copies, and the paths
+produce different FP8 bytes for the same prefix. At concurrency 1, load-back is exact (12/12 multi-turn turns
+token-identical to device hits). Without HiCache, a fixed config reproduces token for token (80/80). Customers who
+need reproducible outputs should know this.
 
 ## 6. Open items and harness caveats
 
