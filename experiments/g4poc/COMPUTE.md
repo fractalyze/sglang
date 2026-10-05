@@ -1,7 +1,13 @@
 # g4poc compute levers on one RTX 5090 (PB, build-server-2)
 
-Draft; filled in as levers are gated. Workload: `WORKLOAD.md`. Base: PA's r03 (`BASELINE-FP8.md`),
-gate ref `base`. All numbers here are bs2; do not compare them directly with bs3 (PC).
+Workload: `WORKLOAD.md`. Base: PA's r03 (`BASELINE-FP8.md`), gate ref `base`. The study's final config is
+`final-hc-cp2048-lpm` (section 3). All numbers here are bs2 unless marked bs3. Where both hosts ran the same
+point, they agree within ~1%.
+
+**Headline.** At a 10 s p90 SLO with requests always in flight, one RTX 5090 serves Gemma-4-26B-A4B FP8 for
+multi-turn role-play at 971-988 output tok/s. That is **$0.197-0.200 per 1M output tokens at $0.70/GPU-hour,
+-42% against the FP8 base ($0.343)**, quality unchanged. With real think time the cost per token rises,
+and host RAM per GPU decides by how much (section 5).
 
 ## 1. Baseline capacity curve (base, bs2)
 
@@ -204,7 +210,9 @@ needs PC3's multi-turn HiCache load-back exactness (12/12) on `final-hc-cp2048-l
 changes HiCache's SWA admission and chunked prompt nodes, the code path of the race fixed earlier. Vault:
 `g4poc-c4` (retired), `g4poc-c3a-hc`, `g4poc-c3b-hc`.
 
-## 3. The study's final stack on bs2: final-hc
+## 3. The study's final stack on bs2
+
+### The HiCache step: final-hc
 
 `final-hc` (gate ref in `hicache/refs.json`; SGLang a0491db764 on `jumanzii/g4poc-final-hicache`; 28G scope)
 combines four parts:
@@ -215,7 +223,8 @@ combines four parts:
 - HiCache: a 12 GB pinned host pool (write-through, kernel io, page_first) with PC3's two fixes (SWA admission
   pin, write-through fence).
 
-The coordinator confirmed it as the final on 10-05 after PC3's multi-turn load-back exactness (12/12).
+The coordinator confirmed it after PC3's multi-turn load-back exactness (12/12). With two scheduling flags on
+top it became the final config (below).
 
 **In-flight sweep, bs2** (`runs/sweep-final-hc-20261005-194341-build-server-2-8b113a`; 0 failed requests at
 every point):
@@ -245,10 +254,10 @@ GPU-hour are illustrative):
 | **final (cp2048-lpm), rep 2** | 10 s | 40 | 32 | 988 / 30,653 | 8.41 s | 0.79 | 0.113 / **0.197** / 0.281 / 0.422 | 0.0036 / 0.0063 / 0.0091 / 0.0136 |
 | final, rep 1 / rep 2 | 15 s | 40 / 40 | 32 / 32 | as at 10 s | | | | |
 
-- **Headline.** At a 10 s p90 SLO, one RTX 5090 serves 32 requests in flight at 952 output tok/s: **$0.204 per 1M
-  output tokens at $0.70/GPU-hour, against the base's $0.343 (-40.5%)**. bs3 gives -41%.
-- **Other SLOs.** At 6 s, -27% ($0.301 vs $0.415). At 15 s the most in flight is 40, but the cheapest point
-  stays at 32.
+- **final-hc.** At a 10 s p90 SLO it serves 32 requests in flight at 952 output tok/s: $0.204 per 1M output
+  tokens at $0.70/GPU-hour (-40.5% vs base; bs3 -41%). At 6 s it is -27% ($0.301 vs $0.415).
+- **The final config's 6 s point** is measured last (8 and 12 in flight, `compute/pthink.sh`); its replicates
+  start at 16, whose p90 is 6.17 s.
 
 **Memory, deployable rule** (`compute/mem_check.py`, 100 ms samples over the whole sweep). Peak and plateau are
 31,514 MiB against bs2's limit of 31,599 MiB (torch capacity 32,111 MiB - 512). The 85 MiB margin is enough, so
@@ -265,7 +274,9 @@ mem 0.955 is deployable on bs2 as on bs3. bs2 has no GPU co-tenant and no period
 The pair passes. PC2's bs3 anchor also passed (96.36 vs 96.21). Language adherence of role-play replies is
 still under investigation (PC).
 
-**The study's final config: `final-hc-cp2048-lpm`** (final-hc + `--chunked-prefill-size 2048 --schedule-policy
+### The final config: final-hc-cp2048-lpm
+
+**`final-hc-cp2048-lpm`** (final-hc + `--chunked-prefill-size 2048 --schedule-policy
 lpm`; promoted 10-05 ~23:55 after the confirming A-B-B-A, the KL check and HiCache load-back exactness 12/12).
 It was replicated twice on bs2 (`runs/sweep-final-hc-cp2048-lpm-20261006-012036-*` and `runs/sweep-final-hc-cp2048-lpm-20261006-015225-build-server-2-813fa1`),
 0 failed requests:
@@ -334,13 +345,17 @@ colocated sweep's point at the SLO for the workload (prompt, hit rate, output):
 
 ## 5. Fleet model: sessions with think time (`compute/fleet_model.py`)
 
-**The customer message.** The in-flight sweeps have no think time; real chat sessions idle between turns, and an
-idle session's history still has to live somewhere or be recomputed. The study's zero-think headline (final-hc,
-32 in flight, $0.204 per 1M output tokens at $0.70) is therefore a floor. **At 30 s of mean think time the same GPU
-costs $0.48-0.58 per 1M output tokens, 2.4-2.85x the floor**, and how much of that gap closes depends on where idle
-histories live.
+**The customer message.** The in-flight sweeps have no think time. Real chat sessions idle between turns, and an
+idle session's history still has to live somewhere or be recomputed. The zero-think headline ($0.197-0.200 per
+1M output tokens at $0.70) is therefore a floor.
 
-**Measured** (PC2, bs3, load `think30`; 0 failures). Each slot is a live session with lognormal think time (mean
+**At 30 s of mean think time with the tested 12 GB host pool, the same GPU costs ~$0.37-0.48 per 1M output
+tokens, 1.9-2.4x the floor.** The range is the model's ~87 sessions per GPU at $0.371 down to the measured 64
+sessions at p90 7.8 s and 409 tok/s, $0.475. How much of the gap closes depends on host RAM per GPU (below).
+
+**Measured, first pass** (PC2, bs3, load `think30`; 0 failures). These ran **before the slots window-cut fix**
+(PC2's dff92efc2b), which made every point pessimistic: each slot fired an uncached turn 0 in the window's last
+think period. Each slot is a live session with lognormal think time (mean
 30 s), and a closed population: a new session starts when one ends, and its turn 0 has no think time, so the
 mean think per turn is 30 x (1 - 1/5.15) = 24 s.
 
@@ -354,8 +369,9 @@ mean think per turn is 30 x (1 - 1/5.15) = 24 s.
 | final-mem-c1-c2a | 72 | 14.3 | 435 | 11.12 | 0.004 |
 | final-mem-c1-c2a | 96 | 27.2 | 552 | 15.07 | 0.002 |
 
-At a 10 s p90 SLO a GPU holds **48 sessions measured (64 interpolated to p90 = 10 s)**, with or without HiCache.
-For 2,200 sessions that is **46 GPUs at $0.582/1M output (35 GPUs at $0.484 interpolated)**.
+On these pre-fix points a GPU holds 48 sessions at a 10 s p90 SLO (64 interpolated), with or without HiCache: a
+lower bound. After the fix, 64 sessions meet it at p90 7.8 s (HS1', below). PC2's poisson think-time runs (bs3)
+and `compute/pthink.sh` (bs2) give the corrected capacity.
 
 **Why HiCache barely helps at 30 s think: storage.** PC4's code read (SGLang a0491db764): under write_through the
 host pool is an inclusive mirror of the device (host eviction only removes nodes already evicted from the
@@ -460,9 +476,10 @@ The 48-64 sessions read from the earlier slots points was a lower bound.
 - **Scope.** Larger pools need a memory scope above the 28G host-safety cap, the user's decision. A customer
   server with 64-128 GB of host RAM per GPU would sit on the right side of it.
 
-## 6. Harness fixes found on the way (2026-10-05)
+## 6. Harness fixes found on the way (2026-10-05/06)
 
-Both broke the gate's first use on this SGLang commit (91132098df) and are fixed before any gated number.
+The first two broke the gate's first use on this SGLang commit (91132098df) and were fixed before any gated
+number. The others were found later; none changes a reported in-flight number.
 
 - **Input logprobs ran out of GPU memory** (calibrate, 12:33 KST). The teacher-forced fidelity pass puts ~15 short
   prompts in one prefill batch; their ~2,900 logprob rows were scored in SGLang's default 2,048-row chunks, and one
@@ -484,4 +501,11 @@ Both broke the gate's first use on this SGLang commit (91132098df) and are fixed
 - **HiCache starts can fail transiently.** SGLang's HiCache host-memory check fails 2 of 7 final-hc starts on
   bs3 in a 28G scope ("Not enough host memory available"), on transient charges in the scope. `Server.__enter__`
   retries exactly that failure, up to 3 tries, and keeps each failed log (`server.log.start-tryN`).
+- **Think-time slots started a fresh session after a window cut** (PC2's fix, dff92efc2b, applied here before
+  HS1''). With think time, a session whose next turn fell after the window handed its slot to a new session at
+  once, so every slot fired an uncached turn 0 in the window's last think period. Every slots think-time point
+  measured before the fix is pessimistic. Zero-think in-flight loads never take that path.
+- **A failed request's cause was not kept.** Run summaries counted failures only. Each record now carries
+  `error_type` (the exception class, `abort` or `abandoned`), and sweep and smoke summaries keep the first 20
+  failed records with their error text and `finish_reason`.
 
