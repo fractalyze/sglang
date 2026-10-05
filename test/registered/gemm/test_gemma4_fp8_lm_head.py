@@ -86,7 +86,9 @@ class TestGemma4Fp8LmHead(unittest.TestCase):
         Gemma4ForConditionalGeneration._add_fp8_lm_head(model)
         self.assertIsNotNone(model.fp8_lm_head)
         # The copy reads the embedding's own storage: no second BF16 table.
-        self.assertEqual(model.fp8_lm_head.bf16_weight.data_ptr(), embed.weight.data_ptr())
+        self.assertEqual(
+            model.fp8_lm_head.bf16_weight.data_ptr(), embed.weight.data_ptr()
+        )
         self.assertEqual(embed.weight.dtype, torch.bfloat16)
         self.assertTrue(torch.equal(embed.weight.data, self.w))
         # An untied head has no single table to copy, so the switch leaves it alone.
@@ -114,6 +116,87 @@ class TestGemma4Fp8LmHead(unittest.TestCase):
 
         self.assertTrue(
             should_apply_lm_head_quant_method(self.head, self.head.quant_method)
+        )
+
+
+@unittest.skipIf(not torch.cuda.is_available(), "requires a CUDA GPU")
+class TestGemma4Fp8VocabTable(unittest.TestCase):
+    """SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE: one FP8 table replaces the tied BF16
+    embedding and head; both sides stay within E4M3's rounding bound."""
+
+    _EMBED_SCALE = _HIDDEN**0.5
+
+    @classmethod
+    def setUpClass(cls):
+        from sglang.srt.models.gemma4_causal import _Fp8VocabTable
+
+        torch.manual_seed(0)
+        cls.embed = torch.nn.Embedding(
+            _VOCAB, _HIDDEN, device="cuda", dtype=torch.bfloat16
+        )
+        cls.embed.weight.data.normal_(0.0, 0.02)
+        cls.w = cls.embed.weight.data
+        cls.table = _Fp8VocabTable(cls.embed, cls._EMBED_SCALE)
+
+    def test_head_is_within_e4m3_bound_at_every_batch_width(self):
+        # Widths past the tile's max M run in row chunks; the bound must hold across chunk edges.
+        for m in (1, _FP8_MAX_M, _FP8_MAX_M + 1, 2 * _FP8_MAX_M + 5):
+            with self.subTest(m=m):
+                x = torch.randn(m, _HIDDEN, dtype=torch.bfloat16, device="cuda")
+                fp8 = self.table.quant_method.apply(self.table, x).float()
+                bf16 = torch.matmul(x, self.w.T).float()
+                self.assertEqual(fp8.shape, (m, _VOCAB))
+                bound = _E4M3_REL * (x.float().abs() @ self.w.float().abs().t())
+                excess = (fp8 - bf16).abs() - (bound + _bf16_ulp(bf16) + _bf16_ulp(fp8))
+                self.assertLessEqual(excess.max().item(), 0.0)
+
+    def test_lookup_is_within_e4m3_bound_of_the_scaled_bf16_lookup(self):
+        ids = torch.tensor([0, 1, 7, 4096, _VOCAB - 1, 7], device="cuda")
+        out = self.table(ids)
+        self.assertEqual(out.dtype, torch.bfloat16)
+        got = out.float()
+        ref = (self.embed(ids) * self._EMBED_SCALE).float()
+        bound = _E4M3_REL * (self.w[ids].float().abs() * self._EMBED_SCALE)
+        excess = (got - ref).abs() - (bound + _bf16_ulp(ref) + _bf16_ulp(got))
+        self.assertLessEqual(excess.max().item(), 0.0)
+        self.assertTrue(torch.equal(got[2], got[5]))
+
+    def test_swap_drops_the_bf16_table_and_refuses_an_untied_head(self):
+        from sglang.srt.layers.logits_processor import should_apply_lm_head_quant_method
+        from sglang.srt.models.gemma4_causal import Gemma4ForCausalLM
+
+        embed = torch.nn.Embedding(16384, _HIDDEN, device="cuda", dtype=torch.bfloat16)
+        embed.embed_scale = self._EMBED_SCALE
+        stub = types.SimpleNamespace(
+            model=types.SimpleNamespace(embed_tokens=embed), lm_head=embed
+        )
+        with self.assertRaises(ValueError):
+            # 16384 x 2816 has no tuned FP8 vocab-head tile.
+            Gemma4ForCausalLM._use_fp8_vocab_table(stub)
+
+        full = torch.nn.Embedding(_VOCAB, _HIDDEN, device="cuda", dtype=torch.bfloat16)
+        full.embed_scale = self._EMBED_SCALE
+        untied = types.SimpleNamespace(
+            model=types.SimpleNamespace(embed_tokens=full), lm_head=None
+        )
+        with self.assertRaises(ValueError):
+            Gemma4ForCausalLM._use_fp8_vocab_table(untied)
+
+        tied = types.SimpleNamespace(
+            model=types.SimpleNamespace(embed_tokens=full), lm_head=full
+        )
+        Gemma4ForCausalLM._use_fp8_vocab_table(tied)
+        self.assertIs(tied.lm_head, tied.model.embed_tokens)
+        self.assertEqual(tied.lm_head.weight.dtype, torch.float8_e4m3fn)
+        tensors = [
+            v for v in vars(tied.lm_head).values() if isinstance(v, torch.Tensor)
+        ]
+        self.assertEqual(
+            sorted(str(t.dtype) for t in tensors),
+            ["torch.float32", "torch.float8_e4m3fn"],
+        )
+        self.assertTrue(
+            should_apply_lm_head_quant_method(tied.lm_head, tied.lm_head.quant_method)
         )
 
 

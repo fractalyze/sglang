@@ -168,6 +168,10 @@ def fits_fp8_vocab_head(m: int, n: int, k: int) -> bool:
     return cfg is not None and m <= cfg.max_m
 
 
+def fp8_vocab_head_max_m(n: int, k: int) -> int:
+    return _FP8_HEAD_TUNED_SHAPES[(n, k)].max_m
+
+
 def triton_small_m_fp8_vocab_head(
     x: torch.Tensor, weight: torch.Tensor, scale: torch.Tensor
 ) -> torch.Tensor:

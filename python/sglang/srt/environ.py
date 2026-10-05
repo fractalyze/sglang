@@ -1424,6 +1424,10 @@ class Envs:
     # verify up to B=8); wider batches keep the BF16 embedding. Off by default:
     # it changes target numerics and adds the 740 MB copy.
     SGLANG_OPT_GEMMA4_FP8_LM_HEAD = EnvBool(False)
+    # Replace the Gemma-4 target's tied BF16 embedding/LM head (262144 x 2816)
+    # with one FP8 E4M3 table (per-row scales) for both the lookup and the head,
+    # freeing ~0.69 GB for the KV pool. Off by default: it changes numerics.
+    SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE = EnvBool(False)
     SGLANG_NGRAM_FORCE_GREEDY_VERIFY = EnvBool(False)
 
     # ===================================================================
