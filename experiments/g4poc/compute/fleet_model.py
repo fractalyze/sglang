@@ -265,6 +265,69 @@ def measured_capacity(specs: Sequence[str], slo_s: float, sessions: int) -> List
     return out
 
 
+# ---------------------------------------------------------------------------
+# Retention model (PC4's SW1, 10-06): under write_through a host pool keeps an idle session's cache for a roughly
+# fixed time, retention = host GB / aggregate write rate, the sliding-window share binding first. A returning turn
+# hits only if its idle gap (think + E2E) is shorter than the retention. Measured at 12 GB, think30: SWA retention
+# ~25 s at 48 sessions and ~12 s at 72 (the misses' re-prefills add writes, so retention falls faster than 1/n).
+# ---------------------------------------------------------------------------
+THINK_MEDIAN_S, THINK_MEAN_S, THINK_CLIP_S = 15.0, 17.9, (2.0, 120.0)  # the session file's think time (WORKLOAD.md)
+THINK_SIGMA = math.sqrt(2 * math.log(THINK_MEAN_S / THINK_MEDIAN_S))
+
+
+def think_cdf(t_s: float, scale: float) -> float:
+    """P(think x scale <= t) for the session file's lognormal think time, clipped before scaling."""
+    y = t_s / scale
+    if y < THINK_CLIP_S[0]:
+        return 0.0
+    if y >= THINK_CLIP_S[1]:
+        return 1.0
+    return 0.5 * (1 + math.erf((math.log(y) - math.log(THINK_MEDIAN_S)) / (THINK_SIGMA * math.sqrt(2))))
+
+
+def write_gb_per_turn(sessions: float, mean_think_s: float, e2e_s: float, retention_s: float, host_gb: float) -> float:
+    """Calibrates the per-turn host write from a measured retention: retention = host / (sessions x w / interval)."""
+    return host_gb * (mean_think_s + e2e_s) / (sessions * retention_s)
+
+
+def retention_s(sessions: float, mean_think_s: float, e2e_s: float, host_gb: float, w_gb: float) -> float:
+    return host_gb * (mean_think_s + e2e_s) / (sessions * w_gb)
+
+
+def retention_capacity(cached: Dict, nocache: Dict, host_gb: float, think_scale: float, slo_s: float,
+                       w_gb: float, turns_per_session: float = 5.15, max_sessions: int = 2000) -> Optional[Dict]:
+    """The most sessions per GPU meeting the SLO when the hit rate follows the retention model.
+
+    The GPU's turn rate at the SLO interpolates by hit rate between its cached SLO point (final stack, hit h_max)
+    and its no-cache SLO point (every turn re-prefills); a session count n is served if n / (think + E2E) does not
+    exceed that rate. First turns (1 in turns_per_session) have no think time and never hit.
+    """
+    fastest = lambda pts: max((q for q in pts if q["e2e_p90_s"] <= slo_s), key=lambda q: q["turns_per_s"], default=None)
+    c, b = fastest(points(cached)), fastest(points(nocache))
+    if c is None or b is None:
+        return None
+    h_max = c["hit"]
+    mean_think = think_scale * THINK_MEAN_S * (1 - 1 / turns_per_session)
+    best_n = None
+    for n in range(1, max_sessions + 1):
+        e = c["e2e_mean_s"]
+        for _ in range(20):  # the hit rate and E2E depend on each other: iterate to a fixed point
+            r_ret = retention_s(n, mean_think, e, host_gb, w_gb)
+            hit = h_max * think_cdf(max(r_ret - e, 0.0), think_scale)
+            f = hit / h_max if h_max else 0.0
+            rate = 1 / (f / c["turns_per_s"] + (1 - f) / b["turns_per_s"])
+            e_new = f * c["e2e_mean_s"] + (1 - f) * b["e2e_mean_s"]
+            if abs(e_new - e) < 1e-3:
+                break
+            e = e_new
+        if n / (mean_think + e) <= rate:
+            best_n = {"sessions_per_gpu": n, "hit": hit, "retention_s": r_ret, "turns_per_s": n / (mean_think + e),
+                      "e2e_mean_s": e, "mean_think_s": mean_think, "output_tokens": c["output_tokens"]}
+        else:
+            break
+    return best_n
+
+
 def _fmt(r: Optional[Dict]) -> str:
     if r is None:
         return "        n/a        "
@@ -282,6 +345,8 @@ def main() -> None:
     p.add_argument("--measured", action="append", default=[],
                    help="label:sessions:mean_think_s:turns_per_session:out_tok_s:p90_s:hit[:host_gb] (repeatable)")
     p.add_argument("--host-gb", default=",".join(f"{g:g}" for g in HOST_GB), help="host pool per GPU (--hicache-size)")
+    p.add_argument("--retention-cal", default="48:30:25:3.5:12",
+                   help="sessions:mean_think_s:retention_s:e2e_s:host_gb measured (PC4 SW1: SWA retention 25 s at 48)")
     p.add_argument("--session-point", action="append", default=[],
                    help="config:mean_think_s:turns_per_session:sessions:out_tok_s:p90_s:hit (repeatable)")
     p.add_argument("--out")
@@ -295,6 +360,14 @@ def main() -> None:
     res["validation"] = {s: validate(args.measured, pols, float(s)) for s in args.slo.split(",")}
     res["measured_capacity"] = {s: measured_capacity(args.session_point, float(s), args.sessions)
                                 for s in args.slo.split(",")}
+    if args.nocache and args.hicache:
+        n, t, r, e, h = (float(x) for x in args.retention_cal.split(":"))
+        w = write_gb_per_turn(n, t * (1 - 1 / 5.15), e, r, h)
+        res["retention"] = {"w_gb_per_turn": w, "calibration": args.retention_cal, "rows": [
+            {"host_gb": gb, "think_s": t_mean, "slo_s": float(s), **(retention_capacity(
+                load(args.hicache), load(args.nocache), gb, t_mean / THINK_MEAN_S, float(s), w) or {})}
+            for s in args.slo.split(",") for gb in [float(x) for x in args.host_gb.split(",")]
+            for t_mean in (10.0, 20.0, 30.0, 60.0, 120.0)]}
     if args.out:
         with open(args.out, "w") as f:
             json.dump(res, f, indent=1)
@@ -317,6 +390,15 @@ def main() -> None:
                     print(f"  measured {mc['config']} T{mc['think_s']:g} (eff {mc['think_eff_s']:.1f} s) {name}: "
                           f"{q['sessions_per_gpu']:.1f} sessions/GPU, {q['out_tok_s_per_gpu']:.0f} tok/s, "
                           f"{q['gpus_for_sessions']} GPUs, ${q['usd_per_mtok_output']['0.70']:.3f}/1M out @0.70")
+        if "retention" in res:
+            print(f"  retention model (w = {res['retention']['w_gb_per_turn']:.3f} GB/turn): host GB, mean think "
+                  "-> sessions/GPU, hit, retention, GPUs for 2,200, $/1M out @0.70")
+            for z in res["retention"]["rows"]:
+                if z["slo_s"] == float(s) and "sessions_per_gpu" in z:
+                    tok_s = z["turns_per_s"] * z["output_tokens"]
+                    print(f"    {z['host_gb']:5g} GB, T{z['think_s']:g}: {z['sessions_per_gpu']:4d} sessions, hit "
+                          f"{z['hit']:.2f}, R {z['retention_s']:5.1f} s, {math.ceil(args.sessions / z['sessions_per_gpu'])} GPUs, "
+                          f"${0.70 / (tok_s * 3600) * 1e6:.3f}")
         for v in res["validation"][s]:
             print("  measured:", json.dumps({k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.items()}))
 

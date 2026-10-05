@@ -93,6 +93,27 @@ class FleetModelTest(absltest.TestCase):
         self.assertAlmostEqual(row["conservative"]["usd_per_mtok_output"]["0.70"], 0.70 / (334 * 3600) * 1e6)
         self.assertAlmostEqual(row["think_eff_s"], 30 * (1 - 1 / 5.15))
 
+    def test_think_cdf(self):
+        self.assertAlmostEqual(fm.think_cdf(15.0, 1.0), 0.5)  # the median
+        self.assertEqual(fm.think_cdf(1.0, 1.0), 0.0)  # below the 2 s clip
+        self.assertEqual(fm.think_cdf(500.0, 2.0), 1.0)  # past the 120 s clip, scaled
+        self.assertLess(fm.think_cdf(20.0, 2.0), fm.think_cdf(20.0, 1.0))
+
+    def test_retention_calibration_round_trips(self):
+        w = fm.write_gb_per_turn(48, 24.0, 3.5, 25.0, 12.0)
+        self.assertAlmostEqual(fm.retention_s(48, 24.0, 3.5, 12.0, w), 25.0)
+        self.assertAlmostEqual(fm.retention_s(96, 24.0, 3.5, 12.0, w), 12.5)
+
+    def test_retention_capacity_between_drop_idle_and_cached(self):
+        # Cached SLO point: 3 turns/s at 8 s mean E2E (hit 0.74); no-cache: 1.25 turns/s at 6.4 s.
+        big = fm.retention_capacity(HICACHE, NOCACHE, host_gb=1e6, think_scale=30 / 17.9, slo_s=10.0, w_gb=0.3)
+        small = fm.retention_capacity(HICACHE, NOCACHE, host_gb=1e-3, think_scale=30 / 17.9, slo_s=10.0, w_gb=0.3)
+        t = 30 * (1 - 1 / 5.15)
+        self.assertAlmostEqual(big["hit"], 0.74, places=2)  # huge host: every returning turn hits
+        self.assertEqual(big["sessions_per_gpu"], int(3.0 * (t + 8.0)))
+        self.assertAlmostEqual(small["hit"], 0.0)  # no host: every turn re-prefills
+        self.assertEqual(small["sessions_per_gpu"], int(1.25 * (t + 6.4)))
+
     def test_failed_or_empty_points_are_dropped(self):
         sweep = _sweep([(8, 2.0, 4.0, 5.0, 0.7)])
         sweep["points"].append({"summary": {"requests_per_s": 0.0, "n_failed": 5}})
