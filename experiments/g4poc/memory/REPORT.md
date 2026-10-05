@@ -156,8 +156,59 @@ Cost-optimal point per SLO (the max-goodput point that meets it), $/1M output to
 At the 10 s SLO that is +21% output tok/s and -18% $/1M output against mem-base on the same host (C12, 558
 tok/s, $0.348 at $0.70).
 
+Replicate on the same host (`sweep-mem-final-20261005-151211-build-server-3-ceaa42`, the capacity point and its
+neighbours, run 70 min after the first sweep):
+
+| in flight | E2E p90 s (first) | output tok/s (first) | prefix-cache hit (first) | retractions |
+|---|---|---|---|---|
+| 16 | 7.23 (7.24) | 655 (653) | 0.704 (0.704) | 0 |
+| 20 | 8.89 (8.77) | 674 (677) | 0.653 (0.659) | 0 |
+| 24 | 10.94 (10.95) | 679 (681) | 0.604 (0.608) | 1 |
+
+Run-to-run spread is within 0.5% on output tok/s and 0.12 s on p90; the 10 s capacity is C20 in both runs and
+C24 misses 10 s by 0.94-0.95 s in both, so the capacity verdict does not depend on the run.
+
+**Fleet rule (what sets the GPU count).** The cliff is set by how many sessions' histories compete for the device
+pool, not by the running batch: capping running requests at 24 left the C28 collapse unchanged (section 5). Route
+sessions sticky to a replica and keep the sessions whose history must stay cached per GPU (active and idle) at or
+below the cache capacity: ~20 per RTX 5090 with mem-final for a 10 s p90 (24 for 15 s); add replicas rather than
+queueing past it. The sweep has no think time, so there every cached session is also in flight; real role-play
+sessions sit idle between turns while their histories still hold the pool, so cached-session capacity, not
+in-flight capacity, sets the GPU count, unless idle histories are allowed to fall out and be recomputed on their
+next turn. PB's fleet model (`gate pd-model`, WORKLOAD.md section 4; COMPUTE.md) quantifies that trade-off.
+
 **Deployable: `mem-final` at 0.955.** The server's own GPU memory stayed flat at 31,556-31,570 MiB over the
 whole sweep (2 s samples), under the rule's 31,642 MiB. Burst capacity 29 sessions (mem-base 17).
+
+**Quality anchor, mem-final vs mem-base** (both arms at a 0.85 static fraction; role-play arms with 1,024-token
+prefill chunks so the input-logprob requests fit; pool size does not change the arithmetic):
+
+| guard | mem-base | mem-final | verdict |
+|---|---|---|---|
+| GSM8K, all 1,319 | 96.21 | 95.91 | pass: tolerance 1.0 pt; paired, 8 items right only in base and 4 only in final, exact McNemar p = 0.39 |
+| tool-JSON | 40/40 | 40/40 | pass |
+| role-play reference NLL | 0.18784 | 0.18985 nats/token (+0.0020) | pass: budget 0.02 |
+| role-play language adherence | 68/80 | 67/80 | pass under the paired rule below (1 flip, inside the band) |
+
+Runs: `quality-mem-qa-{base-20261005-144330,final-20261005-144912}`, `rp-quality-mem-qr-{base-20261005-145406,
+final-20261005-145702}` (all `-build-server-3-*`, records in `runs/`).
+
+*Language-adherence rule (changed for this study, 2026-10-05).* The guard used to fail on any drop in the count of
+replies in the prompt's language. A paired per-item check replaces it: the candidate fails if more items flip from
+adherent to non-adherent than a numerics-neutral config change flips. The reason: at a fixed config the role-play
+run is token-identical run to run, but any config change re-rolls the batched outputs, numerics-neutral or not, so
+the count moves with the config, not the arithmetic. Measured:
+
+| pair | outputs token-identical | adherence flips |
+|---|---|---|
+| A/A, same config, run twice (mem-qr-base; mem-qr-final) | 80/80; 80/80 | 0; 0 |
+| numerics-neutral change: mem-base vs mem-q-ctl (pool sizes, RoPE table length, L5 on, L8 off) | 4/80 | 1 |
+| numerics-neutral change: mem-base at swa ratio 0.3 vs 0.25 (`mem-qr-base-r025`) | 3/80 | 1 |
+| mem-final vs mem-base | 4/80 | 1 |
+
+All three non-A/A pairs flip the same item, `s000794/0`, a request to translate a Japanese line into Chinese. Every
+arm answers in Chinese; replies that quote the Japanese words in a gloss are tagged `ja` (adherent), plain Chinese
+translations `zh`. The band is 1/80, and mem-final sits inside it.
 
 *Memory under the real workload, and a co-tenant on the GPU.* Single 2 s samples ~515 MiB above the plateau
 (stack1 sweep 32,113 MiB at 12:33:09, mem-final step-0 32,087 at 14:03:10, mem-final sweep 32,079 at 14:23:09)
@@ -194,9 +245,11 @@ Python unified tree core only (no SWA host pool, no EAGLE).
   prompts (`exact-mem-stack2-poison-*` vs `exact-mem-stack1b-*`).
 - Tests: `TestSWASlidWindowRelease` in `test/registered/unit/mem_cache/test_unified_radix_cache_unittest.py`
   (split and release accounting, a window shared by two holders, frontier before the segment start).
-- Batched: at concurrency 16 on 16 role-play prompts, 7/16 outputs match stack1 token for token, against an
-  A/A (stack1 vs stack1) of 6/16 with mismatches from token 1 on; all 16 poisoned outputs are normal text.
-  This engine is not batch-invariant, so exactness is checkable only at concurrency 1.
+- Batched: at concurrency 16 on 16 role-play prompts, 7/16 outputs match stack1 token for token, against
+  6/16 for two runs of stack1 itself (`exact-mem-stack1b-rp-*`), with mismatches from token 1 on; all 16 poisoned
+  outputs are normal text. In this tool the batch composition varied between the two runs, so exactness is
+  checkable only at concurrency 1 (the role-play quality run, by contrast, reproduced token for token at a
+  fixed config; see the language-adherence rule in section 3).
 - **Real workload: not kept.**
   `sweep-mem-stack2-20261005-132151-build-server-3-cbfe29`:
 
@@ -261,7 +314,15 @@ Code reading of this tree (paths under `python/sglang/srt/`):
 - Host RAM at 3x stack3's device pool would be ~18 GB pinned (5.5 GB full + 12.5 GB SWA), above the 24G
   scope together with the server's ~7 GB RSS; the step-2 run uses `--hicache-size 12`.
 
-**Step 2 result: not kept; a large gain at C24, then a scheduler crash at C28.**
+**Step 2 result: not kept; a large gain at C24, then a scheduler crash at C28, and load-back is not exact.**
+
+> [!warning] Every HiCache throughput number in this section (mem-hc C24, the running-cap probe, the $ per 1M
+> output derived from them) is **numerics unverified: load-back is inexact at concurrency 1.** In a greedy
+> multi-turn check (4 sessions x 3 turns, later turns loading their prefix back from host, PC3), 7 of 8 later
+> turns diverged within 0-15 tokens with identical cached-token counts, and the drift is semantic (a German
+> character answers in English, steps out of character); first-turn fresh prefills are identical. Degraded
+> continuations can change output lengths, so the goodput below may not be comparable to the device-only arm.
+> Attribution (admission fix vs plain HiCache, io backend / layout, this tree vs upstream) is open.
 `mem-hc` = mem-final + `--enable-hierarchical-cache --hicache-size 12 --hicache-write-policy write_through
 --hicache-io-backend kernel --hicache-mem-layout page_first` (`sweep-mem-hc-20261005-145932-build-server-3-803de2`).
 Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x each device pool.
@@ -274,7 +335,8 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
 | mem-hc C28 | - | - | - | - | - | scheduler crash; every request failed |
 
 - At C24 the host pool keeps prefixes the device pool had to evict: hit rate 0.61 -> 0.74, +18% output tok/s,
-  p90 under 10 s. The 10 s capacity would be 24 (mem-final 20), at $0.243 vs $0.287 per 1M output at $0.70/GPU-h.
+  p90 under 10 s. The 10 s capacity would be 24 (mem-final 20), at $0.243 vs $0.287 per 1M output at $0.70/GPU-h
+  (numerics unverified, see the warning above).
 - At C28 the scheduler admitted a prefill the SWA pool could not hold: `alloc_token_slots` raised
   `Out of memory ... Try to allocate 2318 tokens. Available swa: 2270 (available_size=2270 +
   component_evictable_size_=0)`, with 7,949 full tokens free. Without HiCache the same overload retracts
@@ -282,6 +344,35 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   with `swa_host_hit_length`, then `init_load_back`) under-reserves sliding slots when a host load-back or a
   chunked continuation is in the batch. That is an SGLang bug, not a configuration limit; HiCache is not
   deployable until it is fixed (open items).
+- **With the running batch capped at 24** (`mem-hc-c24` = mem-hc + `--max-running-requests 24`,
+  `sweep-mem-hc-c24-20261005-154401-build-server-3-dd6e45`) the scheduler did not crash and the overload collapse
+  is gone; the excess requests wait in the queue:
+
+  | in flight | E2E p50 s | E2E p90 s | output tok/s | prefix-cache hit | queue mean | retractions |
+  |---|---|---|---|---|---|---|
+  | 24 | 5.94 | 9.15 | 796 | 0.741 | 0.1 | 1 |
+  | 28 | 6.42 | 10.16 | 782 | 0.714 | 4.0 | 0 |
+  | 32 | 8.01 | 10.87 | 804 | 0.714 | 8.0 | 0 |
+
+  Numerics unverified (warning above). Goodput stays at ~800 tok/s from C24 to C32 (mem-final: 468-476 at C28/C32 with p90 18-19 s). The cap does not
+  remove the admission bug; it kept the scheduler under it for 3 x 5 min of overload, so it is a flag-only
+  fallback, not a fix.
+
+- **The hold comes from the host cache, not the cap.** Control `mem-final-c24` (mem-final +
+  `--max-running-requests 24`, no HiCache, `sweep-mem-final-c24-20261005-162807-build-server-3-ac8796`):
+
+  | in flight | E2E p90 s | output tok/s | prefix-cache hit | mem-final (uncapped): p90 / tok/s / hit |
+  |---|---|---|---|---|
+  | 20 | 8.80 | 674 | 0.652 | 8.77 / 677 / 0.659 |
+  | 24 | 11.06 | 675 | 0.605 | 10.95 / 681 / 0.608 |
+  | 28 | 18.15 | 447 | 0.052 | 18.05 / 468 / 0.114 |
+  | 32 | 19.06 | 463 | 0.002 | 19.23 / 476 / 0.002 |
+
+  Split: the cap alone changes nothing (C20/C24 within replicate spread, the C28 collapse unchanged); the host
+  cache alone gives the C24 gain; with both, the C28/C32 hold is the host cache's, and the cap only keeps the
+  scheduler below the admission bug. A request waiting in the server queue still belongs to a live session whose
+  prefix competes for the device pool, so a running-batch cap does not protect the cache. Not kept.
+
 - Host memory: SGLang keeps 10 GiB of the cgroup headroom free beyond a pinned host pool
   (`HICACHE_HOST_MEMORY_RESERVE_BYTES` in `mem_cache/pool_host/base.py`), so the 8.74 GB SWA host pool failed
   its check in the 24G scope (16.2 GiB headroom - 10 GiB < 8.74 GB) although the server needed less. The run
@@ -295,16 +386,26 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   reply. Real chat clients end at the same point: the generation prompt's empty thought channel after
   `<|turn>model\n` never appears in a past turn (section 4). The measured hit rates therefore hold for chat
   clients; only token-level clients that resend the exact generated tokens would match further.
-- **Batched outputs are not reproducible on this engine** (A/A 6/16 identical at concurrency 16): exactness
-  checks must run at concurrency 1, and batched numerics need logprob/KL against an A/A bar.
-- **HiCache with a fixed SWA admission charge** is the largest remaining cost lever measured here (+18% output
-  tok/s at C24, 10 s capacity 20 -> 24). It needs the prefill admission to reserve the sliding slots a host
+- **Quality anchors never exercise cache reuse.** GSM8K, tool-JSON and the role-play guard are single-turn or
+  fresh-prefill, so they cannot catch a lever that corrupts reused KV (HiCache load-back did, see section 5). Any
+  cache or offload lever needs a multi-turn exactness check: greedy, concurrency 1, several sessions x turns,
+  later turns served from the reused prefix, compared token for token against the same turns with the lever off.
+  mem-final's own device prefix hits are assumed exact; PC3's mem-final A/A arm of that check confirms it.
+- **When batched outputs reproduce.** At a fixed config the role-play quality run (80 prompts, up to 32 in
+  flight) was token-identical across runs (80/80, twice). Two runs of the exactness tool at concurrency 16 on
+  the same config matched 6/16: there the batch composition varied between runs, and so does it in the
+  scheduling-dependent in-flight sweeps. Any config change, including numerics-neutral ones (pool sizes), re-rolls
+  batched outputs (3-4/80 identical). So exactness is checked at concurrency 1, and batched quality is compared
+  per item against a numerics-neutral config-change band, not against an A/A.
+- **HiCache with a fixed SWA admission charge and exact load-back** would be the largest remaining cost lever
+  measured here (+18% output tok/s at C24, 10 s capacity 20 -> 24, numerics unverified). It first needs load-back
+  to reproduce the device-resident continuation token for token at concurrency 1. It needs the prefill admission to reserve the sliding slots a host
   load-back or chunked continuation takes, a regression test at the C28 overload, and the C24-C32 points re-run.
 - **L5 variant.** Releasing only windows that slide out during decode past the prompt's end (keeping the
   prompt's last window, the next turn's resume point) might keep L5's burst gain without the hit-rate loss.
   Not implemented.
 - **Co-tenant GPU job on build-server-3** (zorch-playground canary, ~500 MiB for < 1 s every 10 min); see
-  section 3. Memory records from 14:43 on also log per-process use (`memlogs/gpuprocs.csv`).
+  section 3. Memory records from 14:43 on also log per-process use (`runs/gpuprocs-20261005.csv`; totals in `runs/gpumem-20261005.csv`).
 
 ## 7. Reproduce
 

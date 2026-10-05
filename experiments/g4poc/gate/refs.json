@@ -1,12 +1,19 @@
 {
  "base": {
-  "description": "PROVISIONAL until PA pins the FP8 base (BASELINE-FP8.md): the wrap-up tree, FP8 KV cache, decode CUDA graphs up to bs 32 as in PA's baseline/serve.sh. The model dir is the offline FP8 conversion (G4POC_MODEL_DIR).",
+  "description": "The g4poc FP8 base = PA's r03 (BASELINE-FP8.md, jumanzii/g4poc-a ac6035c07f): text-only compressed-tensors FP8 checkpoint (G4POC_MODEL_DIR default), FP8 KV, Triton attention + Triton fused_moe (default config), chunked prefill 4096. Same flags as baseline/serve.sh r03; PA launched from e3e4acf268, whose python/ is identical to this commit.",
   "commit": "91132098df",
   "server_args": [
    "--kv-cache-dtype",
    "fp8_e4m3",
-   "--cuda-graph-max-bs",
-   "32"
+   "--cuda-graph-max-bs-decode",
+   "32",
+   "--context-length",
+   "16384",
+   "--mem-fraction-static",
+   "0.93",
+   "--swa-full-tokens-ratio",
+   "0.3",
+   "--disable-prefill-cuda-graph"
   ],
   "env": {}
  },
@@ -20,5 +27,50 @@
    "32"
   ],
   "env": {}
+ },
+ "c1-moe-tuned": {
+  "description": "C1: base + a fused_moe Triton config tuned on the bs2 RTX 5090 (fp8_w8a8 per-channel, E=128, N=704; compute/moe_tune.py, merged by compute/merge_moe_configs.py). Only the MoE tile configs change.",
+  "extends": "base",
+  "env": {
+   "SGLANG_MOE_CONFIG_DIR": "/data/jooman/g4poc/moe-configs/c1"
+  }
+ },
+ "c3-lpm": {
+  "description": "C3a: base + --schedule-policy lpm (longest cached prefix first among waiting requests; fcfs on the base). Scheduling order only; only matters when requests queue, i.e. from about 16 in flight on the base.",
+  "extends": "base",
+  "server_args": [
+   "--schedule-policy",
+   "lpm"
+  ]
+ },
+ "c3-cp2048": {
+  "description": "C3b: base + --chunked-prefill-size 2048 (4096 on the base). Halves the per-forward prefill tokens and the prefill activation transient; the KV pool is unchanged at mem 0.93.",
+  "extends": "base",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048"
+  ]
+ },
+ "c2-extend-tiles": {
+  "description": "C2-A: base + the sm120 FP8-KV Triton extend tiles (SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES=1; table from compute/extend_attn_bench.py: head_dim 512 (32, 32, 64, 8, 1), 256 (32, 32, 32, 4, 1)). Python differs from base's commit only in extend_attention.py and environ.py; with the env off it runs the base's tiles.",
+  "extends": "base",
+  "commit": "a10694ad32",
+  "env": {
+   "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1"
+  }
+ },
+ "c2-extend-tiles-exact": {
+  "description": "C2-A fallback: like c2-extend-tiles but the table keeps the default KV tile widths (head_dim 512 (16, 32, 32, 4, 1), 256 (32, 64, 64, 8, 1); branch jumanzii/g4poc-b-c2exact), so outputs match the default tiles on the swept shapes.",
+  "extends": "c2-extend-tiles",
+  "commit": "9026c00478"
+ },
+ "final-mem-c1-c2a": {
+  "description": "bs2 final: PC's mem-final (memory/refs.json, d56fb9764a: stack1 flags, L8 FP8 vocab table, decode graphs to 48, expandable segments) + C1 tuned fused_moe config + C2-A sm120 FP8-KV extend tiles. Tree 1425761173 = mem-final's 53752c62aa + the C2-A tile commits (branch jumanzii/g4poc-final-c2).",
+  "extends": "mem-final",
+  "commit": "1425761173",
+  "env": {
+   "SGLANG_MOE_CONFIG_DIR": "/data/jooman/g4poc/moe-configs/c1",
+   "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1"
+  }
  }
 }
