@@ -246,5 +246,14 @@
    "24"
   ],
   "numerics_unchanged": true
+ },
+ "mem-qr-base-r025": {
+  "description": "Second numerics-neutral config change for the role-play language-adherence band: mem-qr-base with --swa-full-tokens-ratio 0.25 (same memory, different full/sliding pool sizes).",
+  "extends": "mem-qr-base",
+  "server_args": [
+   "--swa-full-tokens-ratio",
+   "0.25"
+  ],
+  "numerics_unchanged": true
  }
 }
