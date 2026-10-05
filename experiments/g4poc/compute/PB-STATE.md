@@ -22,11 +22,10 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
 - bs2 chain done through logs/pb-pthink.log (final pthink30 48-96 on bs2, 03:01-03:51,
   runs/sweep-final-hc-cp2048-lpm-20261006-030116-build-server-2-654b74). The no-HiCache pair was dropped (PC2's bs3
   covers it). PC4's queue (pid 1603659, harness-pc4/queue-pc4b.sh, ends ~07:25) owns bs2 now; coordinator: PC4 first.
-- M128 (PC4's SWA margin on the final, ref final-hc-cp2048-lpm-m128, tree cbf56143b5): (a) A-B-B-A C28 p90 gain
-  1.020, tok/s +1.3%, p99 +7.5%, retractions 2.4x; (b) quality pass; (c) bs2 soak C28 2.56% retracted (bs3 2.67%) vs
-  1.39% limit -> NOT promoted (coordinator 06:40). (d) skipped (PC2 runs the final's C8/C12 on bs3). (e) second
-  A-B-B-A running from 06:46 via /home/jooman/g4poc/pb2-m128-tail.sh (= compute/m128_tail.sh) -> runs/m128/abba-c28-2.json,
-  ends ~07:12; then bs2 idle. To do: vault g4poc-m128f record (parked), COMPUTE.md (e) numbers, 6 s point from PC2.
+- M128 (PC4's SWA margin on the final, ref final-hc-cp2048-lpm-m128, tree cbf56143b5): NOT promoted. bs2 4 pairs at
+  C28: p90 gain 1.014, tok/s +1.3%, p99 +5.2%, retractions 2.95x; quality pass; 30-min C28 soaks retract 2.56% (bs2)
+  / 2.67% (bs3) vs 1.39% limit. Vault g4poc-m128f parked (cdcfbcd). COMPUTE.md section 3 documents it as opt-in.
+- bs2 idle since 10-06 07:10 (nothing queued). The final's 6 s point came from PC2 on bs3 (C12, $0.300/1M, -28%).
 - HS2 dropped on bs2 (coordinator 04:10): answered by PC2's same-host bs3 point; vault g4poc-hs2 retired (29e3f8b).
 - Error-detail loadgen change deployed into harness-pb 10-06 03:53 (94 tests OK).
 - PC2's keep-alive fix (ffa983fd37, client keepalive 2 s) cherry-picked and deployed into harness-pb 10-06 ~04:45.
