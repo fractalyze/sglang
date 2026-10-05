@@ -11,3 +11,10 @@ directories (server logs, per-leg data, traces) stay on build-server-2 under
 - `c2/bench.json`: extend tile microbench; `c2/accuracy.json`: tiles vs fp32 attention.
 - `kl-c2-extend-tiles*/kl_check.json`: C2-A long role-play KL check, fast and exact tile tables.
 - `reference/`: the gate's fidelity thresholds (calibrate) and noise file (from the A/A).
+- `c3-nested/`, `c4-nested/`: nested and confirming A-B-B-A sweeps of the C3 flags and C4 (base, then final-hc).
+- `final-final-hc/`, `morning-final-hc-cp2048-lpm/`: final-stack runs (memory samples, quality compare).
+- `sweep-*/sweep.json`: in-flight and think-time sweeps named by ref, date and host; each COMPUTE.md table names its
+  run. `quality-*/quality.json`: GSM8K + tool JSON runs; `kl-final-hc-cp2048-lpm-*`: the final's KL check.
+- `fleet/`: drop-idle sweep input and fleet-model outputs (v3, v4 with every poisson point).
+- `m128/`: PC4's SWA margin on the final: two A-B-B-As at 28 in flight, quality compare, soak memory check.
+- `psoak/`: the device-only 30-min poisson chat soak at 72 (memory check).
