@@ -3531,12 +3531,23 @@ class UnifiedRadixCache(BasePrefixCache):
         return swa.sliding_window_size
 
     def swa_retain_floor(self, req) -> int | None:
-        if not self.is_mamba_enabled or self._sliding_window_size is None:
+        if self._sliding_window_size is None:
             return None
-        checkpoint = req.kv.mamba_last_track_seqlen
-        if checkpoint is None:
-            return None
-        return checkpoint - self._sliding_window_size
+        floors = []
+        if self.is_mamba_enabled:
+            checkpoint = req.kv.mamba_last_track_seqlen
+            if checkpoint is not None:
+                floors.append(checkpoint - self._sliding_window_size)
+        margin = envs.SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN.get()
+        if margin > 0 and self.is_swa_enabled:
+            # A prompt whose prefill insert stopped at an SWA branch point stays
+            # request-owned until the finish insert. Decode must not free the
+            # window + margin behind its end, or that insert keeps less than the
+            # next turn's short match needs (SWAComponent._retained_window_size).
+            floors.append(
+                len(req.origin_input_ids) - self._sliding_window_size - margin
+            )
+        return min(floors) if floors else None
 
     def supports_swa(self) -> bool:
         return self.is_swa_enabled
