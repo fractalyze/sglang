@@ -77,8 +77,46 @@ node's SWA while the request runs: a radix-tree change, not a flag.
 
 ## 3. Real workload: in-flight capacity at the SLO (scripted multi-turn sessions)
 
-> [!gap] Pending: `gate sweep --load inflight` of mem-base (8/12/16/20/24) and stack1
-> (8/12/16/20/24/28/32) on bs3, queue 2.
+`gate sweep --load inflight` on bs3: N slots each replay PB's scripted multi-turn sessions back to back
+(no think time, prefix cache on, cache flushed between points), 60 s warm-up and a 240 s window per
+point. Capacity at an SLO = the highest point whose E2E p90 meets it.
+
+mem-base (`sweep-mem-base-20261005-115555-build-server-3-8949a5`):
+
+| in flight | E2E p50 s | E2E p90 s | output tok/s | total tok/s | prefix-cache hit |
+|---|---|---|---|---|---|
+| 8 | 3.24 | 5.14 | 465 | 15,496 | 0.744 |
+| 12 | 3.85 | 6.39 | 558 | 17,651 | 0.692 |
+| 16 | 6.59 | 11.80 | 422 | 14,319 | 0.229 |
+| 20 | 9.29 | 14.75 | 375 | 12,466 | 0.002 |
+| 24 | 13.07 | 17.25 | 347 | 12,053 | 0.002 |
+
+Capacity: 8 at p90 <= 6 s, **12 at 10 s**, 20 at 15 s. The knee is the prefix cache: past ~12 in flight the
+pool can no longer keep a finished turn's prefix until the session's next turn arrives, the hit rate
+collapses, every turn re-prefills ~5K tokens, and throughput falls while latency climbs.
+
+stack1 (`sweep-mem-stack1-20261005-122247-build-server-3-3c99af`):
+
+| in flight | E2E p50 s | E2E p90 s | output tok/s | total tok/s | prefix-cache hit |
+|---|---|---|---|---|---|
+| 8 | 3.26 | 5.11 | 468 | 15,626 | 0.753 |
+| 12 | 3.75 | 6.20 | 575 | 18,185 | 0.726 |
+| 16 | 4.69 | 7.57 | 635 | 20,990 | 0.691 |
+| 20 | 5.72 | 8.93 | 666 | 22,187 | 0.656 |
+| 24 | 11.72 | 16.97 | 402 | 13,815 | 0.021 |
+| 28 | 12.00 | 18.45 | 425 | 13,996 | 0.002 |
+| 32 | 15.21 | 19.26 | 458 | 13,551 | 0.002 |
+
+Capacity: 8 at 6 s, **20 at 10 s (mem-base 12, +67%, as predicted)**, 20 at 15 s (unchanged: the collapse
+moves from 16 to 24, past the 15 s point mem-base already reached at 20). At the 10 s capacity point
+stack1 delivers 666 output tok/s against mem-base's 558 (+19%), so $/1M output tokens falls 16% at any
+GPU price.
+
+*Memory under the real workload:* sampled every 2 s, the GPU peaked at 32,113 MiB (12:33:09, one sample in
+the C12 window), 41 MiB under the CUDA-visible capacity; between such spikes it sat at 31,590-31,770 MiB.
+Prefill batches never exceeded 4,096 new tokens (p50 2,587), so the spike is not a larger prefill batch;
+allocator fragmentation is the suspect. The step-0 bursts (peak 31,588) did not show it, so 0.955 is not a
+deployable value without a fix (allocator setting or a lower fraction).
 
 ## 4. Code levers: what is left and what each would take
 
