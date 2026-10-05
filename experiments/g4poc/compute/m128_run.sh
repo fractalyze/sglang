@@ -21,7 +21,15 @@ out=$R/m128
 mkdir -p "$out"
 step() { echo "=== $(date -Is) $*"; }
 fits() { [ $(( $(date +%s) + $1 * 60 )) -le "$(date -d "${STOP:-07:55}" +%s)" ]; }
-busy() { pgrep -f "$WAIT_DIR" | grep -vqx "$$"; }
+# A PC4 process names WAIT_DIR on its command line or runs from it (PC4 starts queues as ./queue-*.sh).
+busy() {
+  pgrep -f "$WAIT_DIR" | grep -vqx "$$" && return 0
+  local p
+  for p in $(pgrep -u "$(id -u)" .); do
+    case "$(readlink "/proc/$p/cwd" 2>/dev/null)" in "$WAIT_DIR"*) return 0 ;; esac
+  done
+  return 1
+}
 if [ -n "${WAIT_DIR:-}" ]; then
   step "wait for processes under $WAIT_DIR"
   while busy || { sleep 60; busy; }; do sleep 30; done
