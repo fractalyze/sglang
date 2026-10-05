@@ -70,8 +70,9 @@ chunked prefill 2048 (-2 sessions), a running-request cap (no effect on the cach
 analysed, not built.
 
 The cliff past the capacity point is the prefix cache: once more sessions' histories compete for the pool than it
-holds, every turn re-prefills ~5K tokens and goodput falls. Size the fleet by sessions whose history must stay
-cached per GPU (section 3, fleet rule); with final-hc the host pool raises that number.
+holds, every turn re-prefills ~5K tokens and goodput falls. **With realistic think time that is the normal regime:
+at a 30 s mean think time one GPU serves ~60-65 chat sessions at a 10 s p90, at about $0.58 per 1M output tokens
+(section 3c), with or without HiCache as configured.** Use that, not the zero-think ceiling, to size the fleet.
 
 ## 1. Result in one table
 
@@ -330,6 +331,44 @@ both arms frame an English quiz in Russian, and this arm's longer quiz is tagged
 Same-host replicate (`sweep-final-mem-c1-c2a-20261005-175047-build-server-3-f72a00`, run 75 min later):
 C16/C20/C24 at E2E p90 6.32 / 7.52 / 8.58 s (first 6.33 / 7.59 / 8.59) and 743 / 789 / 832 output tok/s
 (744 / 778 / 833); 10 s capacity C24 in both, $0.234 per 1M output at $0.70. Spread <= 1.4% on tok/s.
+
+## 3c. Chat sessions with think time: sessions per GPU for sizing
+
+Every number above comes from the in-flight layer with zero think time: each live session always has a request in
+flight. Real role-play sessions sit idle between turns while their histories still compete for the cache. This
+section replays live sessions with think time: load `think30` / `think60` (`gate/config.py`), each slot one live
+session whose turns are sent `think_s x think_scale` after the previous reply (the session file's think time is
+lognormal, median 15 s, mean 17.9 s, clipped 2-120 s; scales 1.676 and 3.352 give means of ~30 s and ~60 s), a new
+session starting when one ends; 240 s warm-up, 480 s window; the first sends spread over one think time. The
+point's concurrency is the number of concurrent sessions. Caveats: a session's first turn is sent with no think
+time before it (1 turn in ~5), and the population is closed (fixed session count, not Poisson arrivals).
+
+**Mean think time 30 s** (no failed request at any point):
+
+| config | sessions | requests in flight | turns/s | output tok/s | E2E p50 s | E2E p90 s | prefix-cache hit | retractions |
+|---|---|---|---|---|---|---|---|---|
+| final-hc | 48 | 6.9 | 1.85 | 334 | 3.56 | **7.07** | 0.286 | 1 |
+| final-hc | 72 | 14.5 | 2.53 | 434 | 5.54 | 11.41 | 0.076 | 0 |
+| final-hc | 96 | 29.1 | 2.97 | 536 | 10.35 | 16.55 | 0.013 | 3 |
+| final-hc | 120 | 48.4 | 2.98 | 532 | 16.85 | 24.31 | 0.002 | 2 |
+| final-mem-c1-c2a | 48 | 7.7 | 1.83 | 326 | 4.05 | **7.50** | 0.028 | 0 |
+| final-mem-c1-c2a | 72 | 14.3 | 2.54 | 435 | 5.56 | 11.12 | 0.004 | 0 |
+| final-mem-c1-c2a | 96 | 27.2 | 3.06 | 552 | 9.45 | 15.07 | 0.002 | 3 |
+
+Runs: `sweep-final-hc-20261005-215152-build-server-3-d847de` (48-96), `sweep-final-hc-20261005-205259-build-server-3-efb672`
+(120, the overload reference; a co-tenant CI job ran on the host during it), `sweep-final-mem-c1-c2a-20261005-211313-build-server-3-3fe265`.
+
+- **Sessions per GPU for sizing: ~60-65 at a 10 s p90 with 30 s mean think time** (interpolated between 48 and 72),
+  for both configs. At 48 sessions a GPU delivers ~330 output tok/s, **about $0.58 per 1M output tokens** at
+  $0.70/GPU-h, roughly 2.7x the zero-think cost: idle histories do not stay cached (hit rate <= 0.29), so nearly
+  every turn re-prefills ~5.8K tokens, and throughput saturates near 3 turns/s (~17K uncached prefill tok/s).
+- **HiCache as configured gives no meaningful capacity gain here** (p90 7.07 vs 7.50 s at 48 sessions, 11.41 vs
+  11.12 s at 72). A 12 GB host pool plus the device pool should hold roughly 80 sessions' histories, yet the hit
+  rate at 48 sessions is 0.29; why is under investigation (SWA host-pool split, first-turn misses, churn).
+- Two numbers to keep apart: the zero-think C28 result (919 output tok/s, $0.212 per 1M) is the **per-GPU
+  throughput ceiling**; sessions per GPU at realistic think time is the number to **size the fleet** with.
+
+> [!gap] Mean think time 60 s (72 / 108 / 144 sessions, both configs) is running.
 
 ## 4. Code levers
 
