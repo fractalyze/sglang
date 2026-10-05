@@ -1,0 +1,72 @@
+{
+ "refs": [
+  "final-hc-cp2048-lpm",
+  "final-hc-cp2048-lpm-m128",
+  "final-hc-cp2048-lpm-m128",
+  "final-hc-cp2048-lpm"
+ ],
+ "sweeps": [
+  "/home/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-20261006-054426-build-server-2-fd138e",
+  "/home/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-m128-20261006-055038-build-server-2-affade",
+  "/home/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-m128-20261006-055649-build-server-2-c8b422",
+  "/home/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-20261006-060257-build-server-2-0a9b4f"
+ ],
+ "points": [
+  {
+   "concurrency": 28,
+   "e2e_p90_gain": 1.019989430037487,
+   "e2e_p99_gain": 0.9298959030276222,
+   "output_tput_gain": 1.0133399508660423,
+   "control_drift_e2e_p90": 1.0055120011085399,
+   "control_drift_tput": 0.9984549783304164,
+   "control_e2e_p90_s": [
+    8.57473160440568,
+    8.527726765023544
+   ],
+   "candidate_e2e_p90_s": [
+    8.361391570186242,
+    8.405893961386756
+   ],
+   "control_out_tok_s": [
+    954.6791666666667,
+    953.2041666666667
+   ],
+   "candidate_out_tok_s": [
+    970.6291666666667,
+    962.7208333333333
+   ],
+   "control_hit": [
+    0.773132030240947,
+    0.7675768567269259
+   ],
+   "candidate_hit": [
+    0.7976897946556059,
+    0.7988755389446058
+   ],
+   "control_e2e_p99_s": [
+    11.472805264815635,
+    12.342759000207316
+   ],
+   "candidate_e2e_p99_s": [
+    13.181006200941066,
+    12.424091420021137
+   ],
+   "control_retracted": [
+    11,
+    14
+   ],
+   "candidate_retracted": [
+    25,
+    34
+   ],
+   "control_failed": [
+    0,
+    0
+   ],
+   "candidate_failed": [
+    0,
+    0
+   ]
+  }
+ ]
+}
