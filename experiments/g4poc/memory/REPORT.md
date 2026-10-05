@@ -343,6 +343,13 @@ session starting when one ends; 240 s warm-up, 480 s window; the first sends spr
 point's concurrency is the number of concurrent sessions. Caveats: a session's first turn is sent with no think
 time before it (1 turn in ~5), and the population is closed (fixed session count, not Poisson arrivals).
 
+> [!warning] **These slots runs carry a load-generator bug** (fixed in `gate/loadgen.py` after they ran, with a
+> regression test): a session whose next turn fell after the window end returned, and its slot at once started a
+> fresh session with an uncached ~5K-token first turn. In each point's last think period every slot fired such a
+> prefill (arrivals 325 vs ~150 prefills/min, queue spikes of 41-113 at the end of every point), so the tails below
+> are pessimistic; the session capacities read from them are lower bounds. The poisson runs below are not affected
+> (a cut session is not replaced).
+
 **Mean think time 30 s** (no failed request at any point):
 
 | config | sessions | requests in flight | turns/s | output tok/s | E2E p50 s | E2E p90 s | prefix-cache hit | retractions |
@@ -379,10 +386,8 @@ Runs: `sweep-final-hc-20261005-215152-build-server-3-d847de` (48-96), `sweep-fin
 | final-mem-c1-c2a | 108 | 14.8 | 2.21 | 396 | 5.74 | 17.95 | 0.003 |
 | final-mem-c1-c2a | 144 | 24.0 | 2.81 | 495 | 7.38 | 24.38 | 0.003 |
 
-\*The T60 p90s are inflated by the load generator: every session starts within one think time and a slot starts
-its next session at once, so sessions stay phase-correlated, and with a 60 s think time a 240 s warm-up does not
-decorrelate them. Each window holds 2-4 minute bursts (queue 41-77, uncached prefill pinned at its ~16.5K tok/s
-ceiling) although the average prefill demand is ~9-10K tok/s. The means (turns/s, in-flight, hit rate) are usable;
+\*The T60 p90s are inflated by the load-generator bug above: each point ends in a 2-4 minute burst (queue
+41-116, uncached prefill pinned at its ~16.5K tok/s ceiling) although the average prefill demand is ~9-10K tok/s. The means (turns/s, in-flight, hit rate) are usable;
 the T60 session capacity at a 10 s p90 is not measured (by the means, likely ~100-120 sessions with independent
 arrivals). The T30 points have no mid-window bursts at 48 sessions. What T60 does show: histories are evicted
 almost entirely (hit <= 0.07 with HiCache, <= 0.01 without), throughput follows the turn rate, and HiCache again
