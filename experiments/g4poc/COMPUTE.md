@@ -1,7 +1,8 @@
 # g4poc compute levers on one RTX 5090 (PB, build-server-2)
 
 Workload: `WORKLOAD.md`. Base: PA's r03 (`BASELINE-FP8.md`), gate ref `base`. The study's final config is
-`final-hc-cp2048-lpm` (section 3). All numbers here are bs2 unless marked bs3. Where both hosts ran the same
+`final-hc-cp2048-lpm` (section 3) for traffic with requests always in flight; chat with think time is better served
+by the device prefix cache alone (section 5). All numbers here are bs2 unless marked bs3. Where both hosts ran the same
 point, they agree within ~1%.
 
 **Headline.** At a 10 s p90 SLO with requests always in flight, one RTX 5090 serves Gemma-4-26B-A4B FP8 for
@@ -56,7 +57,8 @@ tokens (hit 0.70). At 16 the running requests alone fill the pool, cached histor
 so prefill work per reply roughly triples and goodput drops a third. The cliff sits at about
 pool tokens / mean context; only more full-pool tokens per GB (PC's memory levers) or shorter contexts move
 it. With real think time, idle sessions' histories also compete for the pool, so the cliff comes earlier
-in sessions than in in-flight requests (host offload of idle histories, HiCache, is the lever for that).
+in sessions than in in-flight requests. Host offload of idle histories (HiCache) was the candidate lever for that;
+section 5 shows a 12 GB host pool is too small for it to pay at 30-60 s of think time.
 
 ## 2. Compute levers
 
@@ -365,7 +367,7 @@ would close is a model result (below).
 
 | traffic | config | measured at a 10 s p90 SLO |
 |---|---|---|
-| requests always in flight (no think time) | `final-hc-cp2048-lpm` (section 3) | C28 operating point, C32 edge; $0.197-0.200/1M at $0.70 |
+| requests always in flight (no think time) | `final-hc-cp2048-lpm` (section 3) | capacity 36 in flight; cheapest sweep point 32 ($0.197-0.200/1M at $0.70); operating point 28 after the 30-min soak (~$0.20/1M) |
 | chat with ≥ 30 s mean think, ~12 GB host RAM per GPU | `final-mem-c1-c2a`: device prefix cache only, default chunking | T30 ≥ 64 sessions ($0.454/1M); T60 ≥ 118 ($0.446/1M) |
 | chat at 30 s think, ≥ 48 GB host RAM per GPU | `final-hc` with a larger host pool | **model only** (retention model below): ~107 sessions/GPU at 48 GB, $0.30/1M |
 
@@ -439,7 +441,7 @@ measured lower bounds, the T30 edges are C72/C76 above):
 
 | mean think | sessions per GPU | GPUs for 2,200 | $/1M output @ $0.70 |
 |---|---|---|---|
-| 0 (2,200 requests in flight) | 36 (C36 meets 10 s; cheapest C32) | 62 at C36 (69 at C32) | 0.197-0.200 |
+| 0 (2,200 requests in flight) | 36 (C36 meets 10 s; cheapest C32; soak operating point C28) | 62 at C36 (69 at C32, 79 at C28) | 0.197-0.200 |
 | 30 s | ≥ 64 (model 73) | ≤ 35 (model 31) | 0.454 |
 | 60 s | ≥ 118 (model 127) | ≤ 19 (model 18) | 0.446 |
 
@@ -486,8 +488,9 @@ hits, 28% misses because the sliding window was gone (full prefix still on host)
 full KV was gone. Misses are all-or-nothing.
 
 From 72 sessions both configs are near zero hit, and every turn re-prefills ~5.8K tokens. Past the storage bound
-a HiCache server is just recompute-bound: ~3 turns/s and ~17K uncached prefill tok/s at saturation. That sets
-the 10 s capacity at 48-64 sessions whatever the cache does.
+a HiCache server is just recompute-bound: ~3 turns/s and ~17K uncached prefill tok/s at saturation (closed loop;
+~2.4 turns/s with poisson arrivals). That sets the 10 s capacity at ~64 sessions at 30 s think whatever the cache
+does.
 
 **Drop-idle, measured on bs2** (`final-mem-c1-c2a` with the radix cache off, max running 24; every turn
 re-prefills its whole history; `runs/fleet/`):
@@ -535,8 +538,8 @@ It reproduces 0.28 at 48 sessions (measured 0.286) and 0.10 at 72 (0.076). On HS
   thinkers outlive the retention.
 - **Upper bound.** The earlier hard cap (0.23 GB of host pool per stored session, ~43 GB for 187 sessions at
   T30) is the bound with no think-time spread.
-- **Calibration caveats.** w is calibrated on bs3 final-hc. Chunk 2048, in the final, adds chunk-boundary windows
-  and may shorten retention.
+- **Calibration caveats.** w is calibrated on bs3 final-hc. With chunk 2048 (the final) the per-turn write reads as
+  ~0.34 GB instead of ~0.22 (HS2 above), so the table does not apply to the final config.
 - **The hit ceiling with think time is ~0.66, not ~0.8** (PC4, 10-06). In think mode every session's second turn
   misses its whole prefix: the cached match ends 1,020 contiguous sliding-window tokens into the window, short of
   the 1,023 SGLang needs (`free_out_of_window_slots` at prefill plus the template's 4-token cut). This holds with
