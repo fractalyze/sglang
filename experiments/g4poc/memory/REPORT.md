@@ -37,14 +37,17 @@ cgroup >= 32 GB in deployment, or retry the start on that error (the study's que
 | | mem-base | mem-final (memory levers) | + compute levers (`final-mem-c1-c2a`) | + fixed HiCache (**`final-hc`**) |
 |---|---|---|---|---|
 | burst capacity (5K in / 300 out, no shared prefix) | 17 | 29 | - | - |
-| multi-turn in-flight capacity at E2E p90 <= 10 s | 12 | 20 | 24 | **32** |
-| output tok/s at that point | 558 | 677 | 833 | **942** |
-| $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | **0.206 (-41%)** |
+| multi-turn in-flight capacity at E2E p90 <= 10 s (240 s sweep points) | 12 | 20 | 24 | 32 (p90 9.55 s) |
+| **operating point, sustained 30 min** | - | - | - | **C28: p90 8.92 s, 0 failures** |
+| output tok/s at the operating point | 558 | 677 | 833 | **919** (+65%) |
+| $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | **0.212 (-39%)** |
 | multi-turn exactness at concurrency 1 (12 later turns) | - | - | 12/12 control | 12/12 identical to control |
 | quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: no regression shown (section 5) |
 
-All on build-server-3; capacity points replicated on the same host. final-hc's numbers are PC3's runs
-(`hicache/PREREG.md` HC4); its quality anchor and a 30-minute soak at C32 are in section 5. Server GPU memory
+All on build-server-3; capacity points replicated on the same host. **final-hc headline: C28 sustained for 30
+minutes at E2E p90 8.92 s, 919 output tok/s, $0.212 per 1M output tokens** (9,353 requests, 0 failed, no memory
+creep). C32 meets the 10 s SLO only at the edge (30-minute p90 9.92 s, 899 tok/s), so C28 is the operating point.
+final-hc's sweep points are PC3's runs (`hicache/PREREG.md` HC4); the soaks and its quality anchor are in section 5. Server GPU memory
 stays under the 31,642 MiB rule (512 MiB below what CUDA can use) in every config; on a GPU shared with another
 job, use `--mem-fraction-static 0.94` (section 3).
 
@@ -518,7 +521,12 @@ HiCache without load-backs are 12/12.
 meets the 10 s SLO only at the edge (the 240 s sweep point read 9.55 s and 942 tok/s), so the headline operating
 point is C28.
 
-> [!gap] 30-minute soak at C28 (the headline operating point) queued.
+**30-minute soak at C28, the operating point** (`sweep-final-hc-20261005-201619-build-server-3-2eab84`): 9,353
+requests, **0 failed**, 19 retractions (requeued and completed); E2E p50 5.70 s, **p90 8.92 s**, p99 9.88 s; **919
+output tok/s** (30,470 total), prefix-cache hit 0.709, **$0.212 per 1M output** at $0.70/GPU-h. No creep: decode
+throughput 1,220-1,246 tok/s per 5-minute bucket, server GPU memory flat at 31,490 MiB (peak 31,542), server RSS
+17.531 -> 17.534 GB, host MemAvailable 38.4-38.8 GB. Over 30 minutes C28 beats C32 on throughput as well as
+latency (C32: 899 tok/s, p90 9.92 s): past C28 the extra sessions add retractions and queueing, not goodput.
 
 **Quality anchor vs mem-base** (0.85 fraction; role-play with 1,024-token chunks; 28G scope):
 GSM8K 1319 **96.36** vs 96.21 (paired 9 items right only here, 7 only in base, McNemar p = 0.80); tool-JSON 40/40;
