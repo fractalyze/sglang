@@ -70,9 +70,12 @@ chunked prefill 2048 (-2 sessions), a running-request cap (no effect on the cach
 analysed, not built.
 
 The cliff past the capacity point is the prefix cache: once more sessions' histories compete for the pool than it
-holds, every turn re-prefills ~5K tokens and goodput falls. **With realistic think time that is the normal regime:
-at a 30 s mean think time one GPU serves ~60-65 chat sessions at a 10 s p90, at about $0.58 per 1M output tokens
-(section 3c), with or without HiCache as configured.** Use that, not the zero-think ceiling, to size the fleet.
+holds, every turn re-prefills ~5K tokens and goodput falls. **With realistic think time that is the normal regime
+(section 3c, independent sessions): one GPU serves ~64-66 chat sessions at a 30 s mean think time and ~113-119 at
+60 s, at a 10 s p90; at the T30 edge that is ~427 output tok/s, about $0.46 per 1M output tokens at $0.70/GPU-h.**
+Use sessions per GPU, not the zero-think throughput ceiling, to size the fleet. For chat with think time >= 30 s and
+~12 GB of host RAM per GPU, deploy device-only `final-mem-c1-c2a` (HiCache gains nothing there); HiCache and the two
+in-flight flags pay off for in-flight-heavy traffic.
 
 ## 1. Result in one table
 
@@ -365,7 +368,7 @@ time before it (1 turn in ~5), and the population is closed (fixed session count
 Runs: `sweep-final-hc-20261005-215152-build-server-3-d847de` (48-96), `sweep-final-hc-20261005-205259-build-server-3-efb672`
 (120, the overload reference; a co-tenant CI job ran on the host during it), `sweep-final-mem-c1-c2a-20261005-211313-build-server-3-3fe265`.
 
-- **Sessions per GPU for sizing: ~60-65 at a 10 s p90 with 30 s mean think time** (interpolated between 48 and 72),
+- **Pessimistic bound (slots): ~60-65 sessions at a 10 s p90 with 30 s mean think time** (interpolated between 48 and 72),
   for both configs. At 48 sessions a GPU delivers ~330 output tok/s, **about $0.58 per 1M output tokens** at
   $0.70/GPU-h, roughly 2.7x the zero-think cost: idle histories do not stay cached (hit rate <= 0.29), so nearly
   every turn re-prefills ~5.8K tokens, and throughput saturates near 3 turns/s (~17K uncached prefill tok/s).
