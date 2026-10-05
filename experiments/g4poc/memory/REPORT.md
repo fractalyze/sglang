@@ -25,9 +25,12 @@ exactly 300 tokens each that all run in one decode batch with no retraction.
 | L10 `mem-l10-c64` | `--max-running-requests 64` | 25.12 | 90,172 / 27,051 (unchanged) | **1.90** | 30,812 | **17** | 17 |
 | L4 `mem-l4-r0276` | `--swa-full-tokens-ratio 0.276` | 25.12 | 95,928 / 26,476 | 1.78 | 30,940 | **18** | 18 |
 | **stack1** `mem-stack1` | L9 + L10 + `--mem-fraction-static 0.955 --swa-full-tokens-ratio 0.268` | 24.43 | 139,415 / 37,363 | 1.16 | 31,588 | **25** | 26 (interval 25-27) |
+| **stack2** `mem-stack2` | stack1 + L5 (`SGLANG_OPT_SWA_RELEASE_SLID_WINDOW=1`, `SGLANG_SWA_EVICTION_INTERVAL=32`) + ratio 0.226 | 24.43 | 157,376 / 35,566 | 1.18 | 31,574 | **29** | 29 (interval 27-30) |
+| **stack3** `mem-stack3` | stack2 + L8 (`SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE=1`) + `--cuda-graph-max-bs-decode 48` | **23.74** | 179,427 / 40,550 | 1.10 | 31,652 | **33** | 33 (interval 32-34) |
 
 stack1 holds **25 sessions vs 17 (+47%)** with server flags only and unchanged numerics (pool sizes
-and a RoPE table length). The burst peak stays 566 MiB below the CUDA-visible capacity.
+and a RoPE table length). Two code levers behind default-off switches add L5 (+4, numerics exact) and
+L8 (+4, numerics change within the quality guard): **stack3 holds 33 sessions, +94% over mem-base.**
 
 ## 2. What each lever does (mechanism, measured)
 
@@ -118,13 +121,50 @@ Prefill batches never exceeded 4,096 new tokens (p50 2,587), so the spike is not
 allocator fragmentation is the suspect. The step-0 bursts (peak 31,588) did not show it, so 0.955 is not a
 deployable value without a fix (allocator setting or a lower fraction).
 
-## 4. Code levers: what is left and what each would take
+## 4. Code levers
 
-| # | lever | per-session or one-time effect | numerics | what it takes |
+### L5: release the slid-out part of the tree-locked SWA window (implemented, exact)
+
+Commit `8158a6fe68`, switch `SGLANG_OPT_SWA_RELEASE_SLID_WINDOW` (default off). In decode, every
+`SGLANG_SWA_EVICTION_INTERVAL` tokens (32 in stack2), `ScheduleBatch.maybe_evict_swa` calls
+`UnifiedRadixCache.release_swa_window_below(req, seqlen - 1 - window)` (the frontier `_evict_swa` already
+uses). `SWAComponent.release_window_lock_below` splits the locked window node at the frontier (the split's
+older half inherits the lock count and any segment-boundary uuid), drops this request's SWA lock on every
+segment node below the split, and stamps the node at the split as the request's new segment boundary; the
+request's receipt carries the new uuid, so its final release walks the shortened segment. Released nodes
+become evictable (SWA LRU reclaims them under pressure); nothing the request still reads is released, and
+the last window stays locked until finish, so the insert at finish still gives the next turn a full window.
+Python unified tree core only (no SWA host pool, no EAGLE).
+
+- Capacity: stack1 25 -> stack2 29 (sliding tokens held at 25 sessions: 36,698 -> 26,400, ~1,056/session).
+- Exactness: `SGLANG_DEBUG_SWA_POISON_RELEASED_WINDOW` writes NaN into every released slot's KV. With it on,
+  greedy outputs at concurrency 1 match stack1 (same tree, switch off) token for token on 6/6 random 5K
+  prompts (`exact-mem-stack2-poison-*` vs `exact-mem-stack1b-*`).
+- Tests: `TestSWASlidWindowRelease` in `test/registered/unit/mem_cache/test_unified_radix_cache_unittest.py`
+  (split and release accounting, a window shared by two holders, frontier before the segment start).
+
+### L8: one FP8 vocab table for the tied embedding and LM head (implemented, numerics change)
+
+Commit `53752c62aa`, switch `SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE` (default off). After load,
+`Gemma4ForCausalLM._use_fp8_vocab_table` quantizes the tied BF16 table (262,144 x 2,816) to E4M3 with one
+fp32 scale per row and replaces both `model.embed_tokens` and `lm_head` with `_Fp8VocabTable`; the BF16
+table is dropped and the cache emptied before the KV pool is sized. The lookup gathers FP8 rows and
+dequantizes; the head runs the tuned Triton FP8 vocab-head kernel (`triton_small_m_fp8_vocab_head`) in
+48-row chunks, so every batch width reads FP8.
+
+- Capacity: stack2 29 -> stack3 33; weights 24.43 -> 23.74 GiB.
+- Quality (same stack with the switch off as control, mem 0.85 and 1024-token chunks in both arms so the
+  guards' input-logprob requests have headroom): GSM8K 200 97.0 vs 97.0; tool-JSON 40/40 vs 40/40;
+  role-play reference NLL +0.00095 nats/token (budget 0.02); language adherence 67/80 vs 67/80.
+- Tests: `TestGemma4Fp8VocabTable` in `test/registered/gemm/test_gemma4_fp8_lm_head.py` (head within the E4M3
+  bound at batch widths across the 48-row chunk edge, lookup within the bound including the subnormal floor,
+  the swap drops the BF16 table and refuses an untied head).
+
+### Not implemented: L6 and L11
+
+| # | lever | per-session effect | numerics | what it would take |
 |---|---|---|---|---|
-| L5 | free the prompt-window SWA slots as decode slides (section 2) | -300 sliding tokens = -31 MB/session (-16%), ~+19% sessions | exact | UnifiedTreeCore: split the request's locked leaf at the eviction frontier and tombstone the left part's SWA during decode; insert-at-finish must accept the shorter SWA tail |
-| L6 | full-layer V from K (`attention_k_eq_v`) | -5,120 B/token full = -27 MB/session (-14%), ~+16% sessions | changes (FP8 rounding of V) | not an alias: K = RoPE(k_norm(x) * w_k), V = v_norm(x) without scale, from the same projection. Storing K only needs the Triton decode and extend kernels to rebuild V by un-rotating each key by its position (128 rotated dims) and dividing by w_k |
-| L8 | FP8 embedding + tied LM head | -0.69 GiB once, ~+3.5 sessions | changes (logits) | the tree's `SGLANG_OPT_GEMMA4_FP8_LM_HEAD` adds a 740 MB FP8 copy for speed (more memory, not less); L8 needs the BF16 table dropped: FP8 rows + per-row scales for both the lookup (gather + dequant) and the head GEMM at every batch size |
+| L6 | full-layer V from K (`attention_k_eq_v`) | -5,120 B/token full = -27 MB/session (-14%) | changes (FP8 rounding of V) | not an alias: K = RoPE(k_norm(x) * w_k), V = v_norm(x) without scale, from the same projection. Storing K only needs the Triton decode and extend kernels to rebuild V by un-rotating each key by its position (128 rotated dims) and dividing by w_k |
 | L11 | FP4 KV (`--kv-cache-dtype fp4_mx_block16`) | -44% KV bytes | changes (long-context risk) | accepted with Triton as "plain" access, but the pool then dequantizes the whole layer buffer to BF16 on every attention call (`_get_key_buffer`): ~0.8 GiB transient and many GB of traffic per decode step. A usable L11 needs an FP4-reading Triton kernel |
 
 ## 5. Reproduce
