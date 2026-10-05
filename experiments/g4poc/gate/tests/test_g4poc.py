@@ -8,7 +8,7 @@ from absl.testing import absltest, parameterized
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from gate import checkpoint, config, loadgen, metrics, pd, rpquality, runner, stats  # noqa: E402
+from gate import checkpoint, config, loadgen, metrics, pd, rpquality, runner, server, stats  # noqa: E402
 from workload import chat, generate, personas, schema, sources  # noqa: E402
 from workload.schema import Message, Session, Turn  # noqa: E402
 
@@ -501,6 +501,29 @@ class RunnerTest(absltest.TestCase):
     def test_metrics_flag_added_once(self):
         self.assertEqual(runner.server_extra_args({"server_args": []}), ["--enable-metrics"])
         self.assertEqual(runner.server_extra_args({"server_args": ["--enable-metrics"]}), [])
+
+
+class RefsTest(absltest.TestCase):
+    def _write(self, d, name, refs):
+        path = os.path.join(d, name)
+        with open(path, "w") as f:
+            f.write(msgspec.json.encode(refs).decode())
+        return path
+
+    def test_workstream_refs_merge_and_names_stay_unique(self):
+        with tempfile.TemporaryDirectory() as d:
+            a = self._write(d, "a.json", {"base": {"commit": "x"}})
+            b = self._write(d, "b.json", {"mem-x": {"commit": "y", "extends": "base"}})
+            self.assertEqual(sorted(server.all_refs([a, b])), ["base", "mem-x"])
+            dup = self._write(d, "c.json", {"base": {"commit": "z"}})
+            with self.assertRaisesRegex(ValueError, "defined twice"):
+                server.all_refs([a, dup])
+
+    def test_repo_refs_load(self):
+        refs = server.all_refs()
+        self.assertIn("base", refs)
+        for name in refs:
+            self.assertEqual(server.load_ref(name)["name"], name)
 
 
 class CheckpointTest(absltest.TestCase):

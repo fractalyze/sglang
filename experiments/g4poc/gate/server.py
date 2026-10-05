@@ -7,6 +7,7 @@ venv's editable install, so control and candidate run different code from one
 venv. A ref that needs other compiled packages names its own `python`.
 """
 
+import glob
 import hashlib
 import json
 import logging
@@ -24,13 +25,28 @@ from gate import config, hostwatch, treehash
 log = logging.getLogger(__name__)
 
 REFS_PATH = os.path.join(os.path.dirname(__file__), "refs.json")
+# Workstreams keep their refs beside their own code (e.g. memory/refs.json) so they never
+# edit the gate's file; a ref name must be unique across all of them.
+WORKSTREAM_REFS_GLOB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "*", "refs.json")
 _ALLOWED_KEYS = {"commit", "python", "server_args", "env", "extends", "description", "weight_layout_change",
                  "numerics_unchanged"}
 
 
+def all_refs(paths: Optional[List[str]] = None) -> Dict[str, Dict]:
+    if paths is None:
+        paths = sorted({os.path.abspath(REFS_PATH), *map(os.path.abspath, glob.glob(WORKSTREAM_REFS_GLOB))})
+    refs: Dict[str, Dict] = {}
+    for path in paths:
+        with open(path) as f:
+            for name, ref in json.load(f).items():
+                if name in refs:
+                    raise ValueError(f"ref {name!r} is defined twice (again in {path})")
+                refs[name] = ref
+    return refs
+
+
 def load_ref(name: str) -> Dict:
-    with open(REFS_PATH) as f:
-        refs = json.load(f)
+    refs = all_refs()
     if name not in refs:
         raise KeyError(f"unknown ref {name!r}; known: {sorted(refs)}")
     ref = dict(refs[name])

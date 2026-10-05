@@ -1,0 +1,15 @@
+{
+ "mem-base": {
+  "description": "PC's control: PA's r03 (BASELINE-FP8.md) on bs3. FP8 text checkpoint (G4POC_MODEL_DIR=.../gemma-4-26B-A4B-it-fp8ch/text), FP8 KV, Triton attention, decode graphs to bs 32, no prefill graph.",
+  "commit": "ac6035c07f",
+  "server_args": ["--kv-cache-dtype", "fp8_e4m3", "--cuda-graph-max-bs-decode", "32", "--context-length", "16384",
+                  "--mem-fraction-static", "0.93", "--swa-full-tokens-ratio", "0.3", "--disable-prefill-cuda-graph"],
+  "env": {}
+ },
+ "mem-l4-r027": {
+  "description": "L4: sliding/full pool ratio fit to the measured per-session mix (1,414 / 5,281 = 0.27).",
+  "extends": "mem-base",
+  "server_args": ["--swa-full-tokens-ratio", "0.27"],
+  "numerics_unchanged": true
+ }
+}
