@@ -28,7 +28,11 @@ python -m sglang.launch_server --model-path <gemma-4-26B-A4B-it FP8 text checkpo
 ```
 
 Host RAM: the server pins a 12 GB host pool and peaks at ~18 GB RSS; SGLang's start check also wants 10 GiB of
-headroom beyond the pool, so give its memory cgroup 28 GB.
+headroom beyond the pool, so give its memory cgroup 28 GB. That check counts page cache charged to the cgroup as
+used: reading the ~25 GB weight files can charge several GB of file cache to the server's cgroup (cgroup headroom
+at the same start step was 17.9 GiB on one launch and 23.3 GiB on the next, and the first failed with "Not enough
+host memory available"). Size the cgroup for that cache too, or pre-warm the weight files outside the cgroup (or
+drop caches) before launch.
 
 | | mem-base | mem-final (memory levers) | + compute levers (`final-mem-c1-c2a`) | + fixed HiCache (**`final-hc`**) |
 |---|---|---|---|---|
