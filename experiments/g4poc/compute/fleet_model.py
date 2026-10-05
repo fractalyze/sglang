@@ -14,15 +14,20 @@ held:
 (b') LRU-oversubscribed: the plain radix cache past its cliff (the cached sweep's points whose hit rate
     collapsed), i.e. what (b) costs when the cache is left on and thrashes. No cap.
 (c) sticky, host-tier (HiCache): idle histories live in host RAM and load back on the next turn; a GPU
-    holds at most host-pool tokens / tokens per session, for each host RAM size per GPU. Rates from a
-    HiCache in-flight sweep. Pending HiCache exactness (multi-turn load-back is not yet bit-exact).
+    holds at most (device full-pool tokens + host-pool tokens) / tokens per session, for each host RAM size
+    per GPU (the storage bound); rates from a HiCache in-flight sweep (the compute bound). Past the storage
+    bound the pool thrashes and every turn re-prefills (measured on bs3: 120 sessions at 30 s think time on
+    final-hc, hit rate 0.002, p90 24 s), so the storage bound is a hard cap at any SLO under ~20 s.
+
+Sessions per GPU = min(compute bound, storage bound). `host_gb_needed` gives, per think time, the host pool per
+GPU at which storage stops binding (the sizing rule).
 
 GPUs = ceil(S / n); $/1M output tokens = price x GPUs / (S x O / (T + e) x 3600) x 1e6 (O: output tokens
 per turn). A capped policy stops growing with T while (b) keeps growing, so (b) wins past a crossover T*.
 T = 0 is the reading where S counts requests in flight rather than sessions.
 
   python compute/fleet_model.py --cached <sweep.json> --nocache <sweep.json> [--hicache <sweep.json>] \
-      [--host-gb 12,32,64,128] [--sessions 2200] [--slo 6,10,15] [--out fleet.json]
+      [--host-gb 12,24,48,96,128] [--measured ...] [--sessions 2200] [--slo 6,10,15] [--out fleet.json]
 """
 
 import argparse
@@ -35,10 +40,11 @@ THINK_S = (0, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300)
 # A cached-sweep point is past the cliff when its hit rate has collapsed below this share of the sweep's best
 # (base: 0.22 at 16 in flight against 0.76; mem-final: 0.11 at 28 against 0.76, while 20 and 24 hold 0.66/0.61).
 BELOW_CLIFF_HIT_SHARE = 0.5
-# PC3's bs3 HiCache run (sweep-mem-hc-20261005-145932, --hicache-size 12): "Allocating full hierarchical KV
-# host pool: 318445 tokens, 3.26 GB" -- full-layer tokens per GB of --hicache-size (the rest of the size
-# holds sliding-window KV in the device pools' ratio).
+# PC3's bs3 HiCache run (sweep-mem-hc-20261005-145932, --hicache-size 12; the same on bs2): "Allocating full
+# hierarchical KV host pool: 318445 tokens, 3.26 GB" -- full-layer tokens per GB of --hicache-size (the other
+# 8.74 GB hold sliding-window KV in the device pools' ratio), i.e. ~37.7 KB of host pool per history token.
 HOST_FULL_TOKENS_PER_GB = 318445 / 12
+HOST_GB = (12, 24, 48, 96, 128)
 
 
 def points(sweep: Dict) -> List[Dict]:
@@ -109,8 +115,18 @@ def policy_row(p: Optional[Dict], think_s: float, sessions: int, cap: Optional[f
     }
 
 
+def storage_cap(device_tokens: float, host_gb: float, per_session: float) -> float:
+    """Histories one GPU can hold: its device full pool plus a host pool of `host_gb` (--hicache-size)."""
+    return (device_tokens + HOST_FULL_TOKENS_PER_GB * host_gb) / per_session
+
+
+def host_gb_needed(compute_sessions: float, device_tokens: float, per_session: float) -> float:
+    """The host pool per GPU at which the storage bound reaches the compute bound."""
+    return max(0.0, compute_sessions * per_session - device_tokens) / HOST_FULL_TOKENS_PER_GB
+
+
 def policies(cached: Dict, nocache: Dict, hicache: Optional[Dict] = None,
-             host_gb: Sequence[float] = (12, 32, 64, 128), hicache_points: Optional[str] = None) -> List[Dict]:
+             host_gb: Sequence[float] = HOST_GB, hicache_points: Optional[str] = None) -> List[Dict]:
     below, past = split_at_cliff(points(cached))
     per_session = tokens_per_session(below)
     n_cap = int(cached["server_info"]["max_total_num_tokens"]) / per_session
@@ -122,10 +138,11 @@ def policies(cached: Dict, nocache: Dict, hicache: Optional[Dict] = None,
     if hicache is not None or hicache_points:
         hc = points(hicache) if hicache is not None else points_from_triples(hicache_points, below)
         hc_per_session = tokens_per_session(hc)
+        hc_device = int((hicache or cached)["server_info"]["max_total_num_tokens"])
         for gb in host_gb:
-            out.append({"name": f"c_sticky_host_{gb:g}gb", "points": hc,
-                        "cap": max(n_cap, HOST_FULL_TOKENS_PER_GB * gb / hc_per_session),
-                        "pending": "HiCache exactness (multi-turn load-back not yet bit-exact)"})
+            out.append({"name": f"c_sticky_host_{gb:g}gb", "points": hc, "host_gb": gb,
+                        "device_tokens": hc_device, "tokens_per_session": hc_per_session,
+                        "cap": storage_cap(hc_device, gb, hc_per_session)})
     return out
 
 
@@ -145,13 +162,50 @@ def model(pols: List[Dict], sessions: int = 2200, slo_s: float = 10.0, think: Se
     rows = [{"think_s": t, **{p["name"]: policy_row(best(p["points"], slo_s, t, p["cap"]), t, sessions, p["cap"])
                               for p in pols}} for t in think]
     drop = next(p for p in pols if p["name"] == "b_drop_idle")
+    host = [p for p in pols if p.get("host_gb") is not None]
+    sizing = []
+    if host:
+        h = host[0]
+        for t in think:
+            b = best(h["points"], slo_s, t)
+            if b is not None:
+                n = sessions_per_gpu(b, t, None)
+                sizing.append({"think_s": t, "compute_bound_sessions_per_gpu": n,
+                               "host_gb_needed": host_gb_needed(n, h["device_tokens"], h["tokens_per_session"]),
+                               "gpus_for_sessions": math.ceil(sessions / n)})
     return {
+        "host_sizing": sizing,
         "sessions": sessions, "slo_s": slo_s,
         "caps_sessions_per_gpu": {p["name"]: p["cap"] for p in pols},
         "pending": {p["name"]: p["pending"] for p in pols if p.get("pending")},
         "crossover_vs_drop_idle_s": {p["name"]: crossover(p, drop, slo_s) for p in pols if p["cap"]},
         "rows": rows,
     }
+
+
+def validate(measured: Sequence[str], pols: List[Dict], slo_s: float) -> List[Dict]:
+    """Measured think-time session loads against the model's bounds for the same host pool.
+
+    Each spec is "label:sessions:mean_think_s:turns_per_session:out_tok_s:p90_s:hit[:host_gb]" (host_gb 12 by
+    default). A closed population starts a new session the moment one ends, and a session's first turn has no
+    think time, so the mean think per turn is mean_think x (1 - 1/turns_per_session).
+    """
+    host = {p["host_gb"]: p for p in pols if p.get("host_gb") is not None}
+    rows = []
+    for spec in measured:
+        parts = spec.split(":")
+        label, (n, think, turns, tok_s, p90, hit) = parts[0], (float(x) for x in parts[1:7])
+        gb = float(parts[7]) if len(parts) > 7 else 12.0
+        t_eff = think * (1 - 1 / turns)
+        row = {"label": label, "sessions": n, "think_eff_s": t_eff, "out_tok_s": tok_s, "p90_s": p90, "hit": hit}
+        h = host.get(gb)
+        if h is not None:
+            b = best(h["points"], slo_s, t_eff)
+            row.update({"host_gb": gb, "storage_bound": h["cap"],
+                        "compute_bound": sessions_per_gpu(b, t_eff, None) if b else None,
+                        "past_storage_bound": n > h["cap"]})
+        rows.append(row)
+    return rows
 
 
 def _fmt(r: Optional[Dict]) -> str:
@@ -166,9 +220,11 @@ def main() -> None:
     p.add_argument("--nocache", required=True, help="sweep.json of the same stack with --disable-radix-cache")
     p.add_argument("--hicache", help="sweep.json of a HiCache stack")
     p.add_argument("--hicache-points", help='instead of --hicache: "C:p90:out_tok_s,..." of a HiCache sweep')
-    p.add_argument("--host-gb", default="12,32,64,128")
     p.add_argument("--sessions", type=int, default=2200)
     p.add_argument("--slo", default="6,10,15")
+    p.add_argument("--measured", action="append", default=[],
+                   help="label:sessions:mean_think_s:turns_per_session:out_tok_s:p90_s:hit[:host_gb] (repeatable)")
+    p.add_argument("--host-gb", default=",".join(f"{g:g}" for g in HOST_GB), help="host pool per GPU (--hicache-size)")
     p.add_argument("--out")
     args = p.parse_args()
     load = lambda path: json.load(open(path)) if path else None
@@ -177,6 +233,7 @@ def main() -> None:
     res = {"inputs": {"cached": args.cached, "nocache": args.nocache, "hicache": args.hicache,
                       "hicache_points": args.hicache_points},
            "by_slo": {s: model(pols, args.sessions, float(s)) for s in args.slo.split(",")}}
+    res["validation"] = {s: validate(args.measured, pols, float(s)) for s in args.slo.split(",")}
     if args.out:
         with open(args.out, "w") as f:
             json.dump(res, f, indent=1)
@@ -188,6 +245,12 @@ def main() -> None:
         print("think s | " + " | ".join(f"{n[:21]:^21}" for n in names) + "   (sess/GPU, GPUs, $/1M out @0.70)")
         for r in m["rows"]:
             print(f"{r['think_s']:7g} | " + " | ".join(_fmt(r[n]) for n in names))
+        print("host sizing (HiCache): think s -> compute-bound sessions/GPU, host GB/GPU to hold them, GPUs")
+        for z in m["host_sizing"]:
+            print(f"  {z['think_s']:5g} s: {z['compute_bound_sessions_per_gpu']:6.1f} sessions/GPU, "
+                  f"{z['host_gb_needed']:5.1f} GB host, {z['gpus_for_sessions']} GPUs")
+        for v in res["validation"][s]:
+            print("  measured:", json.dumps({k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.items()}))
 
 
 if __name__ == "__main__":

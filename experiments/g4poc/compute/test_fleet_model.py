@@ -32,8 +32,8 @@ class FleetModelTest(absltest.TestCase):
         self.assertAlmostEqual(pols["a_sticky_device"]["cap"], 10.0)
         self.assertIsNone(pols["b_drop_idle"]["cap"])
         self.assertEqual([p["inflight"] for p in pols["b_lru_oversubscribed"]["points"]], [16])
-        self.assertAlmostEqual(pols["c_sticky_host_12gb"]["cap"], fm.HOST_FULL_TOKENS_PER_GB * 12 / 6000.0)
-        self.assertIn("exactness", pols["c_sticky_host_12gb"]["pending"])
+        # Device full pool (60,000 tokens) plus the 12 GB host pool, per 6,000-token history.
+        self.assertAlmostEqual(pols["c_sticky_host_12gb"]["cap"], (60000 + fm.HOST_FULL_TOKENS_PER_GB * 12) / 6000.0)
 
     def test_zero_think_time_is_the_inflight_point(self):
         row = fm.model(list(_pols().values()), sessions=100, slo_s=10.0, think=[0])["rows"][0]
@@ -43,7 +43,7 @@ class FleetModelTest(absltest.TestCase):
         self.assertAlmostEqual(b["sessions_per_gpu"], 8.0)  # 1.25 x 6.4
         self.assertEqual(b["gpus"], 13)
         self.assertIsNone(row["b_lru_oversubscribed"])  # its only point misses the SLO
-        self.assertAlmostEqual(row["c_sticky_host_12gb"]["sessions_per_gpu"], 24.0)
+        self.assertAlmostEqual(row["c_sticky_host_12gb"]["sessions_per_gpu"], 24.0)  # compute-bound at T = 0
 
     def test_crossover_where_dropping_matches_the_memory_cap(self):
         # n_b(T) = max(1.0 (T + 4), 1.25 (T + 6.4)) reaches the cap of 10 at T = 10 / 1.25 - 6.4 = 1.6 s.
@@ -66,6 +66,18 @@ class FleetModelTest(absltest.TestCase):
         self.assertAlmostEqual(pt["e2e_mean_s"], 6.0)  # 24 in flight / 4 turns/s
         pols = {p["name"]: p for p in fm.policies(CACHED, NOCACHE, None, (12,), hicache_points="24:8.0:800")}
         self.assertIn("c_sticky_host_12gb", pols)
+
+    def test_host_sizing_lifts_storage_to_the_compute_bound(self):
+        m = fm.model(list(_pols().values()), sessions=100, slo_s=10.0, think=[30])
+        z = m["host_sizing"][0]
+        self.assertAlmostEqual(z["compute_bound_sessions_per_gpu"], 3.0 * (30 + 8.0))  # 114 sessions
+        self.assertAlmostEqual(z["host_gb_needed"], (114 * 6000 - 60000) / fm.HOST_FULL_TOKENS_PER_GB)
+        self.assertAlmostEqual(fm.storage_cap(60000, z["host_gb_needed"], 6000.0), 114.0)
+
+    def test_validation_uses_the_closed_population_think_time(self):
+        v = fm.validate(["t30-120:120:30:5:532:24.3:0.002"], list(_pols().values()), 10.0)[0]
+        self.assertAlmostEqual(v["think_eff_s"], 24.0)  # turn 0 of each 5-turn session has no think time
+        self.assertTrue(v["past_storage_bound"])  # 120 > (60,000 + 318,445) / 6,000 = 63
 
     def test_failed_or_empty_points_are_dropped(self):
         sweep = _sweep([(8, 2.0, 4.0, 5.0, 0.7)])
