@@ -343,7 +343,7 @@ Without HiCache the device pool (~160K full-layer tokens, ~27 histories) is the 
 12 GB host pool moves it past 40. At the 10 s SLO, capacity goes from 24 in flight (838 tok/s, $0.232/1M at
 $0.70) to 32 (952, $0.204).
 
-### PC4's bug-4 fix on the final (M128, 10-06 morning)
+### PC4's bug-4 fix (SWA prefill-window margin): an opt-in lever, not promoted on the final (M128)
 
 **What it fixes.** Gemma-4's chat template renders a past assistant turn without the generation prompt's tail, so
 the next turn's prompt matches a few tokens short of the inserted one. With no margin, the sliding window behind
@@ -371,8 +371,22 @@ through decode (the pool runs out mid-decode more often).
 **(b) Quality** (paired against the base anchor, bs2): GSM8K (full 1,319) 96.44% vs 96.13% (+0.30 pt, CI95
 [-0.23, +0.84], McNemar p 0.39), tool JSON 40/40: pass.
 
-**(c) 30-min soak at 28 in flight**: running (pass = 0 failed, <= 1.39% retracted, p99 <= 14.47 s: twice the
-final's bs3 soak retraction rate, 1.3x its p99).
+**(c) 30-min soak at 28 in flight** (pass, fixed before the run: 0 failed, <= 1.39% retracted, p99 <= 14.47 s, i.e.
+twice the final's soak retraction rate and 1.3x its p99):
+
+| 30 min at 28 in flight | requests | failed | p90 | p99 | out tok/s | hit | retracted |
+|---|---|---|---|---|---|---|---|
+| final (bs3, PC2) | 9,656 | 0 | 8.59 s | 11.13 s | 952 | 0.768 | 67 (0.69%) |
+| final + margin (bs3, PC2) | 9,694 | 0 | 8.47 s | 12.43 s | 958 | 0.797 | **259 (2.67%)** |
+| final + margin (bs2) | 9,801 | 0 | 8.37 s | 12.59 s | 968 | 0.797 | **251 (2.56%)** |
+
+GPU memory on bs2 stayed flat at 31,262 MiB, inside the rule (`runs/m128/soak-mem.json`). Both hosts retract ~3.8x
+the final's rate, past the 1.39% limit, for +0.6-1.7% output tok/s and -1.4..-2.6% p90. **Not promoted: the final
+stays `final-hc-cp2048-lpm`.** The margin's retraction cost interacts with chunk 2048 + lpm, which already retract
+more under load than final-hc (above); on final-hc alone PC4 measured +7.1% tok/s and -7.3% p90 at 28 in flight with
+retractions 2-3 -> 7-8 per 240 s. It ships as an opt-in lever (env, default off): worth it on final-hc, and wherever
+the second-turn prefix miss matters more than the retraction tail (think-time traffic: PC4, hit +0.044 at 30 s x 48
+sessions). Vault: `g4poc-m128f` (parked), PC4's `g4poc-sw4`.
 
 ## 4. Prefill/decode split model (`gate pd-measure`, `gate pd-model`)
 
@@ -589,7 +603,8 @@ It reproduces 0.28 at 48 sessions (measured 0.286) and 0.10 at 72 (0.076). On HS
   the 1,023 SGLang needs (`free_out_of_window_slots` at prefill plus the template's 4-token cut). This holds with
   or without HiCache and is part of every measured think-time hit rate. The model's h_max (0.72, from the
   zero-think sweep) therefore overstates the think-mode ceiling, and the hit rates in the table above are a little
-  optimistic. PC4 is testing a default-off margin switch; if it validates, the ceiling rises toward ~0.8.
+  optimistic. PC4's margin switch (`SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN=128`, opt-in, section 3) fixes it: +0.044 hit at
+  30 s x 48 sessions on final-hc; not promoted on the final because of its retraction cost.
 
 **HS1'' (bs2, registered before the run).** final-hc at 30 s think x 36 sessions (slots with the window-cut fix),
 6 GB vs 12 GB host pool. 36 sessions lies between the two storage bounds: 6 GB adds nothing over the device
