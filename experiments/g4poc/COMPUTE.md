@@ -58,7 +58,23 @@ server per leg; deciding metric E2E p90 gain over a bar of max(3 sigma A/A noise
 fidelity on pair 0; no regression of output tok/s. Predictions: `compute/PREREG.md` and vault trials
 `g4poc-c<N>`.
 
-### C1 Tuned Triton fused_moe config — pending
+### C1 Tuned Triton fused_moe config — kept (+1.2% E2E p90 at 12 in flight)
+
+`SGLANG_MOE_CONFIG_DIR` points at a fused_moe config tuned on the bs2 RTX 5090 (fp8_w8a8 per-channel, E=128,
+N=704; `compute/moe_tune.py` runs SGLang's tuner without Ray, `compute/merge_moe_configs.py` merges the parts).
+The full 1,920-config space took ~14 min per token count, so the tune was pruned to 648 configs per part: decode
+M 1-32 (BLOCK_M 16-64), prefill M 256-4096 (BLOCK_M 64-256), and M 768/1536 after the first merge left 1536 on the
+1024 entry (SGLang picks the nearest tuned M): 802 us there against 666 us for the default config, now 628 us.
+
+| | E2E p90 | output tok/s | prediction (PREREG.md) |
+|---|---|---|---|
+| gate, 12 in flight (4 ABBA pairs) | **-1.2%** (gain 1.012, CI95 1.006-1.015, 4/4 pairs) | +1.1% | -6% .. -1% |
+| A-B-B-A sweeps, 8 in flight | -1.0% (control drift 0.3%) | +0.5% | |
+
+Kernel (fused_moe, us): M 1 31 -> 21, M 4-512 -2..-5%, M 1024 +3%, M 1536-4096 -6..-8% (`runs/c1-moe-config/`).
+Fidelity and leg integrity pass. Why small: the default config is already near the HBM bound at decode sizes and
+MoE is ~21% of GPU time, so E2E moves by about a fifth of the kernel gain. Records: `compute/runs/`, vault
+`g4poc-c1` (kept).
 
 ## 3. Harness fixes found on the way (2026-10-05)
 
