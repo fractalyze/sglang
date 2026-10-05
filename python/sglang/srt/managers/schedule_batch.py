@@ -1183,6 +1183,9 @@ class Req(ReqDllmMixin):
         self.storage_prefetch_last_match_len: Optional[int] = None
         # Whether the prefill-time SWA tree lock has been released early
         self.swa_prefix_lock_released: bool = False
+        # SGLANG_OPT_SWA_RELEASE_SLID_WINDOW: token position below which this
+        # request's prefill-time SWA tree lock has been dropped.
+        self.swa_window_released_seqlen: int = 0
         # Logical-page KV sharding: rotation base of the chain this request
         # extends (owner of position-page P is (base + P) % shard_size).
         # Refreshed at every sharded alloc — read through last_node, or drawn
@@ -1942,6 +1945,7 @@ class Req(ReqDllmMixin):
         self.num_matched_prefix_tokens = 0
         self.lock_receipt = DecLockRefParams()
         self.swa_prefix_lock_released = False
+        self.swa_window_released_seqlen = 0
         self.swa_branching_seqlen = None
         self.extend_range = None
         self.dllm_initialized = False
@@ -3808,6 +3812,28 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             extend_num_tokens=self.extend_num_tokens,
         )
 
+    def _release_slid_swa_window(
+        self, req: Req, *, sliding_window_size: int, eviction_interval: int
+    ) -> None:
+        # Same frontier as _evict_swa: no later decode step reads SWA KV below it.
+        release_below = req.seqlen - 1 - sliding_window_size
+        if (
+            req.swa_prefix_lock_released
+            or req.lock_receipt.swa_uuid_for_lock is None
+            or req.last_node is None
+            or not req.kv.holds_kv
+            or req.decode_batch_idx < 1
+            or release_below < req.swa_window_released_seqlen + eviction_interval
+        ):
+            return
+        if release_below >= req.kv.cache_protected_len:
+            # The window has left the tree-protected prefix: drop the whole lock.
+            self.tree_cache.dec_swa_lock_only(req.last_node, req.lock_receipt)
+            req.swa_prefix_lock_released = True
+        else:
+            self.tree_cache.release_swa_window_below(req, release_below)
+        req.swa_window_released_seqlen = release_below
+
     def maybe_evict_swa(self):
         if self.tree_cache.supports_swa():
             sliding_window_size = self.tree_cache.sliding_window_size
@@ -3815,6 +3841,10 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             release_leaf_lock = (
                 envs.SGLANG_OPT_SWA_RELEASE_LEAF_LOCK_AFTER_WINDOW.get()
                 and hasattr(self.tree_cache, "dec_swa_lock_only")
+            )
+            release_slid_window = (
+                envs.SGLANG_OPT_SWA_RELEASE_SLID_WINDOW.get()
+                and self.tree_cache.supports_swa_window_release()
             )
 
             eviction_interval = max(1, envs.SGLANG_SWA_EVICTION_INTERVAL.get())
@@ -3836,6 +3866,13 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
                         >= req.kv.swa_evicted_seqlen + eviction_interval
                     ):
                         self._evict_swa(req, req.seqlen - 1)
+
+                    if release_slid_window:
+                        self._release_slid_swa_window(
+                            req,
+                            sliding_window_size=sliding_window_size,
+                            eviction_interval=eviction_interval,
+                        )
 
                     # Once the decode position has moved past the sliding window,
                     # the SWA portion of the prefill-time tree lock is no longer

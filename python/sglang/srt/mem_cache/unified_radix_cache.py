@@ -946,6 +946,21 @@ class UnifiedRadixCache(BasePrefixCache):
         result = self.tree_core.dec_swa_lock_only(node_id, params)
         self._free_values(result.device_frees, result.host_frees)
 
+    def supports_swa_window_release(self) -> bool:
+        return (
+            self.is_swa_enabled
+            and not self.disable
+            and isinstance(self.tree_core, UnifiedTreeCore)
+            and not self.tree_core.has_swa_host_pool
+            and not self.tree_core.is_eagle
+        )
+
+    def release_swa_window_below(self, req: Req, release_below: int) -> None:
+        # The released nodes only become evictable; nothing is freed here.
+        req.lock_receipt = self.tree_core.release_swa_window_below(
+            req.last_node, req.lock_receipt, release_below
+        )
+
     def inc_host_lock_ref(self, node_id: NodeId) -> IncLockRefResult:
         if self.disable:
             return IncLockRefResult()
@@ -1248,6 +1263,7 @@ class UnifiedRadixCache(BasePrefixCache):
         req.lock_receipt = lock_result.to_dec_params()
         # The rematch acquired a new SWA prefix lock.
         req.swa_prefix_lock_released = False
+        req.swa_window_released_seqlen = 0
 
         # cleanup
         for comp in self._components_tuple:

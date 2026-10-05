@@ -695,6 +695,16 @@ class Envs:
     # Registered TreeCore backend serving the unified radix cache.
     SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND = EnvStr("python")
     SGLANG_OPT_SWA_RELEASE_LEAF_LOCK_AFTER_WINDOW = EnvBool(False)
+    # During decode, every SGLANG_SWA_EVICTION_INTERVAL tokens, release the
+    # request's SWA tree lock on the part of its prefill-time window that has
+    # slid out (split at the slide frontier), so the pool can reclaim it while
+    # the request runs. Off: a request pins its whole prefill-time window
+    # until it finishes (window + reply length slots for replies shorter than
+    # a window). Python unified tree core only, no SWA host pool, no EAGLE.
+    SGLANG_OPT_SWA_RELEASE_SLID_WINDOW = EnvBool(False)
+    # Debug for the above: write NaN into the SWA KV of every slot it unlocks,
+    # so any later read of a released slot shows up as corrupted output.
+    SGLANG_DEBUG_SWA_POISON_RELEASED_WINDOW = EnvBool(False)
 
     # ===================================================================
     # PD disaggregation runtime

@@ -781,6 +781,35 @@ class UnifiedTreeCore(UnifiedTreeCoreInterface):
                 comp.release_component_lock(node, params)
         return result
 
+    def release_swa_window_below(
+        self,
+        node_id: NodeId,
+        params: DecLockRefParams,
+        release_below: int,
+    ) -> DecLockRefParams:
+        node = self.node_by_id(node_id)
+        self._assert_receipt_anchor(node, params)
+        swa_component = self.components_by_type.get(ComponentType.SWA)
+        if swa_component is None:
+            return params
+        node_end = 0
+        cur = node
+        while cur is not self.root_node:
+            node_end += len(cur.key)
+            cur = cur.parent
+        swa_uuid = swa_component.release_window_lock_below(
+            node,
+            swa_uuid_for_lock=params.swa_uuid_for_lock,
+            node_end=node_end,
+            release_below=release_below,
+        )
+        return DecLockRefParams(
+            node_id=params.node_id,
+            swa_uuid_for_lock=swa_uuid,
+            swa_uuid_for_host_lock=params.swa_uuid_for_host_lock,
+            skipped_lock_components=params.skipped_lock_components,
+        )
+
     def inc_host_lock_ref(self, node_id: NodeId) -> IncLockRefResult:
         node = self.node_by_id(node_id)
         result = IncLockRefResult(node_id=node.id)
