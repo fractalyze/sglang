@@ -145,5 +145,82 @@
    "--schedule-policy",
    "lpm"
   ]
+ },
+ "final-hc-cp2048-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-cp2048 on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-cp2048",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-kvs16-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-kvs16 on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-kvs16",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-lpm-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-lpm on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-lpm",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-cp2048-kvs16-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-cp2048-kvs16 on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-cp2048-kvs16",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-cp2048-lpm-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-cp2048-lpm on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-cp2048-lpm",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-kvs16-lpm-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-kvs16-lpm on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-kvs16-lpm",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-cp2048-kvs16-lpm-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-smallpool): final-hc-cp2048-kvs16-lpm on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a.",
+  "extends": "final-hc-cp2048-kvs16-lpm",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
  }
 }
