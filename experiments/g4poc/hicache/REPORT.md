@@ -22,6 +22,7 @@ gate. Predictions: [PREREG.md](PREREG.md). Upstream write-up: [UPSTREAM.md](UPST
 | C24 | 5.27 | 7.98 | 905 | 0.742 | 0 |
 | C28 | 5.87 | 8.91 | 919 | 0.710 | 0 |
 | C32 | 6.87 | 9.55 | **942** | 0.720 | 0 |
+| C36 | 7.67 | 10.50 | 927 | 0.713 | 0 |
 | C40 | 7.73 | 11.63 | 890 | 0.702 | 0 |
 | C48 | 11.00 | 13.95 | 874 | 0.671 | 0 |
 | C56 | 17.0 | 23.72 | 525 | 0.002 | 0 |
@@ -30,12 +31,17 @@ C20-C32: `sweep-final-hc-20261005-174836-build-server-3-583abd`. C40-C56:
 `sweep-final-hc-20261005-183217-build-server-3-c4d30a`. Decode CUDA graphs are captured up to batch
 48, so C56 decodes eagerly; this was left unchanged.
 
-**Cost-optimal points.**
-- At a 10 s p90 SLO: C32, 942 output tok/s, $0.206 per 1M output tokens at $0.70/GPU-h. The device-only
-  final reaches C24 at 833 tok/s ($0.233).
-- At a 15 s p90 SLO: still C32 by goodput. C48 also meets 15 s but delivers less (874 tok/s).
-- Goodput peaks at C32. The hit rate holds above 0.67 through C48 and collapses at C56, where the host
-  pool no longer holds the working set. Every point degrades without a failed request.
+**Operating points.**
+- **Recommended: C28.** 919 output tok/s at p90 8.91 s in the sweep, $0.212 per 1M output tokens at
+  $0.70/GPU-h. This is pending PC2's C28 soak.
+- **Sweep capacity and edge at a 10 s p90 SLO: C32.** 942 tok/s at p90 9.55 s, and 940 / 9.53 s in a
+  replicate, $0.206 per 1M output. PC2's 30-minute soak at C32 gave p90 9.92 s and 899 tok/s, only
+  0.08 s under the SLO, so C32 is the edge rather than an operating point.
+- C36 misses the SLO (p90 10.50 s, 927 tok/s; `sweep-final-hc-20261005-191358-build-server-3-46c175`).
+  At a 15 s SLO goodput still peaks at C32: C48 meets 15 s but delivers less (874 tok/s).
+- The device-only final reaches C24 at 833 tok/s ($0.233).
+- The hit rate holds above 0.67 through C48 and collapses at C56, where the host pool no longer holds
+  the working set. Every point degrades without a failed request.
 
 **Against the device-only final (final-mem-c1-c2a, bs3):** +8.6% output tok/s at C24 (p90 8.59 s →
 7.98 s) and +49% at C28 (616 → 919 tok/s), where the device-only final's hit rate falls to 0.15.
@@ -113,5 +119,5 @@ this deployment runs with disaggregation off and never takes that path. See UPST
 ## Status log
 
 - 10-05 18:50 KST: final-hc C20-C56 and exactness done.
-- 10-05 19:12 KST: replicate and the b′ role-play run done. C36 and the fence-cost sweep are queued
-  behind PC2's C32 soak (`memlogs/pc3-tail3.sh` on bs3).
+- 10-05 19:12 KST: replicate and the b′ role-play run done.
+- 10-05 19:52 KST: C36 done (misses 10 s). Fence-cost sweep queued (`memlogs/pc3-tail3.sh` on bs3).
