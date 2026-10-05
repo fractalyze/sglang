@@ -63,5 +63,14 @@
   "description": "C2-A fallback: like c2-extend-tiles but the table keeps the default KV tile widths (head_dim 512 (16, 32, 32, 4, 1), 256 (32, 64, 64, 8, 1); branch jumanzii/g4poc-b-c2exact), so outputs match the default tiles on the swept shapes.",
   "extends": "c2-extend-tiles",
   "commit": "9026c00478"
+ },
+ "final-mem-c1-c2a": {
+  "description": "bs2 final: PC's mem-final (memory/refs.json, d56fb9764a: stack1 flags, L8 FP8 vocab table, decode graphs to 48, expandable segments) + C1 tuned fused_moe config + C2-A sm120 FP8-KV extend tiles. Tree 1425761173 = mem-final's 53752c62aa + the C2-A tile commits (branch jumanzii/g4poc-final-c2).",
+  "extends": "mem-final",
+  "commit": "1425761173",
+  "env": {
+   "SGLANG_MOE_CONFIG_DIR": "/data/jooman/g4poc/moe-configs/c1",
+   "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1"
+  }
  }
 }
