@@ -231,7 +231,46 @@ mem 0.955 is deployable on bs2 as on bs3. bs2 has no GPU co-tenant and no period
 The pair passes. PC2's bs3 anchor also passed (96.36 vs 96.21). Language adherence of role-play replies is
 still under investigation (PC).
 
-## 5. Harness fixes found on the way (2026-10-05)
+**What HiCache adds, bs2.** The control is the same stack without HiCache (`final-mem-c1-c2a`,
+`runs/sweep-final-mem-c1-c2a-20261005-203524-build-server-2-332ae0`; its memory peak is 31,484 MiB, also inside
+the rule):
+
+| in flight | without HiCache: p90, tok/s, hit | final-hc: p90, tok/s, hit | output tok/s |
+|---|---|---|---|
+| 16 | 6.25 s, 750, 0.70 | 6.25 s, 754, 0.73 | +0.5% |
+| 20 | 7.55 s, 791, 0.65 | 7.27 s, 816, 0.71 | +3% |
+| 24 | 8.52 s, 838, 0.62 | 7.78 s, 920, 0.74 | +10% |
+| 28 | 13.76 s, 610, 0.11 | 8.83 s, 927, 0.71 | +52% |
+| 32 | 14.92 s, 607, 0.00 | 9.50 s, 952, 0.72 | +57% |
+
+Without HiCache the device pool (~160K full-layer tokens, ~27 histories) is the cliff at 28 in flight. The
+12 GB host pool moves it past 40. At the 10 s SLO, capacity goes from 24 in flight (838 tok/s, $0.232/1M at
+$0.70) to 32 (952, $0.204).
+
+## 6. Prefill/decode split model (`gate pd-measure`, `gate pd-model`)
+
+Rates are measured on one GPU. **Prefill:** uncached prompts of 5,120 and 10,240 tokens at 1-8 in flight.
+**Decode:** from the server's full-batch decode steps; see the harness fix in section 7. The model takes the
+colocated sweep's point at the SLO for the workload (prompt, hit rate, output):
+
+| stack | prefill tok/s (5,120) | decode: batch sustained, tok/s, p90 TPOT | SLO point | P:D GPUs | disagg / colocated out tok/s per GPU | $/1M out @0.70, disagg vs colocated |
+|---|---|---|---|---|---|---|
+| base | 22,585 | 17, 1,070, 16.4 ms | C12 (10 s) | 0.44 | 745 / 568 (1.31x) | 0.261 vs 0.343 |
+| final-hc | 30,700 | 24, 1,484, 16.7 ms | C32 (10 s) | 0.42 | 1,048 / 952 (1.10x) | 0.186 vs 0.204 |
+| final-hc | | | C12 (6 s) | 0.41 | 1,054 / 647 (1.63x) | 0.184 vs 0.301 |
+
+- **KV transfer.** Per request this is all full-layer KV plus the last 1,024 sliding tokens, ~160 MB. On a
+  10 Gb/s link that is 130 ms and 7.7 requests/s; on 100 Gb/s, 13 ms and 77/s. It is not charged GPU time.
+- **Where the split pays.** With the final stack it pays most under a tight SLO (6 s: 1.63x), where colocated
+  decode steps wait behind prefill chunks. At 10 s, colocated batching already recovers most of it (1.10x).
+- **Assumptions.** The model assumes the prefill side keeps the cross-turn prefix cache, i.e. sticky routing
+  to a prefill node with HiCache. It is a model, not a disaggregated deployment.
+
+## 7. Fleet model: sessions with think time (`compute/fleet_model.py`)
+
+Pending the drop-idle measurement (radix cache off) and PC2's think-time loads (bs3), 10-06 ~01:00.
+
+## 8. Harness fixes found on the way (2026-10-05)
 
 Both broke the gate's first use on this SGLang commit (91132098df) and are fixed before any gated number.
 
