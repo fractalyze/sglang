@@ -11,8 +11,9 @@ nvidia-smi's.
 
 ## 0. Summary
 
-**Final config: `final-hc`** (one RTX 5090, FP8 checkpoint; SGLang tree `a0491db764`, branch
-`jumanzii/g4poc-final-hicache` = `53752c62aa` + PB's C2-A tile commits + PC3's two HiCache fixes):
+**Final config: `final-hc-cp2048-lpm`** = `final-hc` + `--chunked-prefill-size 2048 --schedule-policy lpm` (PB's C3)
+(one RTX 5090, FP8 checkpoint; SGLang tree `a0491db764`, branch `jumanzii/g4poc-final-hicache` = `53752c62aa` + PB's
+C2-A tile commits + PC3's two HiCache fixes):
 
 ```
 SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
@@ -24,7 +25,8 @@ python -m sglang.launch_server --model-path <gemma-4-26B-A4B-it FP8 text checkpo
   --max-running-requests 64 --mem-fraction-static 0.955 --swa-full-tokens-ratio 0.268 \
   --cuda-graph-max-bs-decode 48 \
   --enable-hierarchical-cache --hicache-size 12 --hicache-write-policy write_through \
-  --hicache-io-backend kernel --hicache-mem-layout page_first
+  --hicache-io-backend kernel --hicache-mem-layout page_first \
+  --chunked-prefill-size 2048 --schedule-policy lpm
 ```
 
 Host RAM: the server pins a 12 GB host pool and peaks at ~18 GB RSS. SGLang's start check
@@ -37,22 +39,28 @@ available", and the passing ones cleared it by 0.3-3.6 GB. In deployment: read t
 server's cgroup just before launch (page cache stays charged to whoever read it first), give the cgroup >= 32 GB,
 and retry the start on that error (the study's queues do all three that the host allows).
 
-| | mem-base | mem-final (memory levers) | + compute levers (`final-mem-c1-c2a`) | + fixed HiCache (**`final-hc`**) |
-|---|---|---|---|---|
-| burst capacity (5K in / 300 out, no shared prefix) | 17 | 29 | - | - |
-| multi-turn in-flight capacity at E2E p90 <= 10 s (240 s sweep points) | 12 | 20 | 24 | 32 (p90 9.55 s) |
-| **operating point, sustained 30 min** | - | - | - | **C28: p90 8.92 s, 0 failures** |
-| output tok/s at the operating point | 558 | 677 | 833 | **919** (+65%) |
-| $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | **0.212 (-39%)** |
-| multi-turn exactness at concurrency 1 (12 later turns) | - | - | 12/12 control | 12/12 identical to control |
-| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: no regression shown (section 5) |
+| | mem-base | mem-final (memory levers) | + compute levers (`final-mem-c1-c2a`) | + fixed HiCache (`final-hc`) | + chunk 2048, LPM (**`final-hc-cp2048-lpm`**) |
+|---|---|---|---|---|---|
+| burst capacity (5K in / 300 out, no shared prefix) | 17 | 29 | - | - | - |
+| multi-turn in-flight capacity at E2E p90 <= 6 s (240 s sweep points) | 8 | 8 | 12 | - | **12 (647 tok/s, $0.300 per 1M)** |
+| multi-turn in-flight capacity at E2E p90 <= 10 s (240 s sweep points) | 12 | 20 | 24 | 32 (p90 9.55 s) | 36 (p90 9.02 s, p99 43.5 s) |
+| **operating point, sustained 30 min** | - | - | - | C28: p90 8.92 s | **C28: p90 8.59 s, p99 11.13 s, 0 failures** |
+| output tok/s at the operating point | 558 | 677 | 833 | 919 | **952** (+71%) |
+| $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | 0.212 (-39%) | **0.204 (-41%)** |
+| multi-turn exactness at concurrency 1 (12 later turns) | - | - | 12/12 control | 12/12 identical to control | 12/12 (PX) |
+| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: no regression shown (section 5) | role-play here: NLL +0.0003, language net 0, pass; KL gate on build-server-2 (PB) |
 
-All on build-server-3; capacity points replicated on the same host. **final-hc headline: C28 sustained for 30
-minutes at E2E p90 8.92 s, 919 output tok/s, $0.212 per 1M output tokens** (9,353 requests, 0 failed, no memory
-creep). C32 meets the 10 s SLO only at the edge (30-minute p90 9.92 s, 899 tok/s), so C28 is the operating point.
-final-hc's sweep points are PC3's runs (`hicache/PREREG.md` HC4); the soaks and its quality anchor are in section 5. Server GPU memory
-stays under the 31,642 MiB rule (512 MiB below what CUDA can use) in every config; on a GPU shared with another
-job, use `--mem-fraction-static 0.94` (section 3).
+**Headline: one RTX 5090 sustains 28 multi-turn requests in flight for 30 minutes at E2E p90 8.59 s and p99 11.1 s,
+952 output tok/s, $0.204 per 1M output tokens at $0.70/GPU-h** (`sweep-final-hc-cp2048-lpm-20261006-052216`, section 3d; PB's
+build-server-2 soak of the same config also recommends C28). Past C28 the tail breaks (C32: p99 28.9 s here, 37 s on
+build-server-2, with 1.2% retractions) for <= 3% more throughput. Under chat think time the two in-flight flags do
+not help (section 3c); there, size by sessions per GPU.
+
+All on build-server-3; capacity points replicated on the same host. The previous stage, `final-hc`, sustained C28
+for 30 minutes at p90 8.92 s and 919 output tok/s ($0.212 per 1M); its C32 soak met 10 s only at the edge (p90
+9.92 s, 899 tok/s). Its sweep points are PC3's runs (`hicache/PREREG.md` HC4); its soaks and quality anchor are in
+section 5. Server GPU memory stays under the 31,642 MiB rule (512 MiB below what CUDA can use) in every config; on
+a GPU shared with another job, use `--mem-fraction-static 0.94` (section 3).
 
 What each part does:
 - **Memory levers (mem-final):** L9 sizes the RoPE tables to the served context, L10 shrinks the request table, the
@@ -65,14 +73,18 @@ What each part does:
   under-reserves sliding-window slots on a load-back) and loaded back stale KV (write-through raced the overlap
   scheduler's forward); both are fixed behind default-off switches, with regression tests.
 
-Not kept: L5 (sliding-window release; it frees the very window the next turn resumes from, for chat clients too),
-chunked prefill 2048 (-2 sessions), a running-request cap (no effect on the cache cliff). L6 and L11 were
-analysed, not built.
+Not kept: L5 (sliding-window release; it frees the very window the next turn resumes from, for chat clients too);
+chunked prefill 2048 as a memory lever (-2 burst sessions; as PB's in-flight latency lever it is in the final
+config); a running-request cap (no effect on the cache cliff); the SWA prefill window margin on top of chunk 2048 +
+LPM (a validated fix, but +0.6% tok/s for 3.9x retractions; section 3d). L6 and L11 were analysed, not built.
 
 The cliff past the capacity point is the prefix cache: once more sessions' histories compete for the pool than it
-holds, every turn re-prefills ~5K tokens and goodput falls. **With realistic think time that is the normal regime:
-at a 30 s mean think time one GPU serves ~60-65 chat sessions at a 10 s p90, at about $0.58 per 1M output tokens
-(section 3c), with or without HiCache as configured.** Use that, not the zero-think ceiling, to size the fleet.
+holds, every turn re-prefills ~5K tokens and goodput falls. **With realistic think time that is the normal regime
+(section 3c, independent sessions): one GPU serves ~70 chat sessions at a 30 s mean think time and ~113-119 at
+60 s, at a 10 s p90; at the T30 edge that is ~430 output tok/s, about $0.45 per 1M output tokens at $0.70/GPU-h.**
+Use sessions per GPU, not the zero-think throughput ceiling, to size the fleet. For chat with think time >= 30 s and
+~12 GB of host RAM per GPU, deploy device-only `final-mem-c1-c2a` (HiCache gains nothing there); HiCache and the two
+in-flight flags pay off for in-flight-heavy traffic.
 
 ## 1. Result in one table
 
@@ -241,9 +253,11 @@ below the cache capacity: ~20 per RTX 5090 with mem-final for a 10 s p90 (24 for
 queueing past it. The sweep has no think time, so there every cached session is also in flight; real role-play
 sessions sit idle between turns while their histories still hold the pool, so cached-session capacity, not
 in-flight capacity, sets the GPU count, unless idle histories are allowed to fall out and be recomputed on their
-next turn. PB's fleet model (`gate pd-model`, WORKLOAD.md section 4; COMPUTE.md) quantifies that trade-off.
+next turn. Section 3c measures it: with independent sessions and 30 s / 60 s mean think time one GPU serves ~70 /
+~113-119 sessions at a 10 s p90, nearly all of them recomputed per turn; PB's fleet model (`gate pd-model`,
+WORKLOAD.md section 4; COMPUTE.md) turns that into a GPU count.
 
-**Deployable: `mem-final` at 0.955.** The server's own GPU memory stayed flat at 31,556-31,570 MiB over the
+**The memory stack meets the memory rule at 0.955 (`mem-final`, the base of every later stage).** The server's own GPU memory stayed flat at 31,556-31,570 MiB over the
 whole sweep (2 s samples), under the rule's 31,642 MiB. Burst capacity 29 sessions (mem-base 17).
 
 **Quality anchor, mem-final vs mem-base** (both arms at a 0.85 static fraction; role-play arms with 1,024-token
@@ -291,7 +305,7 @@ With the canary on top, the card reached 32,079 MiB, 75 MiB under the CUDA-visib
 failed. On a host that shares the GPU with another job, leave that job's headroom: the fallback is
 `mem-final-f094` (`--mem-fraction-static 0.94`, ~470 MiB less pool, not measured).
 
-## 3b. The combined final on this host: memory + compute levers (`final-mem-c1-c2a`)
+## 3b. Memory + compute levers on this host (`final-mem-c1-c2a`)
 
 PB's combined final = mem-final + C1 (tuned Triton fused-MoE config for this checkpoint,
 `SGLANG_MOE_CONFIG_DIR`) + C2-A (sm120 FP8-KV extend-attention tiles,
@@ -334,6 +348,12 @@ C16/C20/C24 at E2E p90 6.32 / 7.52 / 8.58 s (first 6.33 / 7.59 / 8.59) and 743 /
 
 ## 3c. Chat sessions with think time: sessions per GPU for sizing
 
+**Result (independent sessions, the poisson tables below): at a 10 s p90 one RTX 5090 serves ~70 live chat sessions
+with a 30 s mean think time and ~113-119 with 60 s, at ~2.3-2.5 turns/s and ~430 output tok/s (~$0.45 per 1M output
+at $0.70/GPU-h).** HiCache with a 12 GB host pool adds nothing there, so for chat with think time >= 30 s the
+recommended deployment is device-only `final-mem-c1-c2a`. The first runs used closed `slots` sessions and give a
+pessimistic bound; they come first below because they ran first.
+
 Every number above comes from the in-flight layer with zero think time: each live session always has a request in
 flight. Real role-play sessions sit idle between turns while their histories still compete for the cache. This
 section replays live sessions with think time: load `think30` / `think60` (`gate/config.py`), each slot one live
@@ -365,15 +385,15 @@ time before it (1 turn in ~5), and the population is closed (fixed session count
 Runs: `sweep-final-hc-20261005-215152-build-server-3-d847de` (48-96), `sweep-final-hc-20261005-205259-build-server-3-efb672`
 (120, the overload reference; a co-tenant CI job ran on the host during it), `sweep-final-mem-c1-c2a-20261005-211313-build-server-3-3fe265`.
 
-- **Sessions per GPU for sizing: ~60-65 at a 10 s p90 with 30 s mean think time** (interpolated between 48 and 72),
-  for both configs. At 48 sessions a GPU delivers ~330 output tok/s, **about $0.58 per 1M output tokens** at
-  $0.70/GPU-h, roughly 2.7x the zero-think cost: idle histories do not stay cached (hit rate <= 0.29), so nearly
+- **Pessimistic bound (slots): ~60-65 sessions at a 10 s p90 with 30 s mean think time** (interpolated between 48 and 72),
+  for both configs. At 48 sessions a GPU delivered ~330 output tok/s (~$0.58 per 1M output at $0.70/GPU-h, an
+  overstatement of the cost, see the poisson tables): idle histories do not stay cached (hit rate <= 0.29), so nearly
   every turn re-prefills ~5.8K tokens, and throughput saturates near 3 turns/s (~17K uncached prefill tok/s).
 - **HiCache as configured gives no meaningful capacity gain here** (p90 7.07 vs 7.50 s at 48 sessions, 11.41 vs
   11.12 s at 72). A 12 GB host pool plus the device pool should hold roughly 80 sessions' histories, yet the hit
-  rate at 48 sessions is 0.29; why is under investigation (SWA host-pool split, first-turn misses, churn).
-- Two numbers to keep apart: the zero-think C28 result (919 output tok/s, $0.212 per 1M) is the **per-GPU
-  throughput ceiling**; sessions per GPU at realistic think time is the number to **size the fleet** with.
+  rate at 48 sessions is 0.29 (open item, section 6).
+- Two numbers to keep apart: the zero-think C28 result (final config: 952 output tok/s, $0.204 per 1M) is the
+  **per-GPU throughput ceiling**; sessions per GPU at realistic think time is the number to **size the fleet** with.
 
 **Mean think time 60 s** (no failed request; `sweep-final-hc-20261005-223037-*`, `sweep-final-mem-c1-c2a-20261005-230954-*`):
 
@@ -388,14 +408,129 @@ Runs: `sweep-final-hc-20261005-215152-build-server-3-d847de` (48-96), `sweep-fin
 
 \*The T60 p90s are inflated by the load-generator bug above: each point ends in a 2-4 minute burst (queue
 41-116, uncached prefill pinned at its ~16.5K tok/s ceiling) although the average prefill demand is ~9-10K tok/s. The means (turns/s, in-flight, hit rate) are usable;
-the T60 session capacity at a 10 s p90 is not measured (by the means, likely ~100-120 sessions with independent
-arrivals). The T30 points have no mid-window bursts at 48 sessions. What T60 does show: histories are evicted
+the T60 session capacity comes from the poisson runs below (~113-119 sessions). The T30 points have no mid-window bursts at 48 sessions. What T60 does show: histories are evicted
 almost entirely (hit <= 0.07 with HiCache, <= 0.01 without), throughput follows the turn rate, and HiCache again
 gives no gain.
 
-> [!gap] Poisson session arrivals (`pthink30` at 48/64/80 sessions for both configs, `pthink60` at 96/120/144 for
-> final-mem-c1-c2a and 120 for final-hc) run 04:00-07:55; if the poisson capacity at T30 is materially higher than
-> the slots bound, it becomes the headline.
+**Independent sessions (poisson arrivals; the numbers to size with).** Loads `pthink30` / `pthink60`: sessions arrive
+as a Poisson process at `concurrency / expected_session_s` (150 s at T30, 280 s at T60), so no two are
+phase-correlated; 240 s (T30) or 300 s (T60) warm-up, 480 s window. Each point's plan is one seeded draw of
+heavy-tailed sessions (1-16 turns), so the target does not map exactly to the live count: **read capacity in measured
+live sessions** (PB2 replayed the seeded plans on the CPU; the digests match these runs). No burst episodes (queue
+> 20 for > 60 s) at any point; queue max <= 5.
+
+| config | think | target | live sessions | turns/s | output tok/s | E2E p50 s | E2E p90 s | hit | failed |
+|---|---|---|---|---|---|---|---|---|---|
+| final-hc | 30 s | 48 | 41.3 | 1.54 | 265 | 2.71 | 5.15 | 0.462 | 0 |
+| final-hc | 30 s | 64 | 63.4 | 2.28 | 394 | 4.25 | 8.05 | 0.116 | 0 |
+| final-hc | 30 s | 80 | 64.4 | 2.36 | 427 | 5.17 | 9.02 | 0.107 | 0 |
+| final-mem-c1-c2a | 30 s | 48 | 42.0 | 1.54 | 265 | 3.14 | 5.93 | 0.047 | 0 |
+| final-mem-c1-c2a | 30 s | 64 | 63.6 | 2.28 | 395 | 4.35 | 8.19 | 0.005 | 0 |
+| final-mem-c1-c2a | 30 s | 80 | 64.3 | 2.37 | 428 | 5.23 | 8.99 | 0.003 | 0 |
+| final-hc | 30 s | 72 | 67.1 | 2.45 | 430 | 4.91 | 9.03 | 0.088 | 0 |
+| final-hc | 30 s | 76 | 73.0 | 2.51 | 444 | 5.60 | 10.73 | 0.067 | 1 |
+| final-mem-c1-c2a | 30 s | 72 | 67.3 | 2.45 | 430 | 4.99 | 8.97 | 0.003 | 0 |
+| final-mem-c1-c2a | 30 s | 76 | 72.8 | 2.52 | 446 | 5.57 | 10.41 | 0.004 | 1 |
+| final-hc-cp2048-lpm | 30 s | 64 | 64.4 | 2.26 | 390 | 4.89 | 9.40 | 0.034 | 1 |
+| final-hc | 60 s | 96 | 82.3 | 1.68 | 305 | 3.84 | 6.70 | 0.037 | 1 |
+| final-hc | 60 s | 120 | 113.0 | 2.31 | 420 | 5.34 | 9.73 | 0.013 | 0 |
+| final-hc | 60 s | 144 | 119.0 | 2.43 | 441 | 5.67 | 10.43 | 0.008 | 0 |
+| final-mem-c1-c2a | 60 s | 96 | 82.8 | 1.70 | 308 | 3.89 | 6.47 | 0.002 | 0 |
+| final-mem-c1-c2a | 60 s | 120 | 112.6 | 2.30 | 418 | 5.11 | 8.65 | 0.002 | 0 |
+| final-mem-c1-c2a | 60 s | 144 | 118.0 | 2.41 | 436 | 5.41 | 9.37 | 0.002 | 0 |
+
+Runs (`runs/`): `sweep-final-hc-20261006-011528-*`, `-031205-*`, `-032720-*`; `sweep-final-mem-c1-c2a-20261006-015330-*`,
+`-023118-*`, `-043524-*`, `-044916-*`; `sweep-final-hc-20261006-040929-*`; `sweep-final-hc-cp2048-lpm-20261006-035518-*`. The failed requests (one each at three points, <= 0.12%)
+are a client artifact: the one recorded with detail is `ServerDisconnectedError` 0.5 ms after send with nothing
+processed. SGLang closes an idle keep-alive connection after 5 s and the client's pool kept connections for 15 s, so
+under think time it sometimes reused a socket the server had just closed. The gate now drops idle connections after
+2 s (`gate/loadgen.py`); no server request failed.
+
+*Deployment note (keep-alive).* SGLang's HTTP server closes idle keep-alive connections after 5 s
+(`SGLANG_TIMEOUT_KEEP_ALIVE`). Chat clients idle between turns, so a pooled connection can be reused just as the server
+closes it, and the request fails at once with a disconnect before any byte is processed. Set the client's keep-alive
+below 5 s and retry once on a disconnect that arrives before any response bytes (the request never ran). Raising the
+server's keep-alive is the alternative, at the cost of more idle sockets held open on the server.
+
+**Capacity edges (poisson, measured live sessions, E2E p90 <= 10 s):** **T30 ~70 sessions per GPU** (both configs
+meet 10 s at 67 live sessions, p90 8.97-9.03 s, and miss at 73, 10.41-10.73 s), **T60 ~113-119.** At the T30 edge
+a GPU delivers ~430 output tok/s, about $0.45 per 1M output tokens at $0.70/GPU-h.
+
+**The T30 edge holds over time and replicates** (device-only `final-mem-c1-c2a`, the chat recommendation):
+- 30-minute chat soak at target C72 (`psoak30`, `sweep-final-mem-c1-c2a-20261006-065616-build-server-3-e7cc9b`):
+  **67.8 live sessions, E2E p50 / p90 / p99 4.92 / 9.26 / 12.90 s**, 2.32 turns/s, 410 output tok/s ($0.474 per 1M
+  output at $0.70/GPU-h); 4,179 requests, 0 failed, 1 retraction; no burst episode (queue max 7); GPU memory flat
+  at 31,488-31,490 MiB (peak 31,514), server RSS flat at 6.34 GB, host MemAvailable >= 44.2 GB.
+- Replicate of the edge points (`sweep-final-mem-c1-c2a-20261006-073155-build-server-3-915199`): C72 67.3 live,
+  p90 9.21 s (first run 8.97), p99 12.26 s; C76 73.0 live, p90 10.59 s (first run 10.41), p99 13.54 s; no failed
+  request with the 2 s client keep-alive. Session capacity follows the turn rate: both edges sit near 2.3-2.4 turns/s per GPU, since nearly every turn
+re-prefills its ~5.8K-token history once think time exceeds what the cache can hold; so sessions per GPU grow
+roughly in proportion to think time. The slots runs above (phase-correlated, with the window-end bug) are the
+pessimistic bound.
+
+**Recommendation for chat with think time.**
+- **With a 12 GB host pool, HiCache helps only for zero or short think time.** At T30 it is within noise of
+  device-only (p90 8.05 vs 8.19 s at ~64 sessions); at T60 it is slightly worse (p90 +0.2 to +1.1 s, no hit gain).
+- So for chat with think time >= 30 s on servers with ~12 GB of host RAM per GPU, deploy **device-only
+  `final-mem-c1-c2a` with default chunking**. It is also simpler: a 24 GB memory scope, no HiCache start-check
+  retries, and batched outputs reproducible run to run.
+- **HiCache (`final-hc`) pays off** for in-flight-heavy traffic (10 s capacity C24 -> C32, +13% goodput at the
+  operating point) and, per PB's retention model, for larger host pools (>= 48 GB per GPU) at T30 (model only, not
+  measured here).
+- The final in-flight config's two flags (chunked prefill 2048, LPM scheduling) are in-flight levers: under think
+  time `final-hc-cp2048-lpm` loses host-tier hits (0.034 vs 0.116 at ~64 sessions) and its p90 is ~17% higher;
+  PB's same-host control decides the cause.
+
+## 3d. The final config: `final-hc-cp2048-lpm` (fixed HiCache + chunked prefill 2048 + LPM scheduling)
+
+PB's C3 flags on top of `final-hc` (tree `a0491db764`, 28G scope); PB's KL / ABBA gates and PX's multi-turn
+exactness (12/12) passed on build-server-2. On build-server-3:
+
+| in flight | E2E p50 s | E2E p90 s | E2E p99 s | output tok/s | total tok/s | prefix-cache hit | retractions | $/1M output |
+|---|---|---|---|---|---|---|---|---|
+| 28 | 5.49 | 8.60 | 11.27 | 948 | 31,700 | 0.770 | 11 | 0.205 |
+| 32 | 6.51 | 8.85 | 28.86 | 974 | 30,327 | 0.784 | 10 | 0.200 |
+| 36 | 6.17 | 9.02 | 43.51 | 953 | 30,927 | 0.779 | 18 | 0.204 |
+
+(`sweep-final-hc-cp2048-lpm-20261006-050516-build-server-3-e485ea`, 240 s points, no failed request, GPU <= 31,298 MiB.)
+For the 6 s SLO (`sweep-final-hc-cp2048-lpm-20261006-064035-build-server-3-f18b9e`): C8 p50 / p90 / p99 2.89 / 4.56 / 4.99 s,
+517 output tok/s; **C12 3.35 / 5.47 / 6.04 s, 647 output tok/s, $0.300 per 1M output** at $0.70/GPU-h (mem-base at
+6 s: C8, 468 tok/s, $0.415); no retraction or failure.
+p90 meets 10 s to C36, but past C28 the tail breaks (p99 11.3 -> 28.9 -> 43.5 s) for <= 3% more throughput.
+
+**30-minute soak at C28, the operating point** (`sweep-final-hc-cp2048-lpm-20261006-052216-build-server-3-d12892`):
+9,656 requests, **0 failed**, 67 retractions (0.69%, requeued); E2E p50 5.54 s, **p90 8.59 s, p99 11.13 s**; **952
+output tok/s** (31,432 total), prefix-cache hit 0.768, **$0.204 per 1M output** at $0.70/GPU-h. No creep: decode
+1,232-1,258 tok/s per 5-minute bucket, server GPU memory flat at 31,250 MiB (peak 31,296), server RSS 17.540 ->
+17.547 GB, host MemAvailable 38.8-39.2 GB. Against final-hc's C28 soak: +3.6% output tok/s, p90 8.59 vs 8.92 s.
+
+**Role-play quality** (0.85 fraction, keeping its 2048-token chunks; `rp-quality-final-cpl-qr-20261006-050318`): reference
+NLL +0.0003 nats/token (budget 0.02); language adherence 68 vs 68/80, paired one flip each way (out: `s000794/0`,
+the mixed-language detector item), net 0, inside the band. Pass.
+
+**Evaluated, not promoted: the SWA prefill window margin (`SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN=128`, PC4's bug-4
+fix, tree `cbf56143b5`, ref `final-hc-cp2048-lpm-m128`).** It is a validated correctness fix: multi-turn exactness at
+concurrency 1 is 12/12 token-identical with identical cached-token counts (device-only control
+`exactmt-final-mem-c1-c2a-cp2048-lpm-m128-20261006-055521` vs HiCache small pool
+`exactmt-final-hc-cp2048-lpm-m128-smallpool-20261006-055632`), role-play quality passes (NLL +0.0019, language net 1,
+inside the band; `rp-quality-final-cpl-m128-qr-20261006-055755`), and on `final-hc` it gave +7.1% output tok/s at C28
+(PB's ABBA on build-server-2). On top of chunk 2048 + LPM it buys little and costs tail stability. 30-minute C28 soak
+on this host (`sweep-final-hc-cp2048-lpm-m128-20261006-060639-build-server-3-f13c26`) against the final config's:
+
+| | final-hc-cp2048-lpm | + margin 128 |
+|---|---|---|
+| requests / failed | 9,656 / 0 | 9,694 / 0 |
+| E2E p50 / p90 / p99 s | 5.54 / 8.59 / 11.13 | 5.53 / 8.47 / 12.43 |
+| output tok/s | 952 | 958 |
+| prefix-cache hit | 0.768 | 0.797 |
+| retractions | 67 (0.69%) | **259 (2.7%)** |
+
+The preregistered soak criterion (retractions <= 2x the final's, i.e. <= 1.39%) fails; p99 passes (<= 14.5 s). PB's
+build-server-2 ABBA agrees (+1.3% tok/s, p99 +7.5%, retractions 2.4x). Use it opt-in on stacks without chunked
+prefill 2048, where it pays (+7.1% on final-hc), knowing it roughly triples retractions.
+
+Under chat think time the two flags are not a gain: at ~64 live sessions with 30 s think time the final config's
+hit rate is 0.034 against final-hc's 0.116 and its p90 9.40 vs 8.05 s (section 3c).
 
 ## 4. Code levers
 
@@ -467,7 +602,7 @@ dequantizes; the head runs the tuned Triton FP8 vocab-head kernel (`triton_small
 | L6 | full-layer V from K (`attention_k_eq_v`) | -5,120 B/token full = -27 MB/session (-14%) | changes (FP8 rounding of V) | not an alias: K = RoPE(k_norm(x) * w_k), V = v_norm(x) without scale, from the same projection. Storing K only needs the Triton decode and extend kernels to rebuild V by un-rotating each key by its position (128 rotated dims) and dividing by w_k |
 | L11 | FP4 KV (`--kv-cache-dtype fp4_mx_block16`) | -44% KV bytes | changes (long-context risk) | accepted with Triton as "plain" access, but the pool then dequantizes the whole layer buffer to BF16 on every attention call (`_get_key_buffer`): ~0.8 GiB transient and many GB of traffic per decode step. A usable L11 needs an FP4-reading Triton kernel |
 
-## 5. HiCache (host-RAM prefix cache): stock HiCache fails, fixed HiCache is the final config
+## 5. HiCache (host-RAM prefix cache): stock HiCache fails; fixed HiCache is part of the final config
 
 Code reading of this tree (paths under `python/sglang/srt/`):
 - `--enable-hierarchical-cache` builds two pinned host pools for a hybrid-SWA model, full and SWA
@@ -633,7 +768,8 @@ need reproducible outputs should know this.
   fresh-prefill, so they cannot catch a lever that corrupts reused KV (HiCache load-back did, see section 5). Any
   cache or offload lever needs a multi-turn exactness check: greedy, concurrency 1, several sessions x turns,
   later turns served from the reused prefix, compared token for token against the same turns with the lever off.
-  mem-final's own device prefix hits are assumed exact; PC3's mem-final A/A arm of that check confirms it.
+  The device-only path passes it (PC3: device-only A/A 12/12); every HiCache config in the final stack was checked
+  against it (12/12).
 - **When batched outputs reproduce.** At a fixed config the role-play quality run (80 prompts, up to 32 in
   flight) was token-identical across runs (80/80, twice). Two runs of the exactness tool at concurrency 16 on
   the same config matched 6/16: there the batch composition varied between runs, and so does it in the
@@ -645,6 +781,14 @@ need reproducible outputs should know this.
   issue/PR, not posted. One open item remains there: a node that adopts a later request's FULL slots on SWA
   tombstone recovery keeps its old FULL host copy (numerics-level, two computations of the same prefix), which
   matters only for bitwise reproducibility if that node is evicted and loaded back.
+- **Load-generator fixes made during the study** (both in `gate/loadgen.py`, with tests): (1) with think time, a
+  `slots` session cut by the window end handed its slot to a fresh session at once, so each slots point ended in a
+  burst of uncached first turns (the think-time slots tables in section 3c are pessimistic; the poisson tables are
+  not affected); (2) the client kept idle connections 15 s against SGLang's 5 s server keep-alive, which under think
+  time failed a request now and then with a disconnect before anything ran (now 2 s).
+- **HiCache host-pool sizing under think time.** With 12 GB of host pool, HiCache adds no session capacity at 30-60 s
+  think time (section 3c). Whether a different split or a larger pool changes that is PC4's `swahost/` investigation
+  and PB's retention model (larger pools: model only).
 - **L5 variant.** Releasing only windows that slide out during decode past the prompt's end (keeping the
   prompt's last window, the next turn's resume point) might keep L5's burst gain without the hit-rate loss.
   Not implemented.
@@ -665,6 +809,15 @@ experiments/g4poc/gate/deploy.sh build-server-3 /data/jooman/g4poc/harness-pc
 /data/jooman/g4poc/memlogs/quality.sh rp-quality mem-qr-final
 # HiCache needs a 28G scope (SGLang keeps 10 GiB of headroom beyond the pinned host pool)
 G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/sweep.sh mem-hc 24,28,32
+# final config (tree a0491db764): 240 s points, 30-min soak at the operating point, role-play quality arm
+G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/sweep.sh final-hc-cp2048-lpm 8,12,28,32,36
+G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/sweep.sh final-hc-cp2048-lpm 28 --load soak
+G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/quality.sh rp-quality final-cpl-qr
+# chat sessions with think time (independent arrivals): concurrency = target live sessions
+/data/jooman/g4poc/memlogs/sweep.sh final-mem-c1-c2a 48,64,72,76 --load pthink30
+/data/jooman/g4poc/memlogs/sweep.sh final-mem-c1-c2a 96,120,144 --load pthink60
+# before each HiCache launch: read the weight shards outside the server's cgroup (see the deploy note in section 0)
+cat /data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/shards/text-*.safetensors > /dev/null
 # GPU memory: 2 s samples, total and per process (the per-process file separates a co-tenant)
 while true; do echo "$(date +%T),$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)"; sleep 2; done
 ```
