@@ -100,8 +100,25 @@ window, which is why the next turn diverges immediately.
 `wait_stream` orders the copy after the work queued so far only, which at `cache_finished_req` time is
 exactly the in-flight forward writing the node; later forwards still overlap with the copy.
 
-**Result.** (filled in after the runs; see REPORT/record) byte trace mismatches, C1 exactness, and
-the in-flight sweep with both fixes.
+**Result.** With the fence, the same 4 x 3 load-back run is **12/12** identical to the device-only
+control, with identical `cached_tokens` (`exactmt-mem-hc-fix2-smallpool-rt-20261005-165852-...-5d434c`).
+All turn-0 prompts are chunked (4096 + rest), so stashed chunk nodes are covered. In the byte trace,
+every per-turn stale token is gone and every full-to-SWA mapping check passes. The in-flight
+throughput cost of the fence is measured separately (sweep of `mem-hc-fix2` against `mem-hc-fix`).
+
+## Open item: host copy kept when a node adopts a later request's FULL slots
+
+The fenced byte trace still shows two shared-prefix prompt nodes (228 and 229 tokens) whose FULL host
+bytes differ from device in every token of all full layers, while their SWA bytes match. This is not
+the race, and the fence does not change it. `SWAComponent.update_component_on_insert_overlap`, branch 1
+("recover an SWA tombstone"), makes a node whose SWA was evicted adopt an incoming request's FULL
+slots and the SWA rebuilt from them, then frees the old FULL slots. The node's FULL host copy, written
+from the first request's computation, is kept. Device and host then hold two separate computations of
+the same prefix: equivalent KV whose FP8 bytes differ by the rounding of a different extend layout.
+The difference is numerics-level, not corruption, and only matters for bitwise reproducibility if such
+a node is evicted and loaded back. Proposed fix: when a node adopts new FULL slots, drop its FULL host
+copy (and its SWA host copy, if any) so a later backup rewrites it, or re-issue the backup into the
+existing host slots.
 
 ## Reproduction notes
 
