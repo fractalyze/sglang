@@ -188,6 +188,9 @@ Test `test_margin_survives_decode_after_a_branch_insert` fails on the first part
   first prompts hit 0% -> 82%; hit rate 0.276 -> 0.320; E2E p90 -2.3%.
 - Without the fix, second turns miss at zero think time too: 97% after unchunked first prompts,
   7.5% of prompt tokens at in-flight C24.
+- In flight at C28 (final-hc, margin on vs off, ABBA): +7.1% output tok/s (991 vs 926), -7.3% E2E
+  p90 (8.17 vs 8.81 s), hit 0.80 vs 0.71, 0 failures. Retractions rise from 2-3 to 7-8 per 240 s
+  window, from the SWA held during decode.
 
 ## Open item: host copy kept when a node adopts a later request's FULL slots
 

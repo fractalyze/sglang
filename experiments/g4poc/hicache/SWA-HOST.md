@@ -5,6 +5,36 @@ Question from the think-time runs (PC2, bs3, think30, closed population): final-
 rate is 0.286 at 48 sessions and 0.076 at 72, but the fleet model's storage bound
 (device + host KV tokens / history) predicted ~77 sessions at a 12 GB host pool.
 
+## At a glance (2026-10-06 06:00 KST)
+
+1. **Inclusive mirror.** Under write_through the host tier mirrors the device, so distinct capacity is
+   the 12 GB host pool, not device + host.
+   - The host pool is split by device bytes: Full 3.26 GB (318K tokens, 10 KB/token) and SWA 8.74 GB
+     (85K tokens, 102 KB/token).
+   - An idle think-time session costs ~0.23 GB, so the pool holds ~45-50 sessions.
+2. **Retention is a time, not a count.** At 48 think30 sessions the SWA window survives ~25 s and the
+   Full prefix ~38 s; at 72 sessions, ~12 s and ~23 s.
+   - Knee at 12 GB: hit 0.547 / 0.438 / 0.284 / 0.075 at 32 / 40 / 48 / 72 sessions.
+   - Both pools bind, so moving the split does not help (SW2, `--swa-full-tokens-ratio 0.2`, lost).
+   - Leaf-first eviction strips a session's tail, which holds its only SWA window, while its head
+     stays resident.
+3. **Bug 4: every chat's second turn misses its whole prefix**, in any hybrid-SWA radix cache, with or
+   without HiCache, at any think time.
+   - A tree insert keeps 1024 SWA tokens behind the prompt end (window 1023 + 1). Gemma-4's next turn
+     matches 4 tokens short (the template drops the empty thought channel), leaving 1020 < 1023.
+   - Fix: `SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN=128`. v1 keeps a margin at inserts; v2 also holds it
+     through decode for branch-inserted prompts.
+   - In flight at C28: +7.1% output tok/s, -7.3% E2E p90, hit 0.70 -> 0.80.
+   - think30 x 48: hit 0.276 -> 0.320, p90 -2.3%.
+   - think30 x 32: hit 0.547 -> 0.613, p90 4.75 -> 4.29 s.
+   - C1 exactness 12/12 (standard and template-cut 4). GPU unit tests pass.
+4. **Open items (section 4):**
+   - exclusive host tiering for hybrid SWA (write_back + SWA backup on tombstone);
+   - session-granular eviction;
+   - not writing dead SWA (decode-output leaves, chunk-boundary windows) to host;
+   - a separate host split knob;
+   - a harness record of failed requests' errors.
+
 ## 1. Code read (CPU, 2026-10-05 23:10 KST)
 
 File references are to `python/sglang/srt/mem_cache/` on `a0491db764`.
@@ -462,3 +492,28 @@ off for in-flight traffic.
   still bind (section 3), which caps the overall gain at +0.044 hit.
 - The second-turn fix matters most where capacity does not bind: lower session counts, bigger host
   pools, and in flight.
+
+**SW7 (required in-flight cost check, C28, final-hc on v2 7d296525fc, margin 128 on vs off, ABBA on bs2).**
+
+| arm | output tok/s | E2E p90 | hit | retractions / 240 s | failed |
+|---|---|---|---|---|---|
+| on (05:05, 05:23) | 989.5 / 993.2 | 8.20 / 8.14 s | 0.799 / 0.799 | 8 / 7 | 0 |
+| off (05:11, 05:17) | 924.3 / 927.4 | 8.89 / 8.74 s | 0.704 / 0.708 | 3 / 2 | 0 |
+
+- **No cost, a gain:** +7.1% output tok/s, -7.3% E2E p90 and +0.09 hit. The within-arm spread is ~0.2%.
+- The registered p90 interval (-5% to +3%) missed on the good side. In-flight second turns hit the
+  bug too (SW5), and the hit rate rises to near the ~0.81 in-flight ceiling.
+- **Cost signal:** retractions rise from 2-3 to 7-8 per window, from the extra SWA held during decode,
+  with no failures. A soak should confirm before promotion.
+
+**think30 x 32 on v2** (`sweep-swamargin2-dbg-20261006-053006-build-server-2-10758b`).
+- Hit 0.613 (v1 0.594, SW3 no margin 0.547 on bs3); E2E p90 4.29 s (4.37, 4.75); 231 tok/s; 0 failures.
+- Second turns hit 97% / 93% / 94% after first prompts of <= 4096 / 4097-5119 / >= 5120 tokens.
+- Trimmed-window token shares: reused 0.689, first turns 0.169, suffix 0.035, swa_gone 0.078,
+  full_gone 0.030.
+
+**Recommendation.**
+- Enable `SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN=128` (branch `jumanzii/g4poc-swa-margin` = cbf56143b5:
+  code 7d296525fc + a test fix) for both in-flight and think-time traffic.
+- It was measured on final-hc only. Promotion onto the morning final (final-hc-cp2048-lpm) needs that
+  stack's ABBA, quality anchor and soak (PB2) and C1 exactness + rp + C28 (PC2).
