@@ -57,3 +57,29 @@ point gains more than 1% or loses more than 3%.
 Basis: the base sweep's server log (COMPUTE.md section 1: queue means 0.0 / 0.0 / 1.1 / 4.6 at 8 / 12 / 16
 / 20, hit 0.74 / 0.70 / 0.22 / 0.002); vault gemma4nv-b2-t1 (chunk 8192 on bs2 moved waiting between the
 TTFT and decode terms, composite -0.74%, inside its bar).
+
+## C2-A: sm120 FP8-KV Triton extend tiles (registered 2026-10-05 ~14:35 KST)
+
+Change: ref `c2-extend-tiles` = base + `SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES=1` at SGLang a10694ad32
+(python differs from the base's commit only in `extend_attention.py` and `environ.py`; env off = base tiles).
+Extend (prefill) attention tiles: head_dim 512 (32, 32, 64, 8 warps, 1 stage) instead of (32, 32, 32, 8, 1);
+head_dim 256 (32, 32, 32, 4, 1) instead of (64, 64, 64, 8, 1). Decode attention, MoE and everything else unchanged.
+
+Gate: (1) `compute/kl_check.py` on 8 long role-play first turns (one per language, ~5K tokens): batched
+teacher-forced KL mean / p99 within 2x of the base's batched-vs-serial A/A level and worst top-1 agreement
+within 2 points of it; greedy token identity one prompt at a time reported. (2) Deciding: `gate run` base vs
+c2-extend-tiles at inflight-C12, 4 ABBA pairs, bar max(3 sigma A/A, 1%) = 1% (A/A aa-c12-20261005-132013).
+(3) Confirming: `compute/sweep_abba.sh base c2-extend-tiles 8,16` (A B B A sweeps).
+
+Prediction: E2E p90 at inflight-C12 delta -12% .. -5%; output tok/s up by a similar amount. At 8 in flight
+-12% .. -4%; at 16 in flight -20% .. -5% (past the cliff more of each turn is prefill). Falsified if the C12
+gain is under 5% (delta above -5%), or the KL check fails (a fidelity tier worse than reorder).
+
+Basis (microbench extrapolation): base profile at C12 (`compute/profile_extend_share.py`,
+runs/profile-base-C12-20261005-132505, 10 s window, 39 extend forwards): the extend kernels are 14.9% of
+wall time, head_dim 512 8.8% and 256 6.1% (split by layer position; the launch signatures agree). The
+microbench's request-weighted mixes speed them up 2.93x and 2.02x (`c2/bench.json`), so the GPU-time saving
+is 0.088 x (1 - 1/2.93) + 0.061 x (1 - 1/2.02) = 8.8%; with the slowest shape's speedups alone (2.28x,
+1.71x) 7.4%. The profile's mean kernel time per launch (4.5 ms at 512, 0.62 ms at 256) is above the
+microbench mix's (3.2 ms, 0.40 ms), i.e. the served mix leans to the large chunks with the larger speedups.
+At a fixed in-flight count E2E scales with GPU time per reply, and p90 replies carry the larger prefills.
