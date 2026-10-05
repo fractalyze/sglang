@@ -64,3 +64,25 @@ the capacity model's optimum.
 |---|---|---|---|
 | g4poc-s1 | max_clean_sessions (burst 5K/300) | **17 -> 26 (+52.9%)**, interval 25-27; burst peak <= 31,642 MiB (est. 31,574) | capacity < 25, or the peak breaks the corrected margin |
 | g4poc-s1 (secondary, same run plan) | in-flight capacity at E2E p90 <= 10 s, `gate sweep --load inflight` on bs3 (scripted multi-turn sessions, prefix cache on), points 8/12/16/20/24(/28/32) | mem-base **12 -> stack1 20** (+66.7%); at C16 mem-base's prefix-cache hit rate collapses below 0.3 (PB's bs2 sweep of its provisional base: 0.70 at C12, 0.22 at C16) while stack1 keeps >= 0.6 | stack1's 10 s capacity <= mem-base's, or any stack1 point has a failed request |
+
+## 2026-10-05, L5: release the slid-out part of the tree-locked SWA window during decode (code, exact)
+
+Mechanism (code-read, REPORT.md section 2): with the radix cache on, prefill end inserts the prompt
+and the request locks the tree's last SWA window (1,024 slots, one node); its own decode eviction never
+reaches below the tree-protected prefix, so a session holds 1,024 + up to 300 decoded sliding slots.
+Change, behind `SGLANG_OPT_SWA_RELEASE_SLID_WINDOW` (default off): every `SGLANG_SWA_EVICTION_INTERVAL`
+decode tokens, split the locked window node at the slide frontier (`seqlen - 1 - window`), drop the
+request's SWA lock on the part below it and move the receipt's segment boundary up to the split. The
+released part becomes evictable (LRU), so the pool can reclaim it; nothing the request still reads is
+released, so numerics are exact. The final window stays locked until finish, so the insert at finish
+still leaves the next turn a full window.
+
+Ref `mem-stack2` = mem-stack1 + switch on + `SGLANG_SWA_EVICTION_INTERVAL=32` + ratio refit.
+stack1's step-0 fit at N 22-25 (sliding 1,426 N + 1,048; full 5,299 N) puts ~104 tokens/session of
+prefill transient on top of the 1,324-slot decode hold. With L5 the decode hold becomes ~1,025 + half an
+interval (~1,041), so the slope drops to ~1,164 and the budget of 5.25 GB fits ~29.7 sessions at ratio
+~0.226.
+
+| trial | metric | prediction | falsified if |
+|---|---|---|---|
+| g4poc-l5 | max_clean_sessions (burst 5K/300) | stack1 25 -> **stack2 29 (+16%)**, interval 27-30; peak sliding tokens per running session in the 5K bursts <= 1,250 (stack1: ~1,470) | capacity < 27, or any outputs differ from stack1 on the same scripted turns (exactness), or a tree sanity failure |
