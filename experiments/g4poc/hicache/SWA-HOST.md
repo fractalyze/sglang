@@ -239,7 +239,7 @@ After a first turn it mostly misses its SWA window:
 
 The outcome after a first turn depends on that first prompt's length (all gaps < 30 s):
 
-| first prompt | SW3: hit | SW1: hit | SW2: hit |
+| first prompt | SW3 (32+40): hit | SW1 (48+72): hit | SW2 (48+72): hit |
 |---|---|---|---|
 | <= 4096 tokens (one prefill chunk) | 0 / 67 | 0 / 93 | 0 / 92 |
 | 4097-5119 | 0.42 | 0.18 | 0.16 |

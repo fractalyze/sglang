@@ -135,7 +135,7 @@ not run PD decode, so a byte-level trace of this path was not made.
 the per-admission prefix log of `jumanzii/g4poc-swa-host-dbg` (see `SWA-HOST.md`).
 
 **Symptom.** In think-time chat sessions, the turn after a session's first turn reuses none of its
-cached prefix: 0 of 67, 0 of 93 and 0 of 92 such turns hit, at 32, 48 and 48 sessions, gaps 9-95 s,
+cached prefix: with gaps under 30 s, 0 of 67, 0 of 93 and 0 of 92 such turns hit (runs at 32+40, 48+72 and 48+72 sessions; 0 of 122 at any gap, 9-95 s, in the first),
 first prompts <= 4096 tokens. That holds even at 32 sessions, where every other returning turn with
 a short gap hits ~100%. In each case the Full-layer prefix is fully present (`full_kv_hit_length` =
 the expected prefix) and the usable match is the shared 13-token root. Second turns are 14% of prompt
