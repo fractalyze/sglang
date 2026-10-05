@@ -1302,6 +1302,7 @@ class PrefillAdder:
             ):
                 return AddReqResult.OTHER
 
+            device_prefix = len(req.prefix_indices)
             if req.needs_host_load_back():
                 promised_host_hit = req.host_hit_length
                 loaded = self.tree_cache.init_load_back(
@@ -1358,6 +1359,11 @@ class PrefillAdder:
 
             # Successful materialization has no remaining admission gates.
             self._commit_prefill_admission(req, admission, mamba_gap_reserve)
+            from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
+
+            _pfx.log_admission(
+                req, device_prefix=device_prefix, loaded=req.host_loaded_length
+            )
 
         # This verdict controls the next candidate, not the committed request.
         return self.budget_state()
