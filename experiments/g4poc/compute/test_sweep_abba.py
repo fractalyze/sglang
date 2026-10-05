@@ -22,6 +22,14 @@ class CompareTest(absltest.TestCase):
         self.assertAlmostEqual(rows[8]["e2e_p90_gain"], 1.0)  # 2x faster, then 2x slower
         self.assertAlmostEqual(rows[12]["e2e_p90_gain"], 2 ** 0.5)
         self.assertAlmostEqual(rows[12]["output_tput_gain"], 1.0)
+        self.assertAlmostEqual(rows[8]["control_drift_e2e_p90"], 1.0)
+
+    def test_control_drift_compares_first_and_last_control(self):
+        a1, a2 = _sweep("base", {12: 6.0}, 100.0), _sweep("base", {12: 5.0}, 110.0)
+        b = _sweep("c", {12: 5.5})
+        row = sweep_abba.compare(a1, b, b, a2)[0]
+        self.assertAlmostEqual(row["control_drift_e2e_p90"], 1.2)
+        self.assertAlmostEqual(row["control_drift_tput"], 1.1)
 
     def test_only_points_every_sweep_reached(self):
         full, short = _sweep("base", {8: 4.0, 16: 9.0}), _sweep("c", {8: 4.0})

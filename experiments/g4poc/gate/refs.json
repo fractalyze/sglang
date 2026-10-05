@@ -34,5 +34,21 @@
   "env": {
    "SGLANG_MOE_CONFIG_DIR": "/data/jooman/g4poc/moe-configs/c1"
   }
+ },
+ "c3-lpm": {
+  "description": "C3a: base + --schedule-policy lpm (longest cached prefix first among waiting requests; fcfs on the base). Scheduling order only; only matters when requests queue, i.e. from about 16 in flight on the base.",
+  "extends": "base",
+  "server_args": [
+   "--schedule-policy",
+   "lpm"
+  ]
+ },
+ "c3-cp2048": {
+  "description": "C3b: base + --chunked-prefill-size 2048 (4096 on the base). Halves the per-forward prefill tokens and the prefill activation transient; the KV pool is unchanged at mem 0.93.",
+  "extends": "base",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048"
+  ]
  }
 }

@@ -39,6 +39,11 @@ def compare(a1: Dict, b1: Dict, b2: Dict, a2: Dict) -> List[Dict]:
             "concurrency": c,
             "e2e_p90_gain": gain("e2e_p90_s", True),
             "output_tput_gain": gain("output_tok_s_per_gpu", False),
+            # The control against itself, first sweep over last (above 1 = the later control was faster):
+            # the drift a sweep pair carries on top of the candidate's effect.
+            "control_drift_e2e_p90": pairs[0][0][c]["summary"]["e2e_p90_s"] / pairs[1][0][c]["summary"]["e2e_p90_s"],
+            "control_drift_tput": (pairs[1][0][c]["summary"]["output_tok_s_per_gpu"]
+                                   / pairs[0][0][c]["summary"]["output_tok_s_per_gpu"]),
             "control_e2e_p90_s": both(0, "e2e_p90_s"), "candidate_e2e_p90_s": both(1, "e2e_p90_s"),
             "control_out_tok_s": both(0, "output_tok_s_per_gpu"),
             "candidate_out_tok_s": both(1, "output_tok_s_per_gpu"),
