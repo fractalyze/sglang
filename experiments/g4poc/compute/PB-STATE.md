@@ -27,6 +27,8 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
   then the final at inflight C8/C12 (6 s SLO point) only if it ends by 07:55. If skipped: 6 s point from C16 (p90 6.16 s).
 - HS2 dropped on bs2 (coordinator 04:10): answered by PC2's same-host bs3 point; vault g4poc-hs2 retired (29e3f8b).
 - Error-detail loadgen change deployed into harness-pb 10-06 03:53 (94 tests OK).
+- PC2's keep-alive fix (ffa983fd37, client keepalive 2 s) cherry-picked and deployed into harness-pb 10-06 ~04:45.
+- COMPUTE.md: T30 edge ~70 sessions/GPU (PC2 C72/C76), ~32 GPUs for 2,200; fleet v4 (+3.5% T30, +10% T60).
 - Vault: c1 kept, c2 kept, c3a/c3b kept (base), c3a-hc/c3b-hc kept (final), c4 retired; hs1 / hs1b retired; hs2 retired (confirmed, flags stay for in-flight traffic).
 - 11:00-13:30: COMPUTE.md final numbers (two replicates, pthink calibration of fleet v3, PC2 poisson), push. Timebox 14:00.
 
