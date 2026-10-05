@@ -15,23 +15,19 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
 - Gated load = inflight-C12; noise is used only if measured at the same load.
 
 ## In flight / waiting (update on every launch)
-- 2026-10-05 12:34 calibrate OOMed (input logprobs in 2048-row chunks, 3 GiB fp32 over the 262K vocab with 1.7 GB
-  free); fixed by config.SERVER_ENV SGLANG_LOGPROB_CHUNK_SIZE=128 (ed56e65). Then weight_checksum crashed on the new
-  /weights_checker body (fixed 8782950). Calibrate passed 13:20 (reference/fidelity_thresholds.json).
-- C1 chain (resumable, skips finished steps): bs2 harness-pb/compute/c1_chain.sh -> logs/pb-c1-chain.log, started
-  13:18. Steps: A/A aa-c12 + set-noise -> mid tune 768/1536 (moe-tune/c1/mid) -> merge small+large+mid -> kernel bench
-  (bench-tuned-merged.log) -> C1 gate c1-moe-tuned at C12 -> C8 A-B-B-A (runs/c1-c8-abba.json) -> "=== ... done".
-  Expected ~16:15. Old logs pb-c1-chain-run1/run2.log.
-- C2-A share profile: compute/profile_extend_share.py --ref base --concurrency 12 --steps 500 (queued on the host lock,
-  runs after the A/A) -> logs/pb-profile-c12.log, runs/profile-base-C12-*/extend_share.json. Coordinator rule: send
-  the split + prediction (sum share x (1 - 1/s)) before gating; >= 5% -> C2-A before C3 (KL check, gate C8+C12, one
-  C16 point); 3-5% -> C3 first; < 3% -> drop C2-A with numbers. C2-A must start by 10-06 02:00.
-- C2 microbench done (c2/bench.json): hd512 best mix 2.93x (32,32,64,8,1; maxdiff 0.031), exact 2.68x (16,32,32,4,1;
-  maxdiff 0); hd256 best 2.02x (32,32,32,4,1; maxdiff 0.016), exact 1.62x (32,64,64,8,1).
-- C3 registered (PREREG.md 543f9beaad; vault g4poc-c3a ecab5ac, g4poc-c3b d85ff6d, workload wl-g4poc-rp-inflight-sweep):
-  compute/sweep_nested.sh base "c3-lpm c3-cp2048" 8,12,16,20 <out dir> (6 sweeps, ~2.3 h).
-- C2-A tools: compute/kl_check.py --candidate <ref> (8 long role-play prompts; A/A = base batched vs serial).
-- C1 prediction frozen: vault trial g4poc-c1 (b21c0d8), compute/PREREG.md (477d5ab0bc): E2E p90 -6..-1%.
+- Done 10-05: harness fixes (logprob chunk 128, weights_checker body); calibrate; A/A aa-c12 (bar 1%).
+  C1 KEPT (C12 +1.2%, C8 +1.0%; vault g4poc-c1 recorded). C2-A KEPT at C12 (+11.5% p90, +10.6% tok/s;
+  runs/c2-gate-20261005-154627); numerics: compute/runs/c2/accuracy.json, kl-c2-extend-tiles*.
+- bs2 queue (resumable): compute/pb_queue.sh c2-extend-tiles -> logs/pb-queue.log:
+  C2-A sweep_abba 8,16 (runs/c2-c8-c16-abba.json, ~17:30) -> C3 sweep_nested base "c3-lpm c3-cp2048" 8,12,16,20
+  (runs/c3-nested/, ~19:50) -> pd-measure base (~20:00) -> "=== ... queue done".
+- Next (coordinator-approved 10-05 ~16:40): decode_split_bench (C4 microbench, PYTHONPATH tree 1425761173d3) ->
+  compute/final_run.sh final-mem-c1-c2a[+kept C3 flag] (~95 min; memory limit on bs2 31,599 MiB: if the peak
+  breaks it, rerun at mem 0.95 and report it as bs2's deployable value) -> C4 overnight vs the final stack
+  (--triton-attention-num-kv-splits / split tile size; nested sweeps C12+C20 then gate C12; hard stop 06:00).
+- Morning 08:00-11:00: replicate the final sweep (+ kept C4 flag; + --max-running-requests 24 if the
+  coordinator says so by ~19:00). HiCache never in a final stack. 11:00-13:30 report, cost table, P/D model, wm-record.
+- Final trees on bs2: 1425761173 (mem-final 53752c62aa + C2-A, branch jumanzii/g4poc-final-c2), 57e5f273c0 (exact tiles).
 
 ## Queue (GPU, in order)
 1. gate calibrate --ref base (fidelity reference + thresholds)
