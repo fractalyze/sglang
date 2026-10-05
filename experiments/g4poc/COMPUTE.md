@@ -173,7 +173,7 @@ control/candidate for E2E p90 and candidate/control for output tok/s, geometric 
 
 Vault: `g4poc-c3a`, `g4poc-c3b` (kept on the base, predictions falsified on magnitude).
 
-## 4. The study's final stack on bs2: final-hc
+## 3. The study's final stack on bs2: final-hc
 
 `final-hc` (gate ref in `hicache/refs.json`; SGLang a0491db764 on `jumanzii/g4poc-final-hicache`; 28G scope)
 combines four parts:
@@ -247,10 +247,10 @@ Without HiCache the device pool (~160K full-layer tokens, ~27 histories) is the 
 12 GB host pool moves it past 40. At the 10 s SLO, capacity goes from 24 in flight (838 tok/s, $0.232/1M at
 $0.70) to 32 (952, $0.204).
 
-## 6. Prefill/decode split model (`gate pd-measure`, `gate pd-model`)
+## 4. Prefill/decode split model (`gate pd-measure`, `gate pd-model`)
 
 Rates are measured on one GPU. **Prefill:** uncached prompts of 5,120 and 10,240 tokens at 1-8 in flight.
-**Decode:** from the server's full-batch decode steps; see the harness fix in section 7. The model takes the
+**Decode:** from the server's full-batch decode steps; see the harness fix in section 6. The model takes the
 colocated sweep's point at the SLO for the workload (prompt, hit rate, output):
 
 | stack | prefill tok/s (5,120) | decode: batch sustained, tok/s, p90 TPOT | SLO point | P:D GPUs | disagg / colocated out tok/s per GPU | $/1M out @0.70, disagg vs colocated |
@@ -266,11 +266,11 @@ colocated sweep's point at the SLO for the workload (prompt, hit rate, output):
 - **Assumptions.** The model assumes the prefill side keeps the cross-turn prefix cache, i.e. sticky routing
   to a prefill node with HiCache. It is a model, not a disaggregated deployment.
 
-## 7. Fleet model: sessions with think time (`compute/fleet_model.py`)
+## 5. Fleet model: sessions with think time (`compute/fleet_model.py`)
 
 Pending the drop-idle measurement (radix cache off) and PC2's think-time loads (bs3), 10-06 ~01:00.
 
-## 8. Harness fixes found on the way (2026-10-05)
+## 6. Harness fixes found on the way (2026-10-05)
 
 Both broke the gate's first use on this SGLang commit (91132098df) and are fixed before any gated number.
 
