@@ -244,11 +244,11 @@ both hosts):
 | 28 | 7.89 | 13.82 | 616 | 21,085 | 0.148 | 2 | 31,524 |
 | 32 | 10.96 | 15.15 | 600 | 18,860 | 0.002 | 1 | 31,526 |
 
-| SLO (E2E p90) | mem-base | mem-final | final-mem-c1-c2a | $/1M output at $0.4 / 0.7 / 1.0 / 1.5 per GPU-h |
+| SLO (E2E p90) | mem-base: capacity, output tok/s | mem-final | final-mem-c1-c2a | $/1M output at $0.4 / 0.7 / 1.0 / 1.5 per GPU-h |
 |---|---|---|---|---|
 | 6 s | C8, 465 tok/s | C8, 479 | **C12, 645** | 0.172 / 0.301 / 0.431 / 0.646 |
 | 10 s | C12, 558 | C20, 677 | **C24, 833** | 0.133 / **0.234** / 0.334 / 0.500 |
-| 15 s | C20, 375 | C24, 681 | C28 by p90; max goodput still C24, 833 | as 10 s |
+| 15 s | C20 by p90; max goodput C12, 558 | C24, 681 | C28 by p90; max goodput C24, 833 | as 10 s |
 
 At the 10 s SLO: +49% output tok/s and -33% $/1M output over mem-base (C12, $0.348 at $0.70), +23% and -18.5%
 over mem-final. The compute levers shorten every turn (p90 at C20 8.77 -> 7.59 s), so C24 now fits under 10 s; the
