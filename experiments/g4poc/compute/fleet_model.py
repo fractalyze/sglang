@@ -22,12 +22,16 @@ held:
 Sessions per GPU = min(compute bound, storage bound). `host_gb_needed` gives, per think time, the host pool per
 GPU at which storage stops binding (the sizing rule).
 
-Storage (PC4's code read of tree a0491db764, 10-05 ~22:50): under write_through the host pool is an inclusive mirror
-of the device (host eviction removes only nodes already gone from the device), so the distinct histories one GPU
-holds are max(device, host) tokens over ~6.5K tokens per stored session (a live history plus its dead reply leaves,
-and ended sessions not yet aged out). At 12 GB that is ~49 sessions, which matches the measured think-time loads
-(PC2, bs3: HiCache stops helping past ~48 sessions at 30 s think). The sizing rule (~0.25 GB of host pool per
-session) is derived from this; its only measured anchor is the 12 GB point.
+Storage (PC4, tree a0491db764, 10-05/06): under write_through the host pool is an inclusive mirror of the device
+(host eviction removes only nodes already gone from the device), so the distinct histories one GPU holds are the
+larger of what the device and the host pool hold. PC4 measured the host cost of an idle session at 12 GB (final-hc,
+think30 x 48, bs3): ~0.23 GB, one third full-layer KV and two thirds sliding-window KV (1.4-1.8K window tokens at
+102 KB/token: node-granular windows, the dead reply leaf, chunk-boundary windows). That is ~52 sessions at 12 GB
+with perfect packing (~44 with ended-session garbage), and the measured hit rate collapses there. The sizing rule
+(host GB per GPU ~ 0.23 x sessions) is that per-session cost, measured at 12 GB, extrapolated linearly. There is
+no config lever (the full/SWA host split is near balance); code levers, open: exclusive tiering for hybrid SWA
+(~+50% distinct capacity) and not caching decode-output tokens, which Gemma-4's template never reuses (~10-15% of
+the SWA host share).
 
 Measured session loads (`--session-point`) give the capacity that holds today: per config and think time, the most
 sessions per GPU that meet the SLO (the largest measured point, and the interpolated point where p90 = SLO).
@@ -55,10 +59,11 @@ BELOW_CLIFF_HIT_SHARE = 0.5
 # 8.74 GB hold sliding-window KV in the device pools' ratio), i.e. ~37.7 KB of host pool per history token.
 HOST_FULL_TOKENS_PER_GB = 318445 / 12
 HOST_GB = (12, 24, 48, 96, 128)
-# Tokens a stored session occupies in the radix tree: its history plus the dead reply leaves of earlier turns (the
-# next prompt re-renders the reply, so the generated tokens stay as a branch) and the share of ended sessions not yet
-# aged out (PC4, 10-05).
+# Device tokens a stored session occupies in the radix tree: its history plus the dead reply leaves of earlier turns
+# (the next prompt re-renders the reply, so the generated tokens stay as a branch) and ended sessions not yet aged out.
 TOKENS_PER_STORED_SESSION = 6500
+# Host pool per idle session under write_through, measured (PC4, final-hc at 12 GB, think30 x 48, bs3).
+HOST_GB_PER_SESSION = 0.23
 
 
 def points(sweep: Dict) -> List[Dict]:
@@ -129,16 +134,16 @@ def policy_row(p: Optional[Dict], think_s: float, sessions: int, cap: Optional[f
     }
 
 
-def storage_cap(device_tokens: float, host_gb: float, per_session: float = TOKENS_PER_STORED_SESSION) -> float:
-    """Histories one GPU can hold: the host pool mirrors the device (write_through), so the larger of the two."""
-    return max(device_tokens, HOST_FULL_TOKENS_PER_GB * host_gb) / per_session
+def storage_cap(device_tokens: float, host_gb: float) -> float:
+    """Histories one GPU holds: the host pool mirrors the device (write_through), so the larger of the two."""
+    return max(device_tokens / TOKENS_PER_STORED_SESSION, host_gb / HOST_GB_PER_SESSION)
 
 
-def host_gb_needed(compute_sessions: float, device_tokens: float,
-                   per_session: float = TOKENS_PER_STORED_SESSION) -> float:
-    """The host pool per GPU at which the storage bound reaches the compute bound (0 if the device alone holds them)."""
-    need = compute_sessions * per_session
-    return 0.0 if need <= device_tokens else need / HOST_FULL_TOKENS_PER_GB
+def host_gb_needed(compute_sessions: float, device_tokens: float) -> float:
+    """Host pool per GPU at which storage reaches the compute bound (0 if the device alone holds the sessions)."""
+    if compute_sessions <= device_tokens / TOKENS_PER_STORED_SESSION:
+        return 0.0
+    return compute_sessions * HOST_GB_PER_SESSION
 
 
 def policies(cached: Dict, nocache: Optional[Dict] = None, hicache: Optional[Dict] = None,

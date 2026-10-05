@@ -32,9 +32,8 @@ class FleetModelTest(absltest.TestCase):
         self.assertAlmostEqual(pols["a_sticky_device"]["cap"], 60000 / fm.TOKENS_PER_STORED_SESSION)
         self.assertIsNone(pols["b_drop_idle"]["cap"])
         self.assertEqual([p["inflight"] for p in pols["b_lru_oversubscribed"]["points"]], [16])
-        # The host pool mirrors the device (write_through): the larger of the two, per stored session.
-        self.assertAlmostEqual(pols["c_sticky_host_12gb"]["cap"],
-                               fm.HOST_FULL_TOKENS_PER_GB * 12 / fm.TOKENS_PER_STORED_SESSION)
+        # The host pool mirrors the device (write_through): the larger of the two.
+        self.assertAlmostEqual(pols["c_sticky_host_12gb"]["cap"], 12 / fm.HOST_GB_PER_SESSION)  # ~52
         self.assertAlmostEqual(fm.storage_cap(60000, 1), 60000 / fm.TOKENS_PER_STORED_SESSION)
 
     def test_zero_think_time_is_the_inflight_point(self):
@@ -74,13 +73,13 @@ class FleetModelTest(absltest.TestCase):
         m = fm.model(list(_pols().values()), sessions=100, slo_s=10.0, think=[30])
         z = m["host_sizing"][0]
         self.assertAlmostEqual(z["compute_bound_sessions_per_gpu"], 3.0 * (30 + 8.0))  # 114 sessions
-        self.assertAlmostEqual(z["host_gb_needed"], 114 * fm.TOKENS_PER_STORED_SESSION / fm.HOST_FULL_TOKENS_PER_GB)
+        self.assertAlmostEqual(z["host_gb_needed"], 114 * fm.HOST_GB_PER_SESSION)
         self.assertAlmostEqual(fm.storage_cap(60000, z["host_gb_needed"]), 114.0)
 
     def test_validation_uses_the_closed_population_think_time(self):
         v = fm.validate(["t30-120:120:30:5:532:24.3:0.002"], list(_pols().values()), 10.0)[0]
         self.assertAlmostEqual(v["think_eff_s"], 24.0)  # turn 0 of each 5-turn session has no think time
-        self.assertTrue(v["past_storage_bound"])  # 120 > 318,445 / 6,500 = 49
+        self.assertTrue(v["past_storage_bound"])  # 120 > 12 GB / 0.23 GB = 52
 
     def test_measured_capacity_conservative_and_interpolated(self):
         specs = ["final-hc:30:5.15:48:334:7.07:0.286", "final-hc:30:5.15:72:434:11.41:0.076",
