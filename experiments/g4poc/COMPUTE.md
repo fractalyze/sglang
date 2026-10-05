@@ -385,7 +385,7 @@ slightly worse at T60 (p90 10.43 vs 9.37 s at 119 live). Chunk 2048 + lpm is wor
 pool alone is the simplest and costs the least.
 
 **Measured with poisson session arrivals** (loads `pthink30`/`pthink60`: independent sessions, no bursts, queue max
-≤ 4, at most 1 failed request per point, all a client keep-alive race (section 6); the reference for think-time capacity). PC2 ran bs3; the final's sweep ran on bs2
+≤ 4, at most 1 failed request per point; PC2 traced its failures to a client keep-alive race, section 6; the reference for think-time capacity). PC2 ran bs3; the final's sweep ran on bs2
 (`runs/sweep-final-hc-cp2048-lpm-20261006-030116-build-server-2-654b74`). Rows with the same `C` replay the same
 arrival plan on both hosts:
 
@@ -613,6 +613,7 @@ number. The others were found later; none changes a reported in-flight number.
 - **Failed think-time requests were a client keep-alive race** (PC2's fix, ffa983fd37, picked into this branch and
   deployed on bs2 10-06 ~04:45; deployment note in `memory/REPORT.md`, 8cd3b3e339). SGLang closes an idle
   keep-alive connection after 5 s. With think time, a pooled connection idled past that and aiohttp reused the
-  closed socket: `ServerDisconnectedError` 0.5 ms after the send. The client's keep-alive is now 2 s. These are the
-  single failed requests at some poisson points in section 5 (e.g. the final's C96); a client sending turns after
-  more than 5 s of idle needs the same setting.
+  closed socket: `ServerDisconnectedError` 0.5 ms after the send. The client's keep-alive is now 2 s. PC2 traced
+  its overnight think-time failures to this. The final's single failure at C96 (bs2) ran before failed records
+  kept their error, so its cause is not recorded. A client that sends turns after more than 5 s idle needs the
+  same setting.
