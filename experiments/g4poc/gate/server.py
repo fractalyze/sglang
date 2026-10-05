@@ -15,6 +15,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import time
 from typing import Dict, List, Optional
 
@@ -181,6 +182,8 @@ class Server:
         self._watchdog: Optional[hostwatch.Watchdog] = None
         self._log_file = None
         self.preflight: Optional[Dict] = None
+        # Logs of starts that failed the HiCache host-memory check and were retried.
+        self.start_retries: List[str] = []
         self.host_summary: Optional[Dict] = None
         self.tree = tree_for(ref["commit"], overlay)
         self.commit = resolve_commit(ref["commit"])
@@ -252,12 +255,28 @@ class Server:
             self._log_file = None
 
     def __enter__(self):
+        for attempt in range(1, config.SERVER_START_TRIES + 1):
+            try:
+                self.start()
+                return self
+            except BaseException as e:
+                self.stop()
+                if not (isinstance(e, RuntimeError) and attempt < config.SERVER_START_TRIES
+                        and self._start_failed_on_host_memory()):
+                    raise
+                kept = f"{self.log_path}.start-try{attempt}"
+                os.replace(self.log_path, kept)
+                self.start_retries.append(kept)
+                print(f"server start {attempt}/{config.SERVER_START_TRIES} failed SGLang's HiCache host-memory "
+                      f"check; retrying (log kept: {kept})", file=sys.stderr, flush=True)
+
+    def _start_failed_on_host_memory(self) -> bool:
+        """A start that died on SGLang's HiCache host-memory check, which transient charges in the scope can fail."""
         try:
-            self.start()
-        except BaseException:
-            self.stop()
-            raise
-        return self
+            with open(self.log_path, errors="replace") as f:
+                return config.HICACHE_HOST_MEMORY_ERROR in f.read()
+        except OSError:
+            return False
 
     def __exit__(self, *exc):
         self.stop()

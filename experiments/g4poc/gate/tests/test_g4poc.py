@@ -581,6 +581,50 @@ class RefsTest(absltest.TestCase):
             self._server({"SGLANG_LOGPROB_CHUNK_SIZE": "2048"}).launch_env({})
 
 
+class _FlakyServer(server.Server):
+    """Start writes `logs[i]` to the server log and fails while one is left (no process, no host checks)."""
+
+    def __init__(self, log_path, logs):
+        self.log_path, self.logs, self.starts, self.start_retries = log_path, list(logs), 0, []
+
+    def start(self, timeout_s: int = 900) -> None:
+        self.starts += 1
+        if self.logs:
+            with open(self.log_path, "w") as f:
+                f.write(self.logs.pop(0))
+            raise RuntimeError("server exited with 1")
+
+    def stop(self) -> None:
+        pass
+
+
+class ServerStartRetryTest(absltest.TestCase):
+    HOST_MEM = "ValueError: Not enough host memory available. Requesting 8.74 GB but only have 7.9 GB free\n"
+
+    def test_retries_the_hicache_host_memory_failure_and_keeps_its_logs(self):
+        with tempfile.TemporaryDirectory() as d:
+            srv = _FlakyServer(os.path.join(d, "server.log"), [self.HOST_MEM, self.HOST_MEM])
+            self.assertIs(srv.__enter__(), srv)
+            self.assertEqual(srv.starts, 3)
+            self.assertEqual([os.path.basename(p) for p in srv.start_retries],
+                             ["server.log.start-try1", "server.log.start-try2"])
+            self.assertTrue(all(os.path.exists(p) for p in srv.start_retries))
+
+    def test_other_start_failures_are_not_retried(self):
+        with tempfile.TemporaryDirectory() as d:
+            srv = _FlakyServer(os.path.join(d, "server.log"), ["CUDA out of memory\n"])
+            with self.assertRaises(RuntimeError):
+                srv.__enter__()
+            self.assertEqual(srv.starts, 1)
+
+    def test_gives_up_after_the_last_try(self):
+        with tempfile.TemporaryDirectory() as d:
+            srv = _FlakyServer(os.path.join(d, "server.log"), [self.HOST_MEM] * config.SERVER_START_TRIES)
+            with self.assertRaises(RuntimeError):
+                srv.__enter__()
+            self.assertEqual(srv.starts, config.SERVER_START_TRIES)
+
+
 class CheckpointTest(absltest.TestCase):
     def test_compare_against_pin(self):
         self.assertTrue(checkpoint.compare({"a": "1", "b": "2"}, {"a": "1", "b": "2"})["matches_pin"])

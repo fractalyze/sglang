@@ -21,6 +21,7 @@ alone_conc=${ALONE_CONC:-16,20,24}
 R=$G4POC_RUNS_DIR
 out=$R/final-$final
 mkdir -p "$out"
+touch "$out/.started"
 step() { echo "=== $(date -Is) $*"; }
 server_ref_exists() { python -c "import sys; from gate import server; sys.exit(0 if sys.argv[1] in server.all_refs() else 1)" "$1"; }
 sampled() {  # sampled <name> <command...>: GPU memory every 100 ms while the command runs
@@ -65,4 +66,6 @@ if [ ! -f "$out/pd.txt" ]; then
   python -m gate pd-measure --ref "$final"
   ls -td "$R"/pd-"$final"-* | head -1 > "$out/pd.txt"
 fi
+step "server starts retried on the HiCache host-memory check (gate/server.py): $(find "$R" -newer "$out/.started" -name 'server.log.start-try*' | wc -l)"
+find "$R" -newer "$out/.started" -name 'server.log.start-try*'
 step "final done"

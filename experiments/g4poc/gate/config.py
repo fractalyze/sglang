@@ -58,6 +58,13 @@ QUIESCE_POLL_S = 10
 # the timed replay or the KV pool size.
 SERVER_ENV = {"SGLANG_LOGPROB_CHUNK_SIZE": "128"}
 
+# SGLang's HiCache start checks free host memory inside the server's scope ("Not enough host memory available.
+# Requesting 8.74 GB but only have X GB free"); transient charges in the scope at that moment (7-10 GB on failed
+# starts against 4.7 GB on good ones, bs3) fail 2 of 7 final-hc starts. A start that dies on exactly that
+# message is retried, up to this many tries in all; the failed start's log is kept beside the server log.
+HICACHE_HOST_MEMORY_ERROR = "Not enough host memory available"
+SERVER_START_TRIES = 3
+
 # ---------------------------------------------------------------------------
 # Workload shape (workload/generate.py defaults). Input ~5K typical, 10K max,
 # output <= 300 tokens, non-streaming multi-turn role-play.
