@@ -331,7 +331,7 @@ It was replicated twice on bs2 (`runs/sweep-final-hc-cp2048-lpm-20261006-012036-
 | **final-hc-cp2048-lpm (final)** | C3a lpm + C3b chunk 2048 | 36 (p90 8.9-9.0 s); cheapest at 32 | **971-988** | **0.197-0.200** | -3% |
 
 Base to final: **-42% per 1M output tokens** at the sweeps' cheapest point (32 in flight), **-41% at the
-30-min operating point** (28 in flight, $0.204). mem-final's bs2 sweep is `runs/sweep-mem-final-20261006-001140-build-server-2-c8a62b`. bs3 agrees within ~1% at
+30-min operating point** (28 in flight, $0.203-0.204 on two hosts). mem-final's bs2 sweep is `runs/sweep-mem-final-20261006-001140-build-server-2-c8a62b`. bs3 agrees within ~1% at
 every shared point.
 
 **What HiCache adds, bs2.** The control is the same stack without HiCache (`final-mem-c1-c2a`,
@@ -433,7 +433,7 @@ How much of the gap more host RAM would close is a model result (below).
 
 | traffic | config | measured at a 10 s p90 SLO |
 |---|---|---|
-| requests always in flight (no think time) | `final-hc-cp2048-lpm` (section 3) | capacity 36 in flight; cheapest sweep point 32 ($0.197-0.200/1M at $0.70); operating point 28 (30-min soak: p90 8.59 s, p99 11.1 s, $0.204/1M) |
+| requests always in flight (no think time) | `final-hc-cp2048-lpm` (section 3) | capacity 36 in flight; cheapest sweep point 32 ($0.197-0.200/1M at $0.70); operating point 28 (30-min soaks, two hosts: p90 8.5-8.6 s, p99 11.1-11.6 s, $0.203-0.204/1M) |
 | chat with ≥ 30 s mean think, ~12 GB host RAM per GPU | `final-mem-c1-c2a`: device prefix cache only, default chunking | T30 ~70 sessions ($0.44-0.45/1M); T60 ≥ 118 ($0.446/1M) |
 | chat at 30 s think, ≥ 48 GB host RAM per GPU | `final-hc` with a larger host pool | **model only** (retention model below): ~107 sessions/GPU at 48 GB, $0.30/1M |
 
