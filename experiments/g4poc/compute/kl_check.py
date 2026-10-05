@@ -142,6 +142,11 @@ def main() -> None:
     }
     with open(os.path.join(out_dir, "kl_check.json"), "w") as f:
         json.dump(res, f, indent=1)
+    # Raw rows, for locating a divergence by position (top-k logprobs as [logprob, token id]).
+    with open(os.path.join(out_dir, "kl_rows.json"), "w") as f:
+        json.dump({"reference": reference, "control_batched": ctrl_batched, "control_serial": ctrl_serial,
+                   "candidate_batched": cand_batched, "control_greedy_1": ctrl_greedy_1,
+                   "candidate_greedy_1": cand_greedy_1}, f)
     print(json.dumps({k: res[k] for k in ("items", "aa", "candidate_vs_control", "verdict")}, indent=1))
     print(json.dumps({role: {k: v for k, v in r.items() if k != "per_prompt"} | {
         "divergences": [p for p in r["per_prompt"] if p["first_divergence"] >= 0]}
