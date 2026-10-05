@@ -107,3 +107,14 @@ Ref `mem-stack3` = the best stack at run time (stack2 if L5 holds, else stack1) 
 |---|---|---|---|
 | g4poc-l8 | max_clean_sessions (burst 5K/300) | weights line -0.69 GiB (24.43 -> ~23.74); **+4 sessions** over the stack it extends (interval +3..+5; stack2 29 -> 33) | weights drop < 0.6 GiB, or gain < 3 sessions |
 | g4poc-l8 (quality guard) | GSM8K 200 greedy, tool-JSON 40, role-play reference NLL (gate quality / rp-quality vs the same stack without the switch) | GSM8K within -1.0 pt; tool-JSON 40/40; rp NLL rise <= 0.02 nats/token; rp language rate not lower | any guard fails |
+
+## 2026-10-05, real-workload sweeps of stack2 and stack3 (before either runs)
+
+Inputs: stack1's sweep (10 s capacity 20; collapse of the prefix-cache hit rate at C24; a one-sample GPU
+spike to 32,113 MiB, 41 MiB under the CUDA-visible capacity, with prefill batches never above 4,096
+tokens); step-0 stack2 29 and stack3 33.
+
+| run | prediction | falsified if |
+|---|---|---|
+| sweep mem-stack2 (L5 secondary) | 10 s capacity **24** (interval 20-24; stack1 20); the hit-rate collapse moves past C24 | 10 s capacity < 20, or any failed request |
+| sweep mem-stack3-xs = stack3 + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` | 10 s capacity **24** (interval 24-28): more pool keeps the cache through C28, but decode at 28 in flight pushes p90 near 10 s; 15 s capacity 28. The allocator setting removes the transient spikes: GPU peak (2 s samples) <= 31,800 MiB | 10 s capacity < 24, or peak > 31,800 MiB, or any failed request |

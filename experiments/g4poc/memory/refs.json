@@ -135,5 +135,12 @@
   "env": {
    "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE": "1"
   }
+ },
+ "mem-stack3-xs": {
+  "description": "stack3 with the torch caching allocator on expandable segments, to remove the transient reserved-memory spikes seen under the real workload at 0.955.",
+  "extends": "mem-stack3",
+  "env": {
+   "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
+  }
  }
 }
