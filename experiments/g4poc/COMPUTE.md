@@ -370,24 +370,60 @@ of think per turn. The measured slots points (48-64) sit below that, for two rea
 (PC2, fixed in dff92efc2b) made them pessimistic, and bursty think-time arrivals queue more than a closed
 in-flight loop. PC2's poisson think-time runs (10-06 morning) calibrate it.
 
-**The lever: host RAM per GPU.** Storage stops binding when the host pool holds as many sessions as the GPU can
-compute. At 0.23 GB per session (**measured at 12 GB, extrapolated linearly**):
+**The lever: host RAM per GPU.** A host pool keeps an idle session's cache for a roughly fixed retention time,
+not a fixed number of sessions (PC4's SW1). Retention is the host bytes over the aggregate write rate; the
+sliding-window share binds first, at ~0.6 of the full-layer retention. At 12 GB with 30 s think, retention is
+~25 s at 48 sessions and ~12 s at 72. A returning turn hits if its idle gap (think + E2E) beats the retention:
 
-| | value |
-|---|---|
-| compute bound at 30 s think (final-hc's C32 point, by Little's law) | ~187 sessions per GPU |
-| host pool per GPU to hold them | ~43 GB (`--hicache-size` 43) |
-| GPUs for 2,200 sessions | ~12 |
-| cost per 1M output tokens | ~$0.21 |
-| at 60 s think | ~79 GB host for ~343 sessions per GPU |
+| idle gap (48 sessions) | < 20 s | 20-30 s | 30-40 s | > 40 s |
+|---|---|---|---|---|
+| hit | 70-80% | 57% | 16% | 0 |
 
-Larger pools need a memory scope above the 28G cap, which is the user's decision (two host crashes earlier in the
-study set that cap). A customer server with 64-128 GB of host RAM per GPU would sit on the right side of it.
+**Retention model** (`fleet_model.retention_capacity`):
+- **Hit rate:** h_max x P(think + E2E < retention), with think drawn from the session file's lognormal (median
+  15 s, clipped 2-120 s, then scaled).
+- **Retention:** host GB x turn interval / (sessions x w). The per-turn host write w = 0.28 GB is calibrated on
+  SW1's 48-session point.
+- **GPU turn rate at the SLO:** interpolated by hit rate between final-hc's cached point and the no-cache point.
 
-- **No config lever.** The host pool's full/SWA split is already near balance.
-- **Code levers (open).** Exclusive tiering for hybrid sliding-window models (~+50% distinct capacity), and not
-  caching decode-output tokens, which Gemma-4's template never reuses (~10-15% of the SWA host share).
-- **HS1'' (`compute/PREREG.md`).** It tests the slope inside the scope: 6 vs 12 GB at 36 sessions.
+It reproduces 0.28 at 48 sessions (measured 0.286) and 0.10 at 72 (0.076). On HS1'' (below) it predicts the
+6 GB arm (0.11 vs 0.10) and is conservative on the 12 GB arm (0.44 vs 0.56).
+
+| host pool per GPU | 30 s think: sessions/GPU, hit, GPUs for 2,200, $/1M out @0.70 | 60 s think: sessions/GPU, hit, $/1M out |
+|---|---|---|
+| 12 GB (as tested) | 87, 0.03, 26, 0.371 | 156, 0.00, 0.376 |
+| 24 GB | 101, 0.25, 22, 0.319 | 163, 0.07, 0.360 |
+| 48 GB | 125, 0.51, 18, 0.258 | 190, 0.29, 0.309 |
+| 96 GB | 147, 0.67, 15, 0.219 | 233, 0.53, 0.251 |
+
+- **At 12 GB HiCache adds almost nothing at 30 s think.** The GPU then runs as drop-idle at ~86 sessions, the
+  same as without HiCache, which is what was measured.
+- **Host RAM buys capacity gradually.** Even 96 GB stays short of the ~187-session compute bound, because long
+  thinkers outlive the retention.
+- **Upper bound.** The earlier hard cap (0.23 GB of host pool per stored session, ~43 GB for 187 sessions at
+  T30) is the bound with no think-time spread.
+- **Calibration caveats.** w is calibrated on bs3 final-hc. Chunk 2048, in the final, adds chunk-boundary windows
+  and may shorten retention.
+
+**HS1'' (bs2, registered before the run).** final-hc at 30 s think x 36 sessions (slots with the window-cut fix),
+6 GB vs 12 GB host pool. 36 sessions lies between the two storage bounds: 6 GB adds nothing over the device
+(~25 sessions) and 12 GB holds ~50.
+
+| host pool | hit | E2E p90 | out tok/s |
+|---|---|---|---|
+| 12 GB | 0.56 | 4.07 s | 234 |
+| 6 GB | 0.10 | 5.00 s (+23%) | 231 |
+
+The prediction held (vault `g4poc-hs1b`). Throughput barely moves at this load (3-4 in flight): losing the cache
+costs latency and prefill work, not goodput, until the load nears the SLO edge.
+
+- **No config lever.** The host pool's full/SWA split is near balance, and write_back is not safe (SWA tombstoning
+  drops windows without a backup).
+- **Code levers (open).** ~1/3 of the SWA host writes are dead: decode-output leaves the template never reuses,
+  and chunk-boundary windows. Every miss's re-prefill rewrites ~2K SWA tokens, which feeds the thrash.
+  Exclusive tiering for hybrid sliding-window models would add ~+50% distinct capacity.
+- **Scope.** Larger pools need a memory scope above the 28G host-safety cap, the user's decision. A customer
+  server with 64-128 GB of host RAM per GPU would sit on the right side of it.
 
 ## 6. Harness fixes found on the way (2026-10-05)
 
