@@ -8,6 +8,12 @@ between its turns and the next turn loads it back; on the control it stays a dev
 prefill only the new suffix on the same cached prefix, so a correct load-back gives identical
 greedy tokens and identical `cached_tokens`.
 
+`--template-cut N` drops the last N tokens of the previous prompt before appending its output, the
+way a chat template re-renders a past assistant turn without the generation prompt's tail (Gemma-4:
+`<|turn>model\n<reply>` vs the prompt's `<|turn>model\n<|channel>thought\n<channel|>`, N = 4). The
+next turn then matches N tokens short of the cached prompt, the case SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN
+exists for.
+
   python -m hicache.exactness_mt run --ref mem-hc-fix-smallpool --sessions 4 --turns 3
   python -m hicache.exactness_mt compare <control exactness_mt.json> <candidate exactness_mt.json>
 """
@@ -52,7 +58,12 @@ def generate(url: str, input_ids: List[int], output_len: int) -> Dict:
 
 
 def run_sessions(
-    url: str, sessions: List[Dict], turns: int, output_len: int, tokenizer
+    url: str,
+    sessions: List[Dict],
+    turns: int,
+    output_len: int,
+    tokenizer,
+    template_cut: int = 0,
 ) -> List[Dict]:
     follow_ups = [
         tokenizer.encode(f"\n\nUser: {m}\n\nAssistant:", add_special_tokens=False)
@@ -73,7 +84,9 @@ def run_sessions(
                 flush=True,
             )
             prompts[seed] = (
-                prompts[seed] + out["output_ids"] + follow_ups[turn % len(follow_ups)]
+                prompts[seed][: len(prompts[seed]) - template_cut]
+                + out["output_ids"]
+                + follow_ups[turn % len(follow_ups)]
             )
     return rows
 
@@ -115,7 +128,12 @@ def _run(a) -> None:
         : a.sessions
     ]
     sessions = [{"seed": it["id"], "input_ids": it["input_ids"]} for it in items]
-    res: Dict = {"ref": ref, "turns": a.turns, "output_len": a.output_len}
+    res: Dict = {
+        "ref": ref,
+        "turns": a.turns,
+        "output_len": a.output_len,
+        "template_cut": a.template_cut,
+    }
     with (
         hostwatch.host_lock(),
         server.Server(
@@ -126,7 +144,9 @@ def _run(a) -> None:
     ):
         res["commit"] = srv.commit
         requests.post(f"{srv.url}/flush_cache", timeout=60)
-        res["rows"] = run_sessions(srv.url, sessions, a.turns, a.output_len, tokenizer)
+        res["rows"] = run_sessions(
+            srv.url, sessions, a.turns, a.output_len, tokenizer, a.template_cut
+        )
     res["host"] = srv.host_summary
     fidelity.save_json(os.path.join(out_dir, "exactness_mt.json"), res)
     print(f"run dir: {out_dir}", file=sys.stderr)
@@ -140,6 +160,7 @@ def main() -> None:
     r.add_argument("--sessions", type=int, default=4)
     r.add_argument("--turns", type=int, default=3)
     r.add_argument("--output-len", type=int, default=128)
+    r.add_argument("--template-cut", type=int, default=0)
     c = sub.add_parser("compare")
     c.add_argument("control")
     c.add_argument("candidate")
