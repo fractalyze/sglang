@@ -432,6 +432,10 @@ measured lower bounds, the T30 edges are C72/C76 above):
 | 30 s | ≥ 64 (model 73) | ≤ 35 (model 31) | 0.454 |
 | 60 s | ≥ 118 (model 127) | ≤ 19 (model 18) | 0.446 |
 
+`runs/fleet/fleet-v4-poisson.json` holds every poisson point above. The model (the retention model at 12 GB, derated
+for poisson arrivals) checks against the one measured edge: final-hc at T60 crosses 10 s at ~115 sessions
+(interpolated between 113 and 119), and the model says 127, ~10% optimistic. Device-only had not crossed at 118.
+
 **Measured, first pass** (PC2, bs3, load `think30`; 0 failures). These ran **before the slots window-cut fix**
 (PC2's dff92efc2b), which made every point pessimistic: each slot fired an uncached turn 0 in the window's last
 think period. Each slot is a live session with lognormal think time (mean
