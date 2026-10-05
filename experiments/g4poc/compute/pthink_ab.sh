@@ -3,7 +3,7 @@
 # final-hc at the final's poisson think30 load (48 and 64 sessions), a same-host A/B of chunk 2048 + lpm in think
 # mode -- the final's first point held a prefix hit of 0.24 against 0.46 for final-hc on bs3, and chunk boundaries
 # add sliding-window host writes. Each sweep starts only if its estimate ends by STOP (the 07:55 hard stop); the
-# A/B goes first when time is short. 28G.
+# A/B is dropped first when time is short. 28G.
 #   [HARNESS=<dir>] [WAIT_PID=<pid>] [STOP=HH:MM] compute/pthink_ab.sh > /home/jooman/g4poc/logs/pb-pthink-ab.log 2>&1
 set -uo pipefail
 here="${HARNESS:-$(cd "$(dirname "$0")/.." && pwd)}"
