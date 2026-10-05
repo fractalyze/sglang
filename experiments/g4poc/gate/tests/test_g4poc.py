@@ -593,6 +593,12 @@ class ThinkLoadsTest(absltest.TestCase):
             self.assertEqual((a.think_scale, a.arrival, b.arrival), (b.think_scale, "slots", "poisson"))
             self.assertGreater(b.expected_session_s, 0.0)
 
+    def test_chat_soak_is_pthink30_held_for_30_min(self):
+        soak, point = config.LOADS["psoak30"], config.LOADS["pthink30"]
+        self.assertEqual(soak.window_s, 1800.0)
+        self.assertEqual((soak.arrival, soak.think_scale, soak.expected_session_s, soak.warmup_s),
+                         (point.arrival, point.think_scale, point.expected_session_s, point.warmup_s))
+
     def test_poisson_plan_keeps_target_sessions_arriving(self):
         load = msgspec.structs.replace(config.LOADS["pthink30"], concurrency=48)
         sessions = [_session(f"s{i}", n_turns=5) for i in range(50)]
