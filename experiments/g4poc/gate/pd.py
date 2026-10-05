@@ -19,8 +19,9 @@ a parameter until it is measured on the bs2<->bs3 link.
 import asyncio
 import math
 import random
+import re
 import time
-from typing import Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 import aiohttp
 import msgspec
@@ -90,16 +91,70 @@ def prefill_point(url: str, prompts: List[List[int]], in_flight: int) -> Dict:
             "ttft_p90_s": metrics.percentile([x["e2e_s"] for x in rows], 90)}
 
 
-def decode_point(url: str, prompts: List[List[int]]) -> Dict:
-    """Prefills the batch, then decodes DECODE_TOKENS for all of it at once on the cached prefixes."""
+DECODE_STEP_RE = re.compile(r"Decode batch, #running-req: (\d+),.*?gen throughput \(token/s\): ([\d.]+)")
+# Full-batch decode steps a decode point needs before its step rate counts.
+MIN_DECODE_STEPS = 50
+
+
+def decode_step_rates(log_text: str, batch: int) -> List[float]:
+    """Per-step decode throughput (tok/s) of the server log's decode lines that ran exactly `batch` requests."""
+    return [float(m.group(2)) for m in DECODE_STEP_RE.finditer(log_text) if int(m.group(1)) == batch]
+
+
+def sustained_batch(log_text: str, batch: int) -> int:
+    """The largest running count, at most `batch`, that held for MIN_DECODE_STEPS decode steps (0 if none).
+
+    A decode point asks for `batch` requests at once; when the KV pool cannot hold them all, the server runs
+    fewer, and that count is the decode capacity at this prompt length.
+    """
+    counts: Dict[int, int] = {}
+    for m in DECODE_STEP_RE.finditer(log_text):
+        n = int(m.group(1))
+        if n <= batch:
+            counts[n] = counts.get(n, 0) + 1
+    held = [n for n, c in counts.items() if c >= MIN_DECODE_STEPS]
+    return max(held, default=0)
+
+
+def decode_point(url: str, prompts: List[List[int]], log_since: Optional[Callable[[], str]] = None) -> Dict:
+    """Prefills the batch, then decodes DECODE_TOKENS for all of it at once.
+
+    The decode rate is read from the server's per-step decode log (`log_since` returns the log written since
+    the second pass began): with the whole batch running, every step is pure decode, whether or not the
+    prefixes stayed cached (on a hybrid sliding-window model the first pass's prefixes may not survive).
+    Without the log, the wall-clock rate over the second pass is used and needs the prefixes cached.
+    """
     asyncio.run(_closed_loop(url, prompts, len(prompts), max_new=1))
     r = asyncio.run(_closed_loop(url, prompts, len(prompts), max_new=DECODE_TOKENS))
     rows = r["rows"]
     out = sum(x["output_tokens"] for x in rows)
     tpot = [x["e2e_s"] / max(x["output_tokens"], 1) for x in rows]
-    return {"batch": len(prompts), "prompt_len": len(prompts[0]), "decode_tok_s": out / r["wall_s"],
-            "hit_rate": metrics.hit_rate(rows), "tpot_p50_s": metrics.percentile(tpot, 50),
-            "tpot_p90_s": metrics.percentile(tpot, 90), "wall_s": r["wall_s"]}
+    point = {"batch": len(prompts), "prompt_len": len(prompts[0]), "decode_tok_s": out / r["wall_s"],
+             "hit_rate": metrics.hit_rate(rows), "tpot_p50_s": metrics.percentile(tpot, 50),
+             "tpot_p90_s": metrics.percentile(tpot, 90), "wall_s": r["wall_s"]}
+    if log_since is not None:
+        point.update(step_point(log_since(), len(prompts), point))
+    return point
+
+
+def step_point(log_text: str, batch: int, wall_point: Dict) -> Dict:
+    """The decode point from its full-batch steps, or from the largest batch the pool sustained."""
+    held = sustained_batch(log_text, batch)
+    out = step_rates_summary(decode_step_rates(log_text, held), held, wall_point) if held else \
+        {"decode_steps": 0, "step_based": False}
+    out["batch_sustained"] = held
+    return out
+
+
+def step_rates_summary(rates: List[float], batch: int, wall_point: Dict) -> Dict:
+    """The decode point's rate and TPOT from full-batch decode steps; the wall-clock values kept beside them."""
+    if len(rates) < MIN_DECODE_STEPS:
+        return {"decode_steps": len(rates), "step_based": False}
+    return {"decode_steps": len(rates), "step_based": True,
+            "decode_tok_s_wall": wall_point["decode_tok_s"], "tpot_p90_s_wall": wall_point["tpot_p90_s"],
+            "decode_tok_s": metrics.percentile(rates, 50),
+            "tpot_p50_s": batch / metrics.percentile(rates, 50),
+            "tpot_p90_s": batch / metrics.percentile(rates, 10)}
 
 
 def best_prefill(points: Sequence[Dict]) -> Dict:
@@ -107,8 +162,13 @@ def best_prefill(points: Sequence[Dict]) -> Dict:
 
 
 def best_decode(points: Sequence[Dict], max_tpot_s: float, min_hit_rate: float = 0.95) -> Optional[Dict]:
-    """Highest decode throughput whose p90 per-token latency meets the bound with the prefix still cached."""
-    ok = [p for p in points if p["tpot_p90_s"] <= max_tpot_s and p["hit_rate"] >= min_hit_rate]
+    """Highest decode throughput whose p90 per-token latency meets the bound.
+
+    A step-based point (rate from full-batch decode steps) qualifies on TPOT alone; a wall-clock point also
+    needs its prefixes cached, or its rate includes re-prefill.
+    """
+    ok = [p for p in points if p["tpot_p90_s"] <= max_tpot_s
+          and (p.get("step_based") or (not p.get("decode_steps") and p["hit_rate"] >= min_hit_rate))]
     return max(ok, key=lambda p: p["decode_tok_s"]) if ok else None
 
 

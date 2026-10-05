@@ -723,6 +723,26 @@ class PdMeasureTest(absltest.TestCase):
         self.assertEqual(sum(b["sampling_params"]["max_new_tokens"] == pd.DECODE_TOKENS for b in fake.requests), 4)
 
 
+class PdDecodeStepsTest(absltest.TestCase):
+    LINE = ("[2026-10-05 19:35:01] Decode batch, #running-req: {n}, #full token: 0, full token usage: 0.40, #swa token: 0, "
+            "swa token usage: 0.30, cuda graph: True, gen throughput (token/s): {r}, #queue-req: 0\n")
+
+    def test_rates_only_from_full_batch_steps(self):
+        log = self.LINE.format(n=7, r=300.0) + self.LINE.format(n=8, r=560.5) + self.LINE.format(n=8, r=540.0)
+        self.assertEqual(pd.decode_step_rates(log, 8), [560.5, 540.0])
+
+    def test_step_based_point_ignores_the_cache_and_needs_enough_steps(self):
+        wall = {"decode_tok_s": 400.0, "tpot_p90_s": 0.05}
+        ok = pd.step_rates_summary([560.0] * pd.MIN_DECODE_STEPS, 8, wall)
+        self.assertTrue(ok["step_based"])
+        self.assertAlmostEqual(ok["decode_tok_s"], 560.0)
+        self.assertAlmostEqual(ok["tpot_p90_s"], 8 / 560.0)
+        few = pd.step_rates_summary([560.0] * 3, 8, wall)
+        self.assertFalse(few["step_based"])
+        points = [{"batch": 8, "hit_rate": 0.0, **wall, **ok}, {"batch": 16, "hit_rate": 0.0, **wall, **few}]
+        self.assertEqual(pd.best_decode(points, max_tpot_s=0.03)["batch"], 8)
+
+
 class PdModelTest(absltest.TestCase):
     def test_kv_bytes_match_the_study_numbers(self):
         self.assertEqual(pd.SLIDING_KV_BYTES_PER_TOKEN, 102400)

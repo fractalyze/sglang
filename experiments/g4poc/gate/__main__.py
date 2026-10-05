@@ -181,6 +181,13 @@ def _rp_judge(args) -> None:
     print(json.dumps(res["verdict"], indent=1))
 
 
+def _log_since(srv: server.Server, offset: int) -> str:
+    srv.log_offset()  # flushes the log file
+    with open(srv.log_path, errors="replace") as f:
+        f.seek(offset)
+        return f.read()
+
+
 def _pd_measure(args) -> None:
     out_dir = _out_dir(f"pd-{args.ref}")
     tok, sessions = runner.load_tokenizer(), schema.read(args.sessions)
@@ -197,7 +204,8 @@ def _pd_measure(args) -> None:
         for batch in (int(x) for x in args.batches.split(",")):
             srv.flush_cache()
             prompts = pd.prompts_of_length(sessions, tok, args.decode_len, batch, f"pd-decode-{batch}")
-            res["decode"].append(pd.decode_point(srv.url, prompts))
+            offset = srv.log_offset()
+            res["decode"].append(pd.decode_point(srv.url, prompts, log_since=lambda: _log_since(srv, offset)))
             fidelity.save_json(os.path.join(out_dir, "pd.json"), res)
         res["server_info"] = srv.server_info()
     res["host"] = srv.host_summary
