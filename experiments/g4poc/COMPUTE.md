@@ -369,6 +369,15 @@ would close is a model result (below).
 | chat with ≥ 30 s mean think, ~12 GB host RAM per GPU | `final-mem-c1-c2a`: device prefix cache only, default chunking | T30 ≥ 64 sessions ($0.454/1M); T60 ≥ 118 ($0.446/1M) |
 | chat at 30 s think, ≥ 48 GB host RAM per GPU | `final-hc` with a larger host pool | **model only** (retention model below): ~107 sessions/GPU at 48 GB, $0.30/1M |
 
+Think-time cost at every price (measured poisson points at a 10 s p90 SLO; output tok/s per GPU):
+
+| config, mean think | sessions/GPU | out tok/s | $/1M output (0.40 / 0.70 / 1.00 / 1.50 per GPU-hour) |
+|---|---|---|---|
+| device-only, 30 s | 64 | 428 | 0.260 / 0.454 / 0.649 / 0.974 |
+| device-only, 60 s | 118 | 436 | 0.255 / 0.446 / 0.637 / 0.956 |
+| final-hc, 30 s | 64 | 427 | 0.260 / 0.455 / 0.651 / 0.976 |
+| final-hc-cp2048-lpm, 30 s | 65 | 394 | 0.282 / 0.494 / 0.705 / 1.058 |
+
 At these think times the HiCache configs are no better than device-only. final-hc ties device-only at T30 and runs
 slightly worse at T60 (p90 10.43 vs 9.37 s at 119 live). Chunk 2048 + lpm is worse again at T30 (below). The device
 pool alone is the simplest and costs the least.
