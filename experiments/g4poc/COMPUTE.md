@@ -241,6 +241,9 @@ GPU-hour are illustrative):
 | final-hc | 6 s | 12 | 12 | 647 / 20,504 | 5.44 s | 0.72 | 0.172 / 0.301 / 0.430 / 0.644 | 0.0054 / 0.0095 / 0.0135 / 0.0203 |
 | final-hc | 10 s | 32 | 32 | 952 / 30,313 | 9.50 s | 0.72 | 0.117 / 0.204 / 0.292 / 0.438 | 0.0037 / 0.0064 / 0.0092 / 0.0137 |
 | final-hc | 15 s | 40 | 32 | 952 / 30,313 | 9.50 s | 0.72 | 0.117 / 0.204 / 0.292 / 0.438 | 0.0037 / 0.0064 / 0.0092 / 0.0137 |
+| **final (cp2048-lpm), rep 1** | 10 s | 36 | 32 | 971 / 30,708 | 8.62 s | 0.78 | 0.114 / **0.200** / 0.286 / 0.429 | 0.0036 / 0.0063 / 0.0090 / 0.0136 |
+| **final (cp2048-lpm), rep 2** | 10 s | 40 | 32 | 988 / 30,653 | 8.41 s | 0.79 | 0.113 / **0.197** / 0.281 / 0.422 | 0.0036 / 0.0063 / 0.0091 / 0.0136 |
+| final, rep 1 / rep 2 | 15 s | 40 / 40 | 32 / 32 | as at 10 s | | | | |
 
 - **Headline.** At a 10 s p90 SLO, one RTX 5090 serves 32 requests in flight at 952 output tok/s: **$0.204 per 1M
   output tokens at $0.70/GPU-hour, against the base's $0.343 (-40.5%)**. bs3 gives -41%.
@@ -278,6 +281,8 @@ It was replicated twice on bs2 (`runs/sweep-final-hc-cp2048-lpm-20261006-012036-
   $0.70/GPU-hour, -42% against the base's $0.343**. The confirming run gave 981 tok/s at p90 8.57 s.
 - **Memory.** Peak and plateau are 31,266 MiB, inside bs2's 31,599 MiB rule (`runs/morning-final-hc-cp2048-lpm/`).
   That is 250 MiB below final-hc: chunk 2048 halves the prefill transient.
+- **Quality** (paired against the base anchor). GSM8K 96.36% vs 96.13% (+0.23 pt, CI95 [-0.33, +0.78], McNemar
+  p 0.58), tool JSON 40/40: pass.
 
 **Where the saving comes from, bs2** (10 s p90 SLO, cheapest point; every row measured on bs2):
 
