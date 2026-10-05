@@ -30,6 +30,12 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
   project; C3 chunked-prefill + --schedule-policy lpm checked at C8/C12/C16/C20 (sweep_abba); stretch HiCache
   feasibility write-up only if 1-3 finish before 10-06 04:00. No new lever after 10-06 08:00; 08-11 final
   stacked sweep C4-C32 + quality anchor on bs2; 11-13:30 COMPUTE.md report, push.
+- C2 (option A, default unless the coordinator says B; asked 2026-10-05 ~11:52): opt-in sm120 FP8-KV extend
+  tiles, SGLang commit b28a7ff6b7 (SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES, table
+  extend_attention._SM120_FP8_KV_EXTEND_TILES). Tree on bs2: /data/jooman/gemma4nv/trees/b28a7ff6b7e5
+  (fetch the branch first: GitHub refuses short-sha fetches). Microbench queued on the host lock:
+  /data/jooman/g4poc/c2/run-bench.sh -> c2/bench.log, c2/bench.json. Drop C2 if the hd512 mix gain < 15%.
+  trtllm_mha (bf16 KV only on sm120) dropped: halves the pool, cliff ~16 -> ~8 in flight.
 - C1 prediction frozen: vault trial g4poc-c1 (b21c0d8), compute/PREREG.md (477d5ab0bc): E2E p90 -6..-1%.
 - C2 survey: Explore subagent reading SGLang attention backends for SM120 + Gemma-4 (session-local).
 
