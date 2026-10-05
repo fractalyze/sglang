@@ -156,6 +156,18 @@ Cost-optimal point per SLO (the max-goodput point that meets it), $/1M output to
 At the 10 s SLO that is +21% output tok/s and -18% $/1M output against mem-base on the same host (C12, 558
 tok/s, $0.348 at $0.70).
 
+Replicate on the same host (`sweep-mem-final-20261005-151211-build-server-3-ceaa42`, the capacity point and its
+neighbours, run 70 min after the first sweep):
+
+| in flight | E2E p90 s (first) | output tok/s (first) | prefix-cache hit (first) | retractions |
+|---|---|---|---|---|
+| 16 | 7.23 (7.24) | 655 (653) | 0.704 (0.704) | 0 |
+| 20 | 8.89 (8.77) | 674 (677) | 0.653 (0.659) | 0 |
+| 24 | 10.94 (10.95) | 679 (681) | 0.604 (0.608) | 1 |
+
+Run-to-run spread is within 0.5% on output tok/s and 0.12 s on p90; the 10 s capacity is C20 in both runs and
+C24 misses 10 s by 0.94-0.95 s in both, so the capacity verdict does not depend on the run.
+
 **Deployable: `mem-final` at 0.955.** The server's own GPU memory stayed flat at 31,556-31,570 MiB over the
 whole sweep (2 s samples), under the rule's 31,642 MiB. Burst capacity 29 sessions (mem-base 17).
 
@@ -304,7 +316,7 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   prompt's last window, the next turn's resume point) might keep L5's burst gain without the hit-rate loss.
   Not implemented.
 - **Co-tenant GPU job on build-server-3** (zorch-playground canary, ~500 MiB for < 1 s every 10 min); see
-  section 3. Memory records from 14:43 on also log per-process use (`memlogs/gpuprocs.csv`).
+  section 3. Memory records from 14:43 on also log per-process use (`runs/gpuprocs-20261005.csv`; totals in `runs/gpumem-20261005.csv`).
 
 ## 7. Reproduce
 
