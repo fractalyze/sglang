@@ -120,6 +120,24 @@ moves from 16 to 24, past the 15 s point mem-base already reached at 20). At the
 stack1 delivers 666 output tok/s against mem-base's 558 (+19%), so $/1M output tokens falls 16% at any
 GPU price.
 
+final at 0.955 (`sweep-mem-final-20261005-140358-build-server-3-5be695`; stack1 + L8 + decode graphs to 48 +
+expandable segments, L5 off):
+
+| in flight | E2E p50 s | E2E p90 s | output tok/s | total tok/s | prefix-cache hit |
+|---|---|---|---|---|---|
+| 8 | 3.16 | 4.98 | 479 | 15,974 | 0.757 |
+| 12 | 3.74 | 6.07 | 587 | 18,661 | 0.723 |
+| 16 | 4.70 | 7.24 | 653 | 21,499 | 0.704 |
+| 20 | 5.57 | 8.77 | 677 | 22,590 | 0.659 |
+| 24 | 6.50 | 10.95 | 681 | 23,731 | 0.608 |
+| 28 | 10.63 | 18.05 | 468 | 15,483 | 0.114 |
+| 32 | 14.86 | 19.23 | 476 | 14,091 | 0.002 |
+
+Capacity: 8 at 6 s, **20 at 10 s** (C24 misses by 0.95 s), **24 at 15 s** (mem-base and stack1 20). L8's pool moved
+the cache cliff from C24 (stack1) to C28. Whole-sweep GPU peak 32,079 MiB (one 2 s sample at 14:23:09; plateau
+31,570), so expandable segments did not remove the transient and 0.955 fails the deployment rule (peak <=
+31,642 MiB); the rule's fraction is 0.94 (`mem-final-f094`), verified below.
+
 *Memory under the real workload:* sampled every 2 s, the GPU peaked at 32,113 MiB (12:33:09, one sample in
 the C12 window), 41 MiB under the CUDA-visible capacity; between such spikes it sat at 31,590-31,770 MiB.
 Prefill batches never exceeded 4,096 new tokens (p50 2,587), so the spike is not a larger prefill batch;
