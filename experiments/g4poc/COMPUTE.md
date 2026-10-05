@@ -258,8 +258,8 @@ GPU-hour are illustrative):
 
 - **final-hc.** At a 10 s p90 SLO it serves 32 requests in flight at 952 output tok/s: $0.204 per 1M output
   tokens at $0.70/GPU-hour (-40.5% vs base; bs3 -41%). At 6 s it is -27% ($0.301 vs $0.415).
-- **The final config's 6 s point** is measured last (8 and 12 in flight, `compute/pthink.sh`); its replicates
-  start at 16, whose p90 is 6.17 s.
+- **The final config's 6 s point** is measured last (8 and 12 in flight, `compute/final_6s.sh`, after PC4's bs2
+  queue); its replicates start at 16, whose p90 is 6.17 s.
 
 **Memory, deployable rule** (`compute/mem_check.py`, 100 ms samples over the whole sweep). Peak and plateau are
 31,514 MiB against bs2's limit of 31,599 MiB (torch capacity 32,111 MiB - 512). The 85 MiB margin is enough, so
@@ -464,8 +464,8 @@ mean think per turn is 30 x (1 - 1/5.15) = 24 s.
 | final-mem-c1-c2a | 96 | 27.2 | 552 | 15.07 | 0.002 |
 
 On these pre-fix points a GPU holds 48 sessions at a 10 s p90 SLO (64 interpolated), with or without HiCache: a
-lower bound. After the fix, 64 sessions meet it at p90 7.8 s (HS1', below). PC2's poisson think-time runs (bs3)
-and `compute/pthink.sh` (bs2) give the corrected capacity.
+lower bound. After the fix, 64 sessions meet it at p90 7.8 s (HS1', below). The poisson think-time runs above give
+the corrected capacity.
 
 **Why HiCache barely helps at 30 s think: storage.** PC4's code read (SGLang a0491db764): under write_through the
 host pool is an inclusive mirror of the device (host eviction only removes nodes already evicted from the
