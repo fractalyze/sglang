@@ -261,7 +261,32 @@ Code reading of this tree (paths under `python/sglang/srt/`):
 - Host RAM at 3x stack3's device pool would be ~18 GB pinned (5.5 GB full + 12.5 GB SWA), above the 24G
   scope together with the server's ~7 GB RSS; the step-2 run uses `--hicache-size 12`.
 
-> [!gap] Step 2 (in-flight C24/C28/C32 with and without HiCache, L5 off in both) is queued (queue 8).
+**Step 2 result: not kept; a large gain at C24, then a scheduler crash at C28.**
+`mem-hc` = mem-final + `--enable-hierarchical-cache --hicache-size 12 --hicache-write-policy write_through
+--hicache-io-backend kernel --hicache-mem-layout page_first` (`sweep-mem-hc-20261005-145932-build-server-3-803de2`).
+Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x each device pool.
+
+| point | E2E p50 s | E2E p90 s | output tok/s | total tok/s | prefix-cache hit | retractions |
+|---|---|---|---|---|---|---|
+| mem-final C24 | 6.50 | 10.95 | 681 | 23,731 | 0.608 | 0 |
+| mem-hc C24 | 5.90 | **9.08** | **801** | 27,754 | **0.744** | 0 |
+| mem-final C28 | 10.63 | 18.05 | 468 | 15,483 | 0.114 | 5 |
+| mem-hc C28 | - | - | - | - | - | scheduler crash; every request failed |
+
+- At C24 the host pool keeps prefixes the device pool had to evict: hit rate 0.61 -> 0.74, +18% output tok/s,
+  p90 under 10 s. The 10 s capacity would be 24 (mem-final 20), at $0.243 vs $0.287 per 1M output at $0.70/GPU-h.
+- At C28 the scheduler admitted a prefill the SWA pool could not hold: `alloc_token_slots` raised
+  `Out of memory ... Try to allocate 2318 tokens. Available swa: 2270 (available_size=2270 +
+  component_evictable_size_=0)`, with 7,949 full tokens free. Without HiCache the same overload retracts
+  (mem-final C28: 5 retractions, no failure). The prefill admission check (`PrefillAdder._check_prefill_budget`
+  with `swa_host_hit_length`, then `init_load_back`) under-reserves sliding slots when a host load-back or a
+  chunked continuation is in the batch. That is an SGLang bug, not a configuration limit; HiCache is not
+  deployable until it is fixed (open items).
+- Host memory: SGLang keeps 10 GiB of the cgroup headroom free beyond a pinned host pool
+  (`HICACHE_HOST_MEMORY_RESERVE_BYTES` in `mem_cache/pool_host/base.py`), so the 8.74 GB SWA host pool failed
+  its check in the 24G scope (16.2 GiB headroom - 10 GiB < 8.74 GB) although the server needed less. The run
+  used a 28G scope (`G4POC_SERVER_MEMORY_MAX=28G`, the protocol's ceiling); measured peak scope RSS 17.7 GB,
+  host MemAvailable >= 38.6 GB, no swap growth.
 
 ## 6. Open items and harness caveats
 
@@ -272,6 +297,9 @@ Code reading of this tree (paths under `python/sglang/srt/`):
   clients; only token-level clients that resend the exact generated tokens would match further.
 - **Batched outputs are not reproducible on this engine** (A/A 6/16 identical at concurrency 16): exactness
   checks must run at concurrency 1, and batched numerics need logprob/KL against an A/A bar.
+- **HiCache with a fixed SWA admission charge** is the largest remaining cost lever measured here (+18% output
+  tok/s at C24, 10 s capacity 20 -> 24). It needs the prefill admission to reserve the sliding slots a host
+  load-back or chunked continuation takes, a regression test at the C28 overload, and the C24-C32 points re-run.
 - **L5 variant.** Releasing only windows that slide out during decode past the prompt's end (keeping the
   prompt's last window, the next turn's resume point) might keep L5's burst gain without the hit-rate loss.
   Not implemented.

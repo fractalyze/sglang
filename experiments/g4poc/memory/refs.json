@@ -237,5 +237,14 @@
    "1024"
   ],
   "numerics_unchanged": true
+ },
+ "mem-hc-c24": {
+  "description": "Flag-only probe: mem-hc with --max-running-requests 24, to test whether capping the running batch keeps the scheduler from the C28 SWA admission crash (the queue takes the excess). Run in a 28G scope.",
+  "extends": "mem-hc",
+  "server_args": [
+   "--max-running-requests",
+   "24"
+  ],
+  "numerics_unchanged": true
  }
 }
