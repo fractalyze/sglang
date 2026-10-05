@@ -74,10 +74,12 @@
   }
  },
  "final-mem-c1-c2a-nocache": {
-  "description": "Fleet model input, not a candidate: final-mem-c1-c2a with the radix cache off, so every turn re-prefills its whole history (the policy where idle sessions' histories fall out of the device pool).",
+  "description": "Fleet model input, not a candidate: final-mem-c1-c2a with the radix cache off, so every turn re-prefills its whole history (the policy where idle sessions' histories fall out of the device pool). Max running 24 (the sweep stops at 20 in flight): without the radix cache SGLang sizes the sliding pool from max running requests, and 64 leaves no room for the full pool (82K-token SWA cap, start aborted 10-05 21:08).",
   "extends": "final-mem-c1-c2a",
   "server_args": [
-   "--disable-radix-cache"
+   "--disable-radix-cache",
+   "--max-running-requests",
+   "24"
   ]
  },
  "final-hc-cp2048": {
