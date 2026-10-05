@@ -408,8 +408,9 @@ an edge. C96 offers ~99 (3.25 turns/s) and C112 ~113 (3.98), both far past the ~
 edges between them are C72 (~70-72 live, 2.45 turns/s) and C76 (~73-75 live, 2.50); for pthink60, C144 (~120 live,
 2.42).
 
-**The final is behind final-hc under think time (HS2, the same-host check pending).** On identical plans the
-final shows two gaps:
+**The final is behind final-hc under think time (HS2, confirmed).** Same host and plan (bs3, PC2, C64): the final
+runs p90 9.40 s at hit 0.034, final-hc 8.05 s at 0.116 (+17%). The final's bs2 point on that plan (9.31 s, 0.038)
+matches its bs3 point, so the bs2 rows above compare configs, not hosts. Two gaps:
 
 - **At 48 sessions: half the hit rate** (0.24 vs 0.46, p90 5.59 vs 5.15 s). Turn rates (1.538 vs 1.544/s) and device
   evictions (3.47M vs 3.51M tokens) match, so this loss is in host-tier hits. Read through the retention model below,
@@ -424,13 +425,13 @@ final shows two gaps:
   76.3 steps/s at batch 8). The prefill work differs. In C64's timed window the final ran **1.79x the prefill
   passes** (3,227 vs 1,805; 1,815 vs 2,996 new tokens per pass) and 8% more uncached tokens (5.86M vs 5.41M, hit
   0.04 vs 0.12). Near saturation that extra prefill time goes straight into queueing. On the base at 20 in flight
-  and zero hit, chunk 2048 was not slower (C3); with think time, fewer requests decode at once to amortise each pass.
+  and zero hit, chunk 2048 was not slower (C3). Why the extra passes cost more under think time (11-14 in flight) is
+  not verified.
 
-lpm acts only on a waiting queue, which averaged 0.03 requests at 48 sessions. bs2 and bs3 agree within ~1% in
-flight, but these comparisons still cross hosts. HS2 (`compute/PREREG.md`, vault `g4poc-hs2`) runs final-hc at the
-same plans (C48, C64) on bs2 after PC4's queue, which separates the config from the host for both gaps. **If both
-gaps hold, the recommendation splits:** chunk 2048 + lpm for in-flight-heavy traffic (-3% $/1M at 32 in flight),
-default chunking (`final-hc`) for chat with long think times.
+lpm acts only on a waiting queue, which averaged 0.03 requests at 48 sessions, so chunk 2048 carries both gaps. HS2
+(`compute/PREREG.md`, vault `g4poc-hs2`, retired): its prediction (+3 .. +20% p90 at 48 sessions) held at +8.7%
+across hosts and +16.6% on one host at 64. **So the recommendation splits:** chunk 2048 + lpm for in-flight traffic
+(-3% $/1M at 32 in flight), default chunking for chat with think time.
 
 **2,200 sessions at a 10 s p90 SLO** (zero think: the final; with think time: device-only `final-mem-c1-c2a`,
 measured lower bounds, the T30 edges are C72/C76 above):

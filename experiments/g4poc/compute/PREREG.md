@@ -169,3 +169,8 @@ Arm: `final-hc` (chunk 4096, fcfs), `gate sweep --load pthink30 --concurrency 48
 Prediction (cp2048 costs think-time hit rate): final-hc on bs2 at 48 sessions holds a prefix hit of 0.38 .. 0.55 and
 E2E p90 <= 5.4 s; at 64, hit 0.07 .. 0.18 and p90 <= 8.8 s. Falsified if final-hc's hit at 48 on bs2 is <= 0.30 (the
 gap is the host or the run, not chunking).
+
+Outcome (10-06 ~04:20): the bs2 final-hc arm was not run. PC2 ran the final on bs3 at C64 on final-hc's bs3 plan
+(same host): p90 9.40 s, hit 0.034, against final-hc's 8.05 s, 0.116, and the final's bs2 point (9.31 s, 0.038)
+matches it. At 48 sessions, across hosts, final-hc's hit 0.462 lies in the predicted 0.38 .. 0.55 and the final's
+p90 is +8.7% (interval +3 .. +20%). Not falsified; vault g4poc-hs2 retired (the flags stay for in-flight traffic).
