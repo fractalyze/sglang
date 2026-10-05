@@ -1,0 +1,20 @@
+{
+ "swahost-dbg": {
+  "description": "Diagnostic only: final-hc on its log-only debug tree. c6f392a28b = PC3's PFXDBG admission log (53614116f3, on a0491db764) + full_kv (Full-layer prefix present on device or host before the SWA validator), session-instance hash, host/device free slots per pool, and counters of failed write-through backups and unbacked device evictions. Nothing reads the logged values. Run in a 28G scope.",
+  "extends": "final-hc",
+  "commit": "c6f392a28bef3bf53768c345ae4679f6ea13f22e",
+  "env": {
+   "G4POC_DEBUG_PREFIX_SPLIT": "1"
+  },
+  "numerics_unchanged": true
+ },
+ "swahost-r020": {
+  "description": "Pool-split lever L1: swahost-dbg with --swa-full-tokens-ratio 0.2 (final-hc: 0.268). The device bytes are unchanged; device pools go from 160,395 full + 42,985 SWA to ~197K + ~39K tokens. --hicache-size 12 is split by device bytes, so the host pools go from 318K full (3.26 GB) + 85K SWA (8.74 GB) to ~392K + ~79K. Pool sizes only: per-token compute is unchanged.",
+  "extends": "swahost-dbg",
+  "server_args": [
+   "--swa-full-tokens-ratio",
+   "0.2"
+  ],
+  "numerics_unchanged": true
+ }
+}
