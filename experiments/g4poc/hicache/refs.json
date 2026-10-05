@@ -109,9 +109,9 @@
     "numerics_unchanged": true
   },
   "final-hc": {
-    "description": "Final-stack candidate: final-mem-c1-c2a (mem-final + C1 MoE config + C2-A sm120 FP8-KV tiles) + HiCache (12 GB, write-through, kernel io, page_first) + both SGLang fixes: SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW (SWA admission crash) and SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH (stale write-through copies). Tree 85ad37af45 = 1425761173 + the two fix commits (branch jumanzii/g4poc-final-hicache). Run in a 28G scope.",
+    "description": "Final-stack candidate: final-mem-c1-c2a (mem-final + C1 MoE config + C2-A sm120 FP8-KV tiles) + HiCache (12 GB, write-through, kernel io, page_first) + both SGLang fixes: SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW (SWA admission crash) and SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH (stale write-through copies). Tree a0491db764 = 1425761173 + the two fix commits + a comment-only correction (branch jumanzii/g4poc-final-hicache). Run in a 28G scope.",
     "extends": "final-mem-c1-c2a",
-    "commit": "85ad37af45e03330560826f1568bb1ff45d2a265",
+    "commit": "a0491db7643b6ff7da3e9f904d264185b86be270",
     "server_args": [
       "--enable-hierarchical-cache",
       "--hicache-size",

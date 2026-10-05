@@ -81,15 +81,14 @@ full-attention and sliding pools, at every write-through ack and every load-back
 
 - every finished turn's output node (128 tokens) had exactly **one** token whose host bytes differed
   from device, in full layer 0 and a contiguous run of sliding layers 5-24;
-- two prompt nodes (228 and 229 tokens, stashed as chunked prefills) were stale in **every** token of
-  all 5 full layers;
+- two shared-prefix prompt nodes (228 and 229 tokens) differed in **every** token of all 5 full
+  layers; that is a separate effect of SWA tombstone recovery (see the open item below), not the race;
 - load-back itself was clean: reloaded slots matched host, and every full-to-SWA mapping checked out.
 
 **Mechanism.** Under the overlap scheduler, `process_batch_result` for step N runs after step N+1 was
 launched. A request that finished at step N is still in batch N+1, whose forward writes the KV of its
 last output token on `model_runner.forward_stream`; `cache_finished_req` inserts that token and the
-write-through starts. Likewise a chunked prefill is stashed (inserted) before its chunk's forward has
-run. `HiCacheController.start_writing` -> `L2TransferEngine.submit_device_to_host` makes the D2H stream
+write-through starts. `HiCacheController.start_writing` -> `L2TransferEngine.submit_device_to_host` makes the D2H stream
 wait only on an event recorded on the scheduler's current stream, never on the forward stream, so the
 copy can read the KV half-written. Load-back already has the equivalent fence
 (`load_fence_stream = forward_stream`, set by the scheduler, used in `start_loading`); write-through
