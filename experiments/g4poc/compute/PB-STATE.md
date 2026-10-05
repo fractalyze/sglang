@@ -15,19 +15,21 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
 - Gated load = inflight-C12; noise is used only if measured at the same load.
 
 ## In flight / waiting (update on every launch)
-- Done 10-05: harness fixes (logprob chunk 128, weights_checker body); calibrate; A/A aa-c12 (bar 1%).
-  C1 KEPT (C12 +1.2%, C8 +1.0%; vault g4poc-c1 recorded). C2-A KEPT at C12 (+11.5% p90, +10.6% tok/s;
-  runs/c2-gate-20261005-154627); numerics: compute/runs/c2/accuracy.json, kl-c2-extend-tiles*.
-- bs2 queue (resumable): compute/pb_queue.sh c2-extend-tiles -> logs/pb-queue.log:
-  C2-A sweep_abba 8,16 (runs/c2-c8-c16-abba.json, ~17:30) -> C3 sweep_nested base "c3-lpm c3-cp2048" 8,12,16,20
-  (runs/c3-nested/, ~19:50) -> pd-measure base (~20:00) -> "=== ... queue done".
-- Next (coordinator-approved 10-05 ~16:40): decode_split_bench (C4 microbench, PYTHONPATH tree 1425761173d3) ->
-  compute/final_run.sh final-mem-c1-c2a[+kept C3 flag] (~95 min; memory limit on bs2 31,599 MiB: if the peak
-  breaks it, rerun at mem 0.95 and report it as bs2's deployable value) -> C4 overnight vs the final stack
-  (--triton-attention-num-kv-splits / split tile size; nested sweeps C12+C20 then gate C12; hard stop 06:00).
-- Morning 08:00-11:00: replicate the final sweep (+ kept C4 flag; + --max-running-requests 24 if the
-  coordinator says so by ~19:00). HiCache never in a final stack. 11:00-13:30 report, cost table, P/D model, wm-record.
-- Final trees on bs2: 1425761173 (mem-final 53752c62aa + C2-A, branch jumanzii/g4poc-final-c2), 57e5f273c0 (exact tiles).
+- FINAL = final-hc (hicache/refs.json; tree a0491db764; 28G scope). Done on bs2 10-05: final_run final-hc (sweep 4-40:
+  C32 952 tok/s p90 9.50 -> $0.204/1M @0.70, -40.5% vs base; memory peak 31,514 <= 31,599 OK at mem 0.955; quality
+  GSM8K 96.74 vs base 96.13 pass; final-mem-c1-c2a 16-32 on/off pair; P/D final-hc). Kept: C1, C2-A; C3a/C3b kept
+  on base only. Records in compute/runs/, vault g4poc-c1/c2/c3a/c3b recorded.
+- Overnight (bs2): compute/c4_run.sh final-hc "final-hc-kvs16 final-hc-lpm final-hc-cp2048" -> logs/pb-c4.log
+  (smokes passed; nested 24,32 -> runs/c4-nested/; c4_pick -> combined ref; KL check; confirm runs/c4-confirm.json;
+  prints "=== ... C4 done"). Then logs/pb-post-c4.log: final-mem-c1-c2a-nocache sweep 4-20 (fleet model b) and
+  mem-final 16-24 (before 06:00 only). Vault trials g4poc-c4, g4poc-c3a-hc, g4poc-c3b-hc registered (open).
+- When the combined ref is known: push, then send the coordinator name/file/commit/flags (PC3 runs exactness on bs3
+  ~01:30, control = same flags on final-mem-c1-c2a). Promotion needs KL + confirm + exactness 12/12 by 07:30.
+- Morning 08:00-11:00: G4POC_SERVER_MEMORY_MAX=28G sweep final-hc (+ promoted flags) at 16,24,32,40 + quality anchor;
+  P/D final-hc already done. 11:00-13:30: COMPUTE.md (fleet model with PC2's think-time table, P/D, cost), wm-record
+  (c4, c3a-hc, c3b-hc), push. Timebox 14:00.
+- Fleet model: compute/fleet_model.py --cached <final-mem-c1-c2a sweep> --nocache <nocache sweep> --hicache <final-hc
+  sweep> --measured "label:sessions:think:turns:tok_s:p90:hit". Sizing rule ~1.2 GB host per s of think (T30: 38 GB).
 
 ## Queue (GPU, in order)
 1. gate calibrate --ref base (fidelity reference + thresholds)
