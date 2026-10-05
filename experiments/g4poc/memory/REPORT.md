@@ -9,6 +9,43 @@ Scope: memory levers L4-L11 from `BASELINE-FP8.md` section 6, applied to the FP8
 Unit note: SGLang logs "GB" for bytes / 2^30; this file writes GiB for those. MiB figures are
 nvidia-smi's.
 
+## 0. Summary
+
+**Deployable memory stack: `mem-final`** (SGLang `53752c62aa`, FP8 checkpoint, one RTX 5090):
+
+```
+SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+python -m sglang.launch_server --model-path <gemma-4-26B-A4B-it FP8 text checkpoint> \
+  --kv-cache-dtype fp8_e4m3 --context-length 16384 --disable-prefill-cuda-graph \
+  --json-model-override-args '{"max_position_embeddings": 16384}' \
+  --max-running-requests 64 --mem-fraction-static 0.955 --swa-full-tokens-ratio 0.268 \
+  --cuda-graph-max-bs-decode 48
+```
+
+| | mem-base | mem-final | mem-final + PB's compute levers (`final-mem-c1-c2a`) |
+|---|---|---|---|
+| burst capacity (5K in / 300 out, no shared prefix) | 17 | **29** (+71%) | - |
+| multi-turn in-flight capacity at E2E p90 <= 10 s | 12 | **20** | **24** |
+| output tok/s at that point | 558 | 677 (+21%) | 833 (+49%) |
+| $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | **0.234 (-33%)** |
+| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL and language) | 96.21 | 95.91, pass | 96.44, pass |
+
+All on build-server-3, each capacity point replicated on the same host (spread <= 1.4% tok/s). Server GPU memory
+stays at <= 31,570 MiB, under the 31,642 MiB rule (512 MiB below what CUDA can use); on a GPU shared with another
+job, use `--mem-fraction-static 0.94` (section 3).
+
+What the memory levers do: L9 sizes the RoPE tables to the served context, L10 shrinks the request table, the
+freed memory and the activation slack go to the KV pool (0.955), the pool split is refit (0.268), L8 stores the
+tied embedding / LM head once in FP8, and expandable segments keep the allocator inside the rule under real load.
+
+Not kept: L5 (sliding-window release; it frees the very window the next turn resumes from, for chat clients too),
+chunked prefill 2048 (-2 sessions), a running-request cap (no effect on the cache cliff), HiCache (+18% at C24 but
+a scheduler crash at C28 and inexact load-back; open). L6 and L11 were analysed, not built.
+
+The cliff past the capacity point is the prefix cache: once more sessions' histories compete for the pool than it
+holds, every turn re-prefills ~5K tokens and goodput halves. Size the fleet by sessions whose history must stay
+cached per GPU (section 3, fleet rule).
+
 ## 1. Result in one table
 
 Control `mem-base` = PA's r03 (`--mem-fraction-static 0.93 --swa-full-tokens-ratio 0.3
@@ -42,7 +79,8 @@ smaller chunk lowers the GPU peak by ~240 MiB (31,310-31,318 vs 31,552-31,560); 
 
 stack1 holds **25 sessions vs 17 (+47%)** with server flags only and unchanged numerics (pool sizes
 and a RoPE table length). Two code levers behind default-off switches add L5 (+4, numerics exact) and
-L8 (+4, numerics change within the quality guard): **stack3 holds 33 sessions, +94% over mem-base.**
+L8 (+4, numerics change within the quality guard): **stack3 holds 33 sessions, +94% over mem-base.** L5 did not
+survive the multi-turn workload (section 4), so the deployable stack is mem-final (stack1 + L8): 29 sessions.
 
 ## 2. What each lever does (mechanism, measured)
 
