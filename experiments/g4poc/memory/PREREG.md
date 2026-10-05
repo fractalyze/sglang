@@ -118,3 +118,10 @@ tokens); step-0 stack2 29 and stack3 33.
 |---|---|---|
 | sweep mem-stack2 (L5 secondary) | 10 s capacity **24** (interval 20-24; stack1 20); the hit-rate collapse moves past C24 | 10 s capacity < 20, or any failed request |
 | sweep mem-stack3-xs = stack3 + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` | 10 s capacity **24** (interval 24-28): more pool keeps the cache through C28, but decode at 28 in flight pushes p90 near 10 s; 15 s capacity 28. The allocator setting removes the transient spikes: GPU peak (2 s samples) <= 31,800 MiB | 10 s capacity < 24, or peak > 31,800 MiB, or any failed request |
+
+## 2026-10-05, chunked prefill 2048 on stack3: step-0 only (coordinator: PB2's C3 owns the verdict)
+
+A prefilling request holds its current chunk's sliding slots until the chunk is inserted, and the
+activation peak scales with the chunk. Halving the chunk (4096 -> 2048) frees ~2,000 transient sliding
+tokens (~0.2 GB) in the bursts. Prediction for `mem-stack3-c2048`: **33 -> 34** (interval 33-35); burst peak
+lower than stack3's 31,652 MiB. Falsified if capacity < 33 or > 35.

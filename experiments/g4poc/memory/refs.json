@@ -142,5 +142,13 @@
   "env": {
    "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
   }
+ },
+ "mem-stack3-c2048": {
+  "description": "Step-0 probe: stack3 with --chunked-prefill-size 2048 (halves the prefill chunk's transient sliding slots and activations).",
+  "extends": "mem-stack3",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048"
+  ]
  }
 }
