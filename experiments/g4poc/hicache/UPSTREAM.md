@@ -10,12 +10,13 @@ fractalyze/sglang (base `ac6035c07`; unified radix cache, overlap scheduler on).
 --hicache-io-backend kernel --hicache-mem-layout page_first`. Workload: multi-turn role-play, ~5K-token
 prompts, up to 300-token replies, greedy or sampled, in-flight concurrency 20-32.
 
-Both fixes are default-off switches on branch `jumanzii/g4poc-c-hicache`:
+Fixes 1 and 2 are default-off switches on branches `jumanzii/g4poc-c-hicache` and `jumanzii/g4poc-final-hicache`; fix 3 extends fix 2's switch on a side branch:
 
 | bug | switch | commit | test |
 |---|---|---|---|
 | 1. SWA admission under-reserves on load-back (scheduler crash) | `SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW` | 9ce3db9471 | `test/registered/unit/managers/test_prefill_adder.py::TestHiCacheLoadBackSWAWindowPin` |
 | 2. Write-through copies KV still being written (inexact load-back) | `SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH` | 19e850a228 | `test/registered/unit/mem_cache/test_hicache_write_fence.py` |
+| 3. Retraction backup has the same race (PD decode only) | `SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH` | 7d0ba713da (branch `jumanzii/hicache-retraction-fence`) | same file, retraction cases |
 
 ## 1. Prefill admission under-reserves sliding-window slots on a HiCache load-back
 
@@ -103,7 +104,29 @@ exactly the in-flight forward writing the node; later forwards still overlap wit
 control, with identical `cached_tokens` (`exactmt-mem-hc-fix2-smallpool-rt-20261005-165852-...-5d434c`).
 All turn-0 prompts are chunked (4096 + rest), so stashed chunk nodes are covered. In the byte trace,
 every per-turn stale token is gone and every full-to-SWA mapping check passes. The in-flight
-throughput cost of the fence is measured separately (sweep of `mem-hc-fix2` against `mem-hc-fix`).
+throughput cost of the fence, from single runs against the unfenced build at C20-C32, is -1.0% to
+-1.8% output tok/s. That is consistent across points, so a small real cost cannot be excluded. The final
+configuration with both fixes (`final-hc`) runs 942 output tok/s at C32 under a 10 s p90.
+
+## 3. Retraction backups copy KV the overlap forward is still writing (PD decode)
+
+**Where.** `UnifiedRadixCache.retraction_backup` backs a retracted decode request's KV up to the host
+pool. It is reached from `release_req` only when `disaggregation_mode == "decode"` with
+`--disaggregation-decode-retraction-backup host_pool`; with disaggregation off a retracted request is
+released and recomputed, not backed up.
+
+**Mechanism.** Same class as bug 2. Retraction happens while the next decode forward, which writes the
+request's last token's KV, is still queued on the forward stream. `retraction_backup` calls
+`l2_transfer_engine.submit_device_to_host` directly, bypassing `start_writing` and its fence, so the
+backup can read that token half-written, and `retraction_restore` brings it back stale. The scheduler
+also wired the forward stream into the cache controller only when `--enable-hierarchical-cache` was
+set, while the host-pool retraction backup builds a controller without it.
+
+**Fix (7d0ba713da).** `HiCacheController.fence_device_to_host()` holds the fence. `start_writing` and
+`retraction_backup` both call it, under `SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH`. The scheduler wires
+the forward stream into any cache controller. A CPU test checks that the backup waits on the forward
+stream before it copies, and it fails without the fix. Not validated on GPU: the g4poc deployment does
+not run PD decode, so a byte-level trace of this path was not made.
 
 ## Open item: host copy kept when a node adopts a later request's FULL slots
 

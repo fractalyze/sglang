@@ -1,0 +1,15 @@
+[2026-10-05 19:45:14] server_args={'model_path': '/data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/text', 'tokenizer_path': '/data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/text', 'tokenizer_mode': 'auto', 'tokenizer_backend': 'huggingface', 'tokenizer_worker_num': 1, 'detokenizer_worker_num': 1, 'skip_tokenizer_init': False, 'load_format': 'auto', 'model_loader_extra_config': '{}', 'trust_remote_code': False, 'context_length': 16384, 'is_embedding': False, 'enable_multimodal': None, 'revis
+[2026-10-05 19:45:26] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 160394, K size: 0.76 GB, V size: 0.76 GB
+[2026-10-05 19:45:26] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 42985, K size: 2.05 GB, V size: 2.05 GB
+[2026-10-05 19:45:47] Allocating full hierarchical KV host pool: 318444 tokens, 3.26 GB host memory.
+[2026-10-05 19:45:54] Allocating swa hierarchical KV host pool: 85344 tokens, 8.74 GB host memory.
+[2026-10-05 19:47:00] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 3497, #new_token_ratio: 0.2475 -> 0.6697
+[2026-10-05 19:47:03] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1026, #new_token_ratio: 0.6085 -> 0.6268
+[2026-10-05 19:47:17] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 765, #new_token_ratio: 0.2044 -> 0.5016
+[2026-10-05 19:47:19] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 757, #new_token_ratio: 0.4173 -> 0.5678
+[2026-10-05 19:47:31] KV cache pool is full. Retract requests. #retracted_reqs: 2, #new_tokens_gained: 602, #new_token_ratio: 0.1334 -> 0.6941
+[2026-10-05 19:48:16] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 586, #new_token_ratio: 0.0980 -> 0.6356
+[2026-10-05 19:49:46] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 629, #new_token_ratio: 0.0980 -> 0.7282
+[2026-10-05 19:50:04] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 3075, #new_token_ratio: 0.1102 -> 0.6116
+[2026-10-05 19:50:29] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1032, #new_token_ratio: 0.0980 -> 0.6356
+[2026-10-05 19:51:06] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 744, #new_token_ratio: 0.0980 -> 0.6455
