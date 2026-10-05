@@ -76,5 +76,33 @@
    "0.268"
   ],
   "numerics_unchanged": true
+ },
+ "mem-stack1b": {
+  "description": "stack1 on the L5 tree with the switch off: the control for L5's exactness and capacity (the switch-off path only adds a Req field).",
+  "extends": "mem-stack1",
+  "commit": "8158a6fe6802b7ce3c05f718e96bf3e42ad6b0a3",
+  "numerics_unchanged": true
+ },
+ "mem-stack2": {
+  "description": "L5 on stack1: release the slid-out part of the tree-locked SWA window during decode, every 32 tokens; sliding/full ratio refit to the smaller per-session sliding hold.",
+  "extends": "mem-stack1",
+  "commit": "8158a6fe6802b7ce3c05f718e96bf3e42ad6b0a3",
+  "server_args": [
+   "--swa-full-tokens-ratio",
+   "0.226"
+  ],
+  "env": {
+   "SGLANG_OPT_SWA_RELEASE_SLID_WINDOW": "1",
+   "SGLANG_SWA_EVICTION_INTERVAL": "32"
+  },
+  "numerics_unchanged": true
+ },
+ "mem-stack2-poison": {
+  "description": "mem-stack2 with the released SWA slots overwritten with NaN (debug): a read of a released slot corrupts the output. Exactness check only.",
+  "extends": "mem-stack2",
+  "env": {
+   "SGLANG_DEBUG_SWA_POISON_RELEASED_WINDOW": "1"
+  },
+  "numerics_unchanged": true
  }
 }
