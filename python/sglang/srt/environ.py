@@ -705,6 +705,12 @@ class Envs:
     # Debug for the above: write NaN into the SWA KV of every slot it unlocks,
     # so any later read of a released slot shows up as corrupted output.
     SGLANG_DEBUG_SWA_POISON_RELEASED_WINDOW = EnvBool(False)
+    # HiCache load-back on a sliding-window model: during prefill admission,
+    # also pin the request's best_match_node, whose window the request locks
+    # once the host prefix is loaded. Off: only the device-matched last_node is
+    # pinned, so device SWA inside the post-load window counts as evictable,
+    # the load-back locks it uncharged, and the allocator can come up short.
+    SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW = EnvBool(False)
 
     # ===================================================================
     # PD disaggregation runtime
