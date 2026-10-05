@@ -79,5 +79,71 @@
   "server_args": [
    "--disable-radix-cache"
   ]
+ },
+ "final-hc-cp2048": {
+  "description": "final-hc + C3b chunk 2048 (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048"
+  ]
+ },
+ "final-hc-kvs16": {
+  "description": "final-hc + C4 decode kv-split cap 16 (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--triton-attention-num-kv-splits",
+   "16"
+  ]
+ },
+ "final-hc-lpm": {
+  "description": "final-hc + C3a lpm (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--schedule-policy",
+   "lpm"
+  ]
+ },
+ "final-hc-cp2048-kvs16": {
+  "description": "final-hc + C3b chunk 2048 + C4 decode kv-split cap 16 (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--triton-attention-num-kv-splits",
+   "16"
+  ]
+ },
+ "final-hc-cp2048-lpm": {
+  "description": "final-hc + C3b chunk 2048 + C3a lpm (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--schedule-policy",
+   "lpm"
+  ]
+ },
+ "final-hc-kvs16-lpm": {
+  "description": "final-hc + C4 decode kv-split cap 16 + C3a lpm (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--triton-attention-num-kv-splits",
+   "16",
+   "--schedule-policy",
+   "lpm"
+  ]
+ },
+ "final-hc-cp2048-kvs16-lpm": {
+  "description": "final-hc + C3b chunk 2048 + C4 decode kv-split cap 16 + C3a lpm (overnight flag candidates on the final stack, compute/PREREG.md). Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--triton-attention-num-kv-splits",
+   "16",
+   "--schedule-policy",
+   "lpm"
+  ]
  }
 }
