@@ -27,6 +27,11 @@ exactly 300 tokens each that all run in one decode batch with no retraction.
 | **stack1** `mem-stack1` | L9 + L10 + `--mem-fraction-static 0.955 --swa-full-tokens-ratio 0.268` | 24.43 | 139,415 / 37,363 | 1.16 | 31,588 | **25** | 26 (interval 25-27) |
 | **stack2** `mem-stack2` | stack1 + L5 (`SGLANG_OPT_SWA_RELEASE_SLID_WINDOW=1`, `SGLANG_SWA_EVICTION_INTERVAL=32`) + ratio 0.226 | 24.43 | 157,376 / 35,566 | 1.18 | 31,574 | **29** | 29 (interval 27-30) |
 | **stack3** `mem-stack3` | stack2 + L8 (`SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE=1`) + `--cuda-graph-max-bs-decode 48` | **23.74** | 179,427 / 40,550 | 1.10 | 31,652 | **33** | 33 (interval 32-34) |
+| **final** `mem-final` | stack1 + L8 + `--cuda-graph-max-bs-decode 48` + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (L5 off) | 23.66 | 160,395 / 42,985 | 1.17 | 32,087 (spike) | **29** | 29 (interval 28-30) |
+
+Decode CUDA graphs to bs 48 (needed once more than 32 requests decode; above the captured sizes decode runs
+eager) cost 0.19-0.20 GiB of graph memory against 0.13 GiB to bs 32; that ~0.07 GiB is inside every stack
+that carries the flag (stack3, final) and was not gated on its own.
 
 stack1 holds **25 sessions vs 17 (+47%)** with server flags only and unchanged numerics (pool sizes
 and a RoPE table length). Two code levers behind default-off switches add L5 (+4, numerics exact) and
@@ -142,6 +147,26 @@ Python unified tree core only (no SWA host pool, no EAGLE).
   prompts (`exact-mem-stack2-poison-*` vs `exact-mem-stack1b-*`).
 - Tests: `TestSWASlidWindowRelease` in `test/registered/unit/mem_cache/test_unified_radix_cache_unittest.py`
   (split and release accounting, a window shared by two holders, frontier before the segment start).
+- Batched: at concurrency 16 on 16 role-play prompts, 7/16 outputs match stack1 token for token, against an
+  A/A (stack1 vs stack1) of 6/16 with mismatches from token 1 on; all 16 poisoned outputs are normal text.
+  This engine is not batch-invariant, so exactness is checkable only at concurrency 1.
+- **Real workload: not kept on the scripted gate workload; the verdict is workload-dependent.**
+  `sweep-mem-stack2-20261005-132151-build-server-3-cbfe29`:
+
+  | in flight | E2E p90 s | output tok/s | hit rate (stack1) |
+  |---|---|---|---|
+  | 8 | 5.11 | 468 | 0.755 (0.753) |
+  | 12 | 6.22 | 574 | 0.722 (0.726) |
+  | 16 | 10.16 | 475 | 0.362 (0.691) |
+  | 20 | 12.31 | 484 | 0.252 (0.656) |
+  | 24 | 16.27 | 441 | 0.130 (0.021) |
+
+  10 s capacity 12 (stack1 20). In the scripted mode a session's next turn carries the scripted reply, not the
+  generated tokens, so its prefix match ends at the previous **prompt's** end, and resuming there needs that
+  prompt's last SWA window: the window L5 releases during decode. A released window stays matchable only until
+  the SWA LRU needs room, which starts at C16. Real role-play clients resend the model's own reply, so their
+  match runs through the reply and needs only the window L5's finish keeps; this harness cannot show that
+  (see open items). Vault: `g4poc-l5` parked until a live-reply load shows stack1's hit rate kept.
 
 ### L8: one FP8 vocab table for the tied embedding and LM head (implemented, numerics change)
 
@@ -189,7 +214,19 @@ Code reading of this tree (paths under `python/sglang/srt/`):
 
 > [!gap] Step 2 (in-flight C24/C28/C32 with and without HiCache, L5 off in both) is queued (queue 8).
 
-## 6. Reproduce
+## 6. Open items and harness caveats
+
+- **Scripted replies understate prefix reuse.** The gate's scripted mode puts the session's scripted reply
+  into the next turn's history, so every turn recomputes the previous reply's tokens and its match ends at
+  the previous prompt's end. Real clients resend the model's reply. All arms' hit rates are therefore slightly
+  low, and L5 is judged on its worst case. The gate already has a `closed` mode (the model's own replies enter
+  the history); a stack1-vs-stack2 run at C16/C20 in that mode decides L5.
+- **Batched outputs are not reproducible on this engine** (A/A 6/16 identical at concurrency 16): exactness
+  checks must run at concurrency 1, and batched numerics need logprob/KL against an A/A bar.
+- **Memory spikes under the real workload.** One 2 s sample of stack1's sweep reached 32,113 MiB (41 MiB of
+  CUDA-visible headroom) with prefill batches never above 4,096 tokens; see section 3 and the final stack.
+
+## 7. Reproduce
 
 ```bash
 # bs1 -> bs3; the harness is copied with the commit stamp
