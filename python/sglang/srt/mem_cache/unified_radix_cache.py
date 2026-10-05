@@ -562,6 +562,9 @@ class UnifiedRadixCache(BasePrefixCache):
         if self.disable:
             return self.tree_core.empty_match_result
         result = self.tree_core.match_prefix(params)
+        from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
+
+        _pfx.note_match(params.req, result.full_kv_hit_length)
         # Apply the walk's actions (e.g. a pending write-through relocation on
         # a split) before the finalizers, which can evict or raise.
         self._apply_cache_actions(result.cache_actions)
@@ -762,6 +765,9 @@ class UnifiedRadixCache(BasePrefixCache):
         """Advance the eviction walk one node, consuming its step result."""
         result = self.tree_core.evict_device_next_node(component_type, tracker)
         self._free_values(result.device_frees, result.host_frees)
+        from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
+
+        _pfx.note_dropped(result.unbacked_tokens)
         if self._tracks_write_through_unbacked_evictions():
             self._record_dropped_tokens(
                 result.unbacked_tokens,
@@ -777,6 +783,9 @@ class UnifiedRadixCache(BasePrefixCache):
         deferred write-back BackupKV when one must run before the demote."""
         result = self.tree_core.evict_device_leaf(node_id, self.is_write_back)
         self._free_values(result.device_frees, result.host_frees)
+        from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
+
+        _pfx.note_dropped(result.unbacked_tokens)
         if self._tracks_write_through_unbacked_evictions():
             self._record_dropped_tokens(
                 result.unbacked_tokens,
@@ -1620,16 +1629,22 @@ class UnifiedRadixCache(BasePrefixCache):
         """Execute Backup action."""
         kv_tokens = len(device_value)
         host_avail = self.cache_controller.mem_pool_host.available_size()
+        from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
+
         if host_avail < kv_tokens:
             needed = kv_tokens - host_avail
             if self.evict_host(needed) < needed:
+                _pfx.note_backup_fail("full", kv_tokens)
                 return None
         aux_xfers = [x for xfers in comp_xfers.values() for x in xfers]
         aux_xfers.extend(sidecar_xfers)
         # Defer submission so the next flush can merge pending node backups.
-        return self.cache_controller.write(
+        host_indices = self.cache_controller.write(
             device_value, node_id=node_id, extra_pools=aux_xfers or None, flush=False
         )
+        if host_indices is None:
+            _pfx.note_backup_fail("write", kv_tokens)
+        return host_indices
 
     def _track_write_through_node(
         self,
