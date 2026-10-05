@@ -4,6 +4,7 @@ import sys
 import tempfile
 from unittest import mock
 
+import aiohttp
 import msgspec
 from absl.testing import absltest, parameterized
 
@@ -340,6 +341,21 @@ class LoadgenTest(absltest.TestCase):
         kept = loadgen.failed_records(recs, limit=5)
         self.assertLen(kept, 5)
         self.assertEqual([r["session_id"] for r in kept], ["s59", "s57", "s55", "s53", "s51"])
+
+    def test_client_drops_idle_connections_before_the_server_does(self):
+        self.assertLess(loadgen.CLIENT_KEEPALIVE_S, loadgen.SERVER_KEEPALIVE_S)
+        made = []
+        real = aiohttp.TCPConnector
+
+        def spy(*args, **kwargs):
+            made.append(kwargs)
+            return real(*args, **kwargs)
+
+        sessions = [_session(f"s{i}", n_turns=2) for i in range(3)]
+        with mock.patch.object(loadgen.aiohttp, "TCPConnector", side_effect=spy):
+            asyncio.run(_replay(sessions, _FAST))
+        self.assertTrue(made)
+        self.assertEqual(made[0].get("keepalive_timeout"), loadgen.CLIENT_KEEPALIVE_S)
 
     def test_slots_with_think_time_start_no_session_after_a_cut(self):
         # Think time 10 s (0.01 s x 1000) against a 0.5 s window: a slot sends its first turn, its next turn falls

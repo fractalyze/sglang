@@ -31,6 +31,11 @@ from workload.schema import Session
 INITIAL_SPREAD_S = 15.0
 # Slots start within this many seconds of each other, so their first prefills do not all land at once.
 SLOT_STAGGER_S = 2.0
+# SGLang's HTTP server closes a keep-alive connection after 5 s idle (SGLANG_TIMEOUT_KEEP_ALIVE); aiohttp keeps pooled
+# connections 15 s by default. With think time a session's connection idles past 5 s and the client can reuse a socket
+# the server just closed (ServerDisconnectedError at send). Dropping idle connections first avoids the race.
+SERVER_KEEPALIVE_S = 5.0
+CLIENT_KEEPALIVE_S = 2.0
 
 
 class SessionStart(msgspec.Struct, frozen=True):
@@ -237,7 +242,7 @@ async def replay(url: str, sessions: Sequence[Session], load: config.SessionLoad
     abandoned and recorded as errors."""
     run = _Run(url, sessions, load, tokenizer, nonce_at, keep_outputs)
     samples: List[Dict] = []
-    connector = aiohttp.TCPConnector(limit=0)
+    connector = aiohttp.TCPConnector(limit=0, keepalive_timeout=CLIENT_KEEPALIVE_S)
     timeout = aiohttp.ClientTimeout(total=load.window_s + load.warmup_s + load.drain_timeout_s)
     async with aiohttp.ClientSession(connector=connector, timeout=timeout) as http:
         run.t0 = time.perf_counter()
