@@ -201,5 +201,41 @@
    "0.94"
   ],
   "numerics_unchanged": true
+ },
+ "mem-qa-base": {
+  "description": "Full quality anchor, base arm: mem-base numerics at a 0.85 static fraction (generation-only GSM8K/tool-JSON; pool size does not change numerics).",
+  "extends": "mem-base",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-qa-final": {
+  "description": "Full quality anchor, final arm: mem-final numerics at a 0.85 static fraction.",
+  "extends": "mem-final",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-qr-base": {
+  "description": "Role-play anchor, base arm: mem-base numerics at 0.85 with 1024-token prefill chunks so the input-logprob (NLL) requests fit.",
+  "extends": "mem-qa-base",
+  "server_args": [
+   "--chunked-prefill-size",
+   "1024"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-qr-final": {
+  "description": "Role-play anchor, final arm: mem-final numerics at 0.85 with 1024-token prefill chunks (same as mem-qr-base).",
+  "extends": "mem-qa-final",
+  "server_args": [
+   "--chunked-prefill-size",
+   "1024"
+  ],
+  "numerics_unchanged": true
  }
 }
