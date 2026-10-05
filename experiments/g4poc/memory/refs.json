@@ -264,5 +264,23 @@
    "24"
   ],
   "numerics_unchanged": true
+ },
+ "final-c1c2a-qa": {
+  "description": "Full quality anchor, final-mem-c1-c2a arm (cross-host replicate of PB's combined final on bs3): GSM8K/tool-JSON at a 0.85 static fraction, against mem-qa-base.",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-c1c2a-qr": {
+  "description": "Role-play anchor, final-mem-c1-c2a arm: 0.85 with 1024-token prefill chunks (same as mem-qr-base).",
+  "extends": "final-c1c2a-qa",
+  "server_args": [
+   "--chunked-prefill-size",
+   "1024"
+  ],
+  "numerics_unchanged": true
  }
 }
