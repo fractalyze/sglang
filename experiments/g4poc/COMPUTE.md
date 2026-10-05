@@ -295,6 +295,11 @@ It was replicated twice on bs2 (`runs/sweep-final-hc-cp2048-lpm-20261006-012036-
   That is 250 MiB below final-hc: chunk 2048 halves the prefill transient.
 - **Quality** (paired against the base anchor). GSM8K 96.36% vs 96.13% (+0.23 pt, CI95 [-0.33, +0.78], McNemar
   p 0.58), tool JSON 40/40: pass.
+- **30-min soak at 32 in flight** (`runs/sweep-final-hc-cp2048-lpm-20261006-022842-*`): 9,569 requests, 0 failed.
+  p50 / p90 / p99 = 5.73 / 9.00 / 37.1 s, 935 tok/s ($0.208/1M at $0.70), hit 0.77. 115 requests (1.2%) were
+  retracted, and they make the p99 tail; the 4-min sweep windows do not show it. **Operating point: 28 in flight**
+  (p90 ~8.5 s, ~955 tok/s, ~$0.20/1M), as on bs3 (PC2's 30-min soaks: C28 919 tok/s at p90 8.92 s, C32 899 at
+  9.92 s). 32 maximizes p90-bounded goodput but carries the retraction tail.
 
 **Where the saving comes from, bs2** (10 s p90 SLO, cheapest point; every row measured on bs2):
 

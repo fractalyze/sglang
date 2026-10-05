@@ -1,0 +1,37 @@
+{
+ "gsm8k": {
+  "n": 1319,
+  "control_pt": 96.13343442001516,
+  "candidate_pt": 96.36087945413192,
+  "delta_pt": 0.22744503411675512,
+  "candidate_only_correct": 8,
+  "control_only_correct": 5,
+  "ci95_pt": [
+   -0.3279128807617807,
+   0.7821142433658685
+  ],
+  "mcnemar_exact_p": 0.5810546875
+ },
+ "tool_json": {
+  "n": 40,
+  "control_pt": 100.0,
+  "candidate_pt": 100.0,
+  "delta_pt": 0.0,
+  "candidate_only_correct": 0,
+  "control_only_correct": 0,
+  "ci95_pt": [
+   -4.666580952380952,
+   4.666580952380952
+  ],
+  "mcnemar_exact_p": 1.0
+ },
+ "rule": {
+  "gsm8k_ci_low_min_pt": -1.0,
+  "tool_json_min_delta_pt": 0.0
+ },
+ "checks": {
+  "gsm8k_ci_low": true,
+  "tool_json_no_drop": true
+ },
+ "pass": true
+}
