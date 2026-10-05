@@ -255,5 +255,14 @@
    "0.25"
   ],
   "numerics_unchanged": true
+ },
+ "mem-final-c24": {
+  "description": "Admission-cap control: mem-final with --max-running-requests 24 and no HiCache (24G scope), to split the overload hold seen with mem-hc-c24 between the running cap and the host cache.",
+  "extends": "mem-final",
+  "server_args": [
+   "--max-running-requests",
+   "24"
+  ],
+  "numerics_unchanged": true
  }
 }
