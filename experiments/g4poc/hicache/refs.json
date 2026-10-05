@@ -49,5 +49,25 @@
       "layer_first"
     ],
     "numerics_unchanged": true
+  },
+  "mem-base-hc-smallpool": {
+    "description": "Exactness attribution to upstream: PC's control mem-base (no study levers: no L8 vocab table, no L9 override, ratio 0.3) + HiCache (12 GB, write-through, kernel io, page_first) on a 16K-token device pool, so every later multi-turn turn is a load-back. Control: mem-base.",
+    "extends": "mem-base",
+    "server_args": [
+      "--enable-hierarchical-cache",
+      "--hicache-size",
+      "12",
+      "--hicache-write-policy",
+      "write_through",
+      "--hicache-io-backend",
+      "kernel",
+      "--hicache-mem-layout",
+      "page_first",
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
   }
 }
