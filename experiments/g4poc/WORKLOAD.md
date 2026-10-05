@@ -101,6 +101,15 @@ to `<|turn>model\n`: the previous reply's KV (<= 300 tokens) and the empty-thoug
 recomputed every turn, by any client that sends chat messages. This is the real behaviour;
 scripted mode reproduces it exactly (unit-tested with a template of the same shape).
 
+*Caveat, checked with the served tokenizer (2026-10-05):* a client that resends the model's own
+reply matches no further than one that sends the scripted reply. The next prompt leaves the
+cached sequence at the same token, right after `<|turn>model\n`, because the empty
+`<|channel>thought\n<channel|>` of the generation prompt never appears in a rendered past turn.
+So scripted mode does not understate the hit rate of real chat clients. A lever that frees the
+KV just before that boundary (e.g. the last sliding window of the previous prompt) loses those
+hits for real clients too. Only a client that resends raw token ids, generation-prompt tokens
+included, could match through its previous reply (<= 300 tokens more per turn).
+
 ## 2. Decision metrics (`gate/metrics.py`)
 
 Fixed with the user on 2026-10-04 (coordinator message "Decision metric fixed"):
