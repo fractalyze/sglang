@@ -559,7 +559,8 @@ need reproducible outputs should know this.
   the same config matched 6/16: there the batch composition varied between runs, and so does it in the
   scheduling-dependent in-flight sweeps. Any config change, including numerics-neutral ones (pool sizes), re-rolls
   batched outputs (3-4/80 identical). So exactness is checked at concurrency 1, and batched quality is compared
-  per item against a numerics-neutral config-change band, not against an A/A.
+  per item against a numerics-neutral config-change band, not against an A/A. With HiCache on, even a fixed config
+  re-rolls between runs (66/80), because the serving path of a shared prefix depends on async copy timing.
 - **HiCache upstream.** The two fixes are default-off switches on this fork; `hicache/UPSTREAM.md` is a draft
   issue/PR, not posted. One open item remains there: a node that adopts a later request's FULL slots on SWA
   tombstone recovery keeps its old FULL host copy (numerics-level, two computations of the same prefix), which
