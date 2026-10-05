@@ -15,21 +15,18 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
 - Gated load = inflight-C12; noise is used only if measured at the same load.
 
 ## In flight / waiting (update on every launch)
-- FINAL = final-hc (hicache/refs.json; tree a0491db764; 28G scope). Done on bs2 10-05: final_run final-hc (sweep 4-40:
-  C32 952 tok/s p90 9.50 -> $0.204/1M @0.70, -40.5% vs base; memory peak 31,514 <= 31,599 OK at mem 0.955; quality
-  GSM8K 96.74 vs base 96.13 pass; final-mem-c1-c2a 16-32 on/off pair; P/D final-hc). Kept: C1, C2-A; C3a/C3b kept
-  on base only. Records in compute/runs/, vault g4poc-c1/c2/c3a/c3b recorded.
-- Overnight (bs2): compute/c4_run.sh final-hc "final-hc-kvs16 final-hc-lpm final-hc-cp2048" -> logs/pb-c4.log
-  (smokes passed; nested 24,32 -> runs/c4-nested/; c4_pick -> combined ref; KL check; confirm runs/c4-confirm.json;
-  prints "=== ... C4 done"). Then logs/pb-post-c4.log: final-mem-c1-c2a-nocache sweep 4-20 (fleet model b) and
-  mem-final 16-24 (before 06:00 only). Vault trials g4poc-c4, g4poc-c3a-hc, g4poc-c3b-hc registered (open).
-- When the combined ref is known: push, then send the coordinator name/file/commit/flags (PC3 runs exactness on bs3
-  ~01:30, control = same flags on final-mem-c1-c2a). Promotion needs KL + confirm + exactness 12/12 by 07:30.
-- Morning 08:00-11:00: G4POC_SERVER_MEMORY_MAX=28G sweep final-hc (+ promoted flags) at 16,24,32,40 + quality anchor;
-  P/D final-hc already done. 11:00-13:30: COMPUTE.md (fleet model with PC2's think-time table, P/D, cost), wm-record
-  (c4, c3a-hc, c3b-hc), push. Timebox 14:00.
-- Fleet model: compute/fleet_model.py --cached <final-mem-c1-c2a sweep> --nocache <nocache sweep> --hicache <final-hc
-  sweep> --measured "label:sessions:think:turns:tok_s:p90:hit". Sizing rule ~1.2 GB host per s of think (T30: 38 GB).
+- FINAL = final-hc-cp2048-lpm (gate/refs.json; final-hc + --chunked-prefill-size 2048 --schedule-policy lpm; tree
+  a0491db764; 28G). Promoted 10-05 ~23:55 (confirm A-B-B-A C24/C32 gain 1.036/1.103, KL pass, PX exactness 12/12).
+  Headline bs2: C32 981 tok/s p90 8.57 s $0.198/1M @0.70 vs base $0.343 (-42%).
+- Merged g4poc-c + g4poc-c-hicache into g4poc-b (8b70c7a928), deployed 10-06 ~00:25.
+- bs2 chain (each waits for the previous "=== ... done" line):
+  logs/pb-post-c4.log (nocache sweep done; mem-final 16-24) -> logs/pb-hs1.log (compute/hs1.sh: HS1'' think30 x36
+  12 vs 6 GB, HS1' x64, then final replicate 16-40) -> logs/pb-morning.log (compute/morning.sh final-hc-cp2048-lpm:
+  replicate 16-40 + mem check, quality vs base anchor, soak C32 30 min) -> logs/pb-pthink.log (compute/pthink.sh:
+  final pthink30 48-96, no-HiCache 64/80; ends by 07:55).
+- Vault: c1 kept, c2 kept, c3a/c3b kept (base), c3a-hc/c3b-hc kept (final), c4 retired; hs1 / hs1b registered (open).
+- 11:00-13:30: COMPUTE.md final numbers (two replicates, pthink calibration of fleet v3, PC2 poisson), wm-record
+  hs1/hs1b, push. Timebox 14:00.
 
 ## Queue (GPU, in order)
 1. gate calibrate --ref base (fidelity reference + thresholds)
