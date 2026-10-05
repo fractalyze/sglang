@@ -18,28 +18,39 @@ def _sweep(points, pool=60000):
 CACHED = _sweep([(8, 2.0, 4.0, 5.0, 0.74), (12, 2.4, 5.0, 7.0, 0.70), (16, 1.6, 10.0, 14.0, 0.2)])
 # No cache: every turn re-prefills; 8 in flight meets a 10 s SLO, 12 does not.
 NOCACHE = _sweep([(4, 1.0, 4.0, 5.0, 0.0), (8, 1.25, 6.4, 9.0, 0.0), (12, 1.3, 9.2, 12.0, 0.0)])
+# HiCache: 24 in flight at 3 turns/s, 8 s mean E2E, within a 10 s p90.
+HICACHE = _sweep([(24, 3.0, 8.0, 9.5, 0.74)])
+
+
+def _pols(**kw):
+    return {p["name"]: p for p in fm.policies(CACHED, NOCACHE, HICACHE, host_gb=(12,), **kw)}
 
 
 class FleetModelTest(absltest.TestCase):
+    def test_policies_and_caps(self):
+        pols = _pols()
+        self.assertAlmostEqual(pols["a_sticky_device"]["cap"], 10.0)
+        self.assertIsNone(pols["b_drop_idle"]["cap"])
+        self.assertEqual([p["inflight"] for p in pols["b_lru_oversubscribed"]["points"]], [16])
+        self.assertAlmostEqual(pols["c_sticky_host_12gb"]["cap"], fm.HOST_FULL_TOKENS_PER_GB * 12 / 6000.0)
+        self.assertIn("exactness", pols["c_sticky_host_12gb"]["pending"])
+
     def test_zero_think_time_is_the_inflight_point(self):
-        res = fm.model(CACHED, NOCACHE, sessions=100, slo_s=10.0, think=[0])
-        a, b = res["rows"][0]["sticky_cached"], res["rows"][0]["drop_idle"]
-        self.assertAlmostEqual(res["cached_sessions_per_gpu_cap"], 10.0)
+        row = fm.model(list(_pols().values()), sessions=100, slo_s=10.0, think=[0])["rows"][0]
+        a, b = row["a_sticky_device"], row["b_drop_idle"]
         self.assertAlmostEqual(a["sessions_per_gpu"], 10.0)  # 2.4 x 5 = 12 in flight, capped by the pool at 10
-        self.assertTrue(a["memory_bound"])
+        self.assertTrue(a["capped"])
         self.assertAlmostEqual(b["sessions_per_gpu"], 8.0)  # 1.25 x 6.4
         self.assertEqual(b["gpus"], 13)
-
-    def test_past_the_cliff_points_never_serve_the_cached_policy(self):
-        res = fm.model(CACHED, NOCACHE, sessions=100, slo_s=20.0, think=[0])
-        self.assertEqual(res["rows"][0]["sticky_cached"]["point_inflight"], 12)
+        self.assertIsNone(row["b_lru_oversubscribed"])  # its only point misses the SLO
+        self.assertAlmostEqual(row["c_sticky_host_12gb"]["sessions_per_gpu"], 24.0)
 
     def test_crossover_where_dropping_matches_the_memory_cap(self):
         # n_b(T) = max(1.0 (T + 4), 1.25 (T + 6.4)) reaches the cap of 10 at T = 10 / 1.25 - 6.4 = 1.6 s.
-        res = fm.model(CACHED, NOCACHE, sessions=100, slo_s=10.0, think=[0, 30])
-        self.assertAlmostEqual(res["crossover_think_s"], 1.75)  # first 0.25 s step at or past 1.6
-        late = res["rows"][1]
-        self.assertLess(late["drop_idle"]["gpus"], late["sticky_cached"]["gpus"])
+        m = fm.model(list(_pols().values()), sessions=100, slo_s=10.0, think=[0, 30])
+        self.assertAlmostEqual(m["crossover_vs_drop_idle_s"]["a_sticky_device"], 1.75)  # first 0.25 s step past 1.6
+        late = m["rows"][1]
+        self.assertLess(late["b_drop_idle"]["gpus"], late["a_sticky_device"]["gpus"])
 
     def test_cost_uses_turn_rate_at_think_time(self):
         row = fm.policy_row({"inflight": 8, "turns_per_s": 2.0, "e2e_mean_s": 4.0, "e2e_p90_s": 5.0,
@@ -47,6 +58,11 @@ class FleetModelTest(absltest.TestCase):
         # 2 x (6 + 4) = 20 sessions per GPU -> 1 GPU; 20 sessions / 10 s x 200 tokens = 400 out tok/s.
         self.assertEqual(row["gpus"], 1)
         self.assertAlmostEqual(row["usd_per_mtok_output"]["1.00"], 1.0 / (400 * 3600) * 1e6)
+
+    def test_failed_or_empty_points_are_dropped(self):
+        sweep = _sweep([(8, 2.0, 4.0, 5.0, 0.7)])
+        sweep["points"].append({"summary": {"requests_per_s": 0.0, "n_failed": 5}})
+        self.assertLen(fm.points(sweep), 1)
 
 
 if __name__ == "__main__":
