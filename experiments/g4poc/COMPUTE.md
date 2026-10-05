@@ -134,6 +134,17 @@ default's on every served shape (`runs/c2/accuracy.json`, ratio 1.00). Long role
 - **Fidelity.** Gate fidelity passes: forced KL 0.009, decode KL equal to the control's.
 - **Mechanism.** The p99 gains most because the slowest replies carry the largest prefills.
 
+A-B-B-A sweeps (`runs/c2-c8-c16-abba.json`):
+
+| in flight | E2E p90 base -> C2-A | gain | output tok/s | control drift |
+|---|---|---|---|---|
+| 8 | 5.09 -> 4.69 s | 1.085 (-7.9%) | +6.7% | 0.15% |
+| 16 (past the base cliff, hit 0.17) | 11.95 -> 9.54 s | 1.253 (-20.2%) | +22.0% | 0.4% |
+
+Past the cliff every turn re-prefills most of its history, so faster prefill pays more. On the base, C2-A
+brings 16 in flight under the 10 s SLO. Vault: `g4poc-c2` (kept), claim
+`c-g4poc-sm120-triton-extend-tiles-fp8kv`.
+
 ## 3. Harness fixes found on the way (2026-10-05)
 
 Both broke the gate's first use on this SGLang commit (91132098df) and are fixed before any gated number.
