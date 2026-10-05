@@ -125,3 +125,20 @@ A prefilling request holds its current chunk's sliding slots until the chunk is 
 activation peak scales with the chunk. Halving the chunk (4096 -> 2048) frees ~2,000 transient sliding
 tokens (~0.2 GB) in the bursts. Prediction for `mem-stack3-c2048`: **33 -> 34** (interval 33-35); burst peak
 lower than stack3's 31,652 MiB. Falsified if capacity < 33 or > 35.
+
+## 2026-10-05, HiCache feasibility step 2 (coordinator decision 5): in-flight points with vs without HiCache
+
+Code reading (REPORT.md section 5): `--enable-hierarchical-cache` works with hybrid SWA + Triton + FP8 KV +
+page 1 and needs no code change, but it attaches an SWA host pool, which turns L5 off by design
+(`supports_swa_window_release` is False with `has_swa_host_pool`). Without L5 a session holds ~1,468 sliding
+slots, so the comparison uses a device-only control with L5 off and the ratio refit for it.
+
+Refs (both stack3-xs otherwise: L9, L10, L8, 0.955, expandable segments):
+`mem-hc-ctl` = L5 off, `--swa-full-tokens-ratio 0.268`; `mem-hc` = mem-hc-ctl + `--enable-hierarchical-cache
+--hicache-size 12 --hicache-write-policy write_through --hicache-io-backend kernel --hicache-mem-layout
+page_first` (12 GB pinned host pool, split full/SWA by device bytes; server stays in the 24G scope).
+Points C24, C28, C32 of the in-flight sweep.
+
+| run | prediction | falsified if |
+|---|---|---|
+| mem-hc vs mem-hc-ctl | device-only control: hit rate collapses by C28 (<= 0.2); with HiCache the next turn loads its prefix back from host: hit rate >= 0.6 at C24 and C28, E2E p90 at C28 at least 30% lower than the control; at C32 both are bound by the sliding pool for in-flight requests (~29 sessions without L5) | HiCache hit rate at C28 < 0.5, or its p90 at C28 not lower than the control's, or the server fails to start/pin inside the scope |

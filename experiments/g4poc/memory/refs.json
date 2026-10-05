@@ -150,5 +150,33 @@
    "--chunked-prefill-size",
    "2048"
   ]
+ },
+ "mem-hc-ctl": {
+  "description": "HiCache control: stack3-xs with L5 off (HiCache would turn it off) and the ratio refit for the larger per-session sliding hold.",
+  "extends": "mem-stack3-xs",
+  "server_args": [
+   "--swa-full-tokens-ratio",
+   "0.268"
+  ],
+  "env": {
+   "SGLANG_OPT_SWA_RELEASE_SLID_WINDOW": "0"
+  },
+  "numerics_unchanged": true
+ },
+ "mem-hc": {
+  "description": "mem-hc-ctl with HiCache: a 12 GB pinned host pool (write-through, kernel io, page_first) keeps evicted prefixes for load-back on the session's next turn.",
+  "extends": "mem-hc-ctl",
+  "server_args": [
+   "--enable-hierarchical-cache",
+   "--hicache-size",
+   "12",
+   "--hicache-write-policy",
+   "write_through",
+   "--hicache-io-backend",
+   "kernel",
+   "--hicache-mem-layout",
+   "page_first"
+  ],
+  "numerics_unchanged": true
  }
 }
