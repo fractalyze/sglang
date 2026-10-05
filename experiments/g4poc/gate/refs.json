@@ -29,7 +29,7 @@
   "env": {}
  },
  "c1-moe-tuned": {
-  "description": "C1: base + a fused_moe Triton config tuned on the bs2 RTX 5090 (fp8_w8a8 per-channel, E=128, N=704; compute/moe_tune.py, merged by compute/merge_moe_configs.py). Only the MoE tile configs change.",
+  "description": "C1: base + a fused_moe Triton config tuned on the bs2 RTX 5090 (fp8_w8a8 per-channel, E=128, N=704; compute/moe_tune.py, merged by compute/merge_moe_configs.py). Only the MoE tile configs change. Config file: experiments/g4poc/compute/moe-configs/c1/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_channel_quant=True.json (sha256 b3bcce12...9576); on a host, SGLANG_MOE_CONFIG_DIR is a copy of experiments/g4poc/compute/moe-configs/c1 at /data/jooman/g4poc/moe-configs/c1.",
   "extends": "base",
   "env": {
    "SGLANG_MOE_CONFIG_DIR": "/data/jooman/g4poc/moe-configs/c1"
@@ -65,7 +65,7 @@
   "commit": "9026c00478"
  },
  "final-mem-c1-c2a": {
-  "description": "bs2 final: PC's mem-final (memory/refs.json, d56fb9764a: stack1 flags, L8 FP8 vocab table, decode graphs to 48, expandable segments) + C1 tuned fused_moe config + C2-A sm120 FP8-KV extend tiles. Tree 1425761173 = mem-final's 53752c62aa + the C2-A tile commits (branch jumanzii/g4poc-final-c2).",
+  "description": "bs2 final: PC's mem-final (memory/refs.json, d56fb9764a: stack1 flags, L8 FP8 vocab table, decode graphs to 48, expandable segments) + C1 tuned fused_moe config + C2-A sm120 FP8-KV extend tiles. Tree 1425761173 = mem-final's 53752c62aa + the C2-A tile commits (branch jumanzii/g4poc-final-c2). Config file: experiments/g4poc/compute/moe-configs/c1/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_channel_quant=True.json (sha256 b3bcce12...9576); on a host, SGLANG_MOE_CONFIG_DIR is a copy of experiments/g4poc/compute/moe-configs/c1 at /data/jooman/g4poc/moe-configs/c1.",
   "extends": "mem-final",
   "commit": "1425761173",
   "env": {

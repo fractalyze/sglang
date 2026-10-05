@@ -6,7 +6,7 @@ directories (server logs, per-leg data, traces) stay on build-server-2 under
 
 - `aa-c12-*/report.json`: A/A of the base at inflight-C12 (noise and bars of every C12 gate).
 - `c1-moe-tuned-*/report.json`: C1 gate; `c1-c8-abba.json`: C1 at 8 in flight (A-B-B-A sweeps).
-- `c1-moe-config/`: the merged tuned fused_moe config and the kernel bench, default vs tuned.
+- `c1-moe-config/`: the fused_moe kernel bench, default vs tuned (the config itself: `../moe-configs/c1/`).
 - `profile-base-C12-*/extend_share.json`: extend-attention share of GPU time at C12 (C2-A sizing).
 - `c2/bench.json`: extend tile microbench; `c2/accuracy.json`: tiles vs fp32 attention.
 - `kl-c2-extend-tiles*/kl_check.json`: C2-A long role-play KL check, fast and exact tile tables.
