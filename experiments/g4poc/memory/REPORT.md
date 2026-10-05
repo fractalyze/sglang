@@ -41,7 +41,7 @@ cgroup >= 32 GB in deployment, or retry the start on that error (the study's que
 | output tok/s at that point | 558 | 677 | 833 | **942** |
 | $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | **0.206 (-41%)** |
 | multi-turn exactness at concurrency 1 (12 later turns) | - | - | 12/12 control | 12/12 identical to control |
-| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | see section 5 |
+| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | 96.36; language: see section 5 |
 
 All on build-server-3; capacity points replicated on the same host. final-hc's numbers are PC3's runs
 (`hicache/PREREG.md` HC4); its quality anchor and a 30-minute soak at C32 are in section 5. Server GPU memory
@@ -510,8 +510,26 @@ HiCache without load-backs are 12/12.
   cached-token counts (`exactmt-final-hc-smallpool-20261005-183035-build-server-3-7c864b` vs
   `exactmt-final-mem-c1-c2a-20261005-181244-build-server-3-35c7a9`).
 
-> [!gap] final-hc quality anchor vs mem-base (GSM8K 1319, tool-JSON, role-play with the paired language rule),
-> the 30-minute soak at C32, and PC3's same-host replicate (C24/C32) are running on build-server-3.
+**30-minute soak at C32** (`sweep-final-hc-20261005-191020-build-server-3-d90dd0`, 1,800 s window after 60 s warm-up):
+9,171 requests, **0 failed**, 31 retractions (requeued and completed); E2E p50 6.54 s, **p90 9.92 s**, p99 10.99 s;
+899 output tok/s (30,456 total), prefix-cache hit 0.705, $0.216 per 1M output at $0.70/GPU-h. No creep over 30 min
+(5-minute buckets in `soak-buckets.txt`): decode throughput 1,212-1,222 tok/s, server GPU memory flat at 31,490 MiB
+(peak 31,536), server RSS 17.518 -> 17.523 GB, host MemAvailable 37.5-38.1 GB, no swap growth. Over 30 minutes C32
+meets the 10 s SLO only at the edge (the 240 s sweep point read 9.55 s and 942 tok/s), so the headline operating
+point is C28.
+
+> [!gap] 30-minute soak at C28 (the headline operating point) queued.
+
+**Quality anchor vs mem-base** (0.85 fraction; role-play with 1,024-token chunks; 28G scope):
+GSM8K 1319 **96.36** vs 96.21 (paired 9 items right only here, 7 only in base, McNemar p = 0.80); tool-JSON 40/40;
+role-play reference NLL +0.0039 nats/token (budget 0.02). Language adherence 65 vs 68 of 80: three
+adherent-to-non-adherent flips and none the other way (net 3, exact McNemar p = 0.25), against a numerics-neutral
+band of 1 (net 1 in each neutral pair). Two of the three are the mixed-language items every config change flips
+(`s000794/0`, `s001101/0`); the third, `s000135/0`, is a real one: a Chinese role-play opening ("I'm Kelly...")
+answered in English, where mem-base and final-mem-c1-c2a answer in Chinese.
+
+> [!gap] Language attribution running: A/A of the final-hc role-play arm, a third numerics-neutral pair, and a
+> run with per-request load-back logging (PC3) decide between a config re-roll and a HiCache effect.
 
 ## 6. Open items and harness caveats
 
