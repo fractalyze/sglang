@@ -1,0 +1,15 @@
+{
+ "items": 80,
+ "unmatched": 1,
+ "adherent": 68,
+ "with_load_back": 48,
+ "with_stale_load_back": 0,
+ "flips": [
+  "s000794/0"
+ ],
+ "flips_with_load_back": [],
+ "flips_with_stale_load_back": []
+}
+{"id": "s000794/0", "language": "ja", "reply": "zh", "flip": true, "admissions": 3, "fill": 7433, "device_hit": 4, "host_hit": 0, "swa_host_hit": 0, "loaded": 0, "lb_full": 0, "lb_swa": 0, "stale_full": 0, "stale_swa": 0}
+{"id": "s001101/0", "language": "ru", "reply": "ru", "flip": false, "admissions": 1, "fill": 4954, "device_hit": 6, "host_hit": 221, "swa_host_hit": 221, "loaded": 221, "lb_full": 0, "lb_swa": 221, "stale_full": 0, "stale_swa": 0}
+{"id": "s000135/0", "language": "zh", "reply": "zh", "flip": false, "admissions": 2, "fill": 9084, "device_hit": 0, "host_hit": 223, "swa_host_hit": 223, "loaded": 223, "lb_full": 0, "lb_swa": 223, "stale_full": 0, "stale_swa": 0}

@@ -1,0 +1,236 @@
+[2026-10-05 19:10:20] server_args={'model_path': '/data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/text', 'tokenizer_path': '/data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/text', 'tokenizer_mode': 'auto', 'tokenizer_backend': 'huggingface', 'tokenizer_worker_num': 1, 'detokenizer_worker_num': 1, 'skip_tokenizer_init': False, 'load_format': 'auto', 'model_loader_extra_config': '{}', 'trust_remote_code': False, 'context_length': 16384, 'is_embedding': False, 'enable_multimodal': None, 'revis
+[2026-10-05 19:10:33] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 68319, K size: 0.33 GB, V size: 0.33 GB
+[2026-10-05 19:10:33] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 18309, K size: 0.87 GB, V size: 0.87 GB
+[2026-10-05 19:10:53] Allocating full hierarchical KV host pool: 318442 tokens, 3.26 GB host memory.
+[2026-10-05 19:11:00] Allocating swa hierarchical KV host pool: 85344 tokens, 8.74 GB host memory.
+[2026-10-05 19:11:11] PFXDBG rid=7709f3fa7af44ba3870fffe04a688c30 hash=6fd7e563f61a fill=7 device_hit=0 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:15] PFXDBG rid=HEALTH_CHECK_446960af3ba841c586bb59b2ffa64017 hash=7dea362b3fac fill=1 device_hit=0 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:16] PFXDBG rid=75c3c951777b4265bbff5e37f3f83af9 hash=42b1737e31d2 fill=6100 device_hit=1 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:16] PFXDBG rid=0995996072bb4e07af160ad94c7182c9 hash=d84df77168b5 fill=4991 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:16] PFXDBG rid=908f7112890a4eb7b9e4e1262110e66d hash=941b6a8dec5e fill=4350 device_hit=234 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:16] PFXDBG rid=9af8074aa39d4a609b8d25a9ae1ce591 hash=0ce86b417e2c fill=3956 device_hit=235 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:16] PFXDBG rid=96bfc139b9544ff6a4e5a86bfdedbfd6 hash=c429a4fc9f21 fill=2912 device_hit=234 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:17] PFXDBG rid=2659de87b8a54f10b0129559c4137d9d hash=075949a646ec fill=5183 device_hit=235 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:17] PFXDBG rid=d33ac03b1c5b4a129be11ad46680ebc2 hash=228e8d4aaa73 fill=3658 device_hit=234 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:17] PFXDBG rid=2587f8653d204aacabd9291cb73c8614 hash=3b4bd8e027b8 fill=8418 device_hit=234 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:17] PFXDBG rid=6ee796b83a7e4420b547717d53f7b89c hash=20b1f75d2c59 fill=3964 device_hit=235 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:17] PFXDBG rid=d22317e21dd443b8971aa292cd53adb3 hash=615d46f0224b fill=4522 device_hit=6 host_hit=228 swa_host_hit=228 loaded=228 lb_full=0 lb_swa=228 stale_full=0 stale_swa=0
+[2026-10-05 19:11:18] PFXDBG rid=5f7c101053d54279b246509a9d974167 hash=ab2679705d6a fill=4976 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:18] PFXDBG rid=723efa438d664158b916193813fde259 hash=398a653b922f fill=7607 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:19] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1080, #new_token_ratio: 0.6258 -> 0.3132
+[2026-10-05 19:11:19] PFXDBG rid=d92597acb6274549bf64aa202d4a4a41 hash=0b20bd82fd18 fill=1749 device_hit=0 host_hit=6 swa_host_hit=6 loaded=6 lb_full=0 lb_swa=6 stale_full=0 stale_swa=0
+[2026-10-05 19:11:20] PFXDBG rid=7692218e13be4484891640f38dd7dfe7 hash=6198645e4812 fill=5295 device_hit=0 host_hit=216 swa_host_hit=216 loaded=216 lb_full=0 lb_swa=216 stale_full=0 stale_swa=0
+[2026-10-05 19:11:20] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1037, #new_token_ratio: 0.2992 -> 0.3665
+[2026-10-05 19:11:20] PFXDBG rid=8f584af1817e4abdbb671b04963ef9ae hash=9d44c11d94fe fill=2780 device_hit=0 host_hit=6 swa_host_hit=6 loaded=6 lb_full=0 lb_swa=6 stale_full=0 stale_swa=0
+[2026-10-05 19:11:20] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1023, #new_token_ratio: 0.3665 -> 0.3699
+[2026-10-05 19:11:21] PFXDBG rid=e92f2e4245574ca6913f62069b628a43 hash=ff1796e2bb64 fill=4925 device_hit=0 host_hit=216 swa_host_hit=216 loaded=216 lb_full=0 lb_swa=216 stale_full=0 stale_swa=0
+[2026-10-05 19:11:22] PFXDBG rid=f0de9c0205664d6997f3b4a540f6d5ba hash=8c07381e750e fill=5405 device_hit=0 host_hit=216 swa_host_hit=216 loaded=216 lb_full=0 lb_swa=216 stale_full=0 stale_swa=0
+[2026-10-05 19:11:23] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1030, #new_token_ratio: 0.2103 -> 0.8651
+[2026-10-05 19:11:23] PFXDBG rid=723efa438d664158b916193813fde259 hash=398a653b922f fill=7664 device_hit=0 host_hit=7607 swa_host_hit=1456 loaded=7607 lb_full=3504 lb_swa=1456 stale_full=0 stale_swa=0
+[2026-10-05 19:11:23] PFXDBG rid=dff0133c1b32486fa2c3d9cd2d12ccc2 hash=799606537180 fill=7351 device_hit=0 host_hit=208 swa_host_hit=208 loaded=208 lb_full=0 lb_swa=208 stale_full=0 stale_swa=0
+[2026-10-05 19:11:24] PFXDBG rid=d92597acb6274549bf64aa202d4a4a41 hash=0b20bd82fd18 fill=1764 device_hit=6 host_hit=1743 swa_host_hit=1264 loaded=1743 lb_full=1533 lb_swa=1264 stale_full=0 stale_swa=0
+[2026-10-05 19:11:24] PFXDBG rid=7692218e13be4484891640f38dd7dfe7 hash=6198645e4812 fill=5296 device_hit=6 host_hit=5289 swa_host_hit=1560 loaded=5289 lb_full=5079 lb_swa=1560 stale_full=0 stale_swa=0
+[2026-10-05 19:11:24] PFXDBG rid=cec63bab202d4482903617046f42b31d hash=92304b5ace48 fill=9042 device_hit=219 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:24] PFXDBG rid=112dc452351749189599900539aaf6fb hash=2a1d2ef08364 fill=3735 device_hit=208 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:24] PFXDBG rid=e92f2e4245574ca6913f62069b628a43 hash=ff1796e2bb64 fill=5043 device_hit=6 host_hit=4919 swa_host_hit=1636 loaded=4919 lb_full=4709 lb_swa=1636 stale_full=0 stale_swa=0
+[2026-10-05 19:11:24] PFXDBG rid=1bd6d2306ce54a51839cb5a1a9bb506e hash=46b2fb03479d fill=5586 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:25] PFXDBG rid=baf534cc7f8d437c8f98a951cf73d06f hash=d9d80d4aa76a fill=2341 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:25] PFXDBG rid=3a0a403377554094b394c5fa963ed37d hash=f4cbc8a8b3ca fill=3978 device_hit=5 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:25] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1023, #new_token_ratio: 0.8159 -> 0.2359
+[2026-10-05 19:11:25] PFXDBG rid=9e09f1ec2fb540d0903f162764c727ab hash=70098d5af8f0 fill=2874 device_hit=0 host_hit=206 swa_host_hit=206 loaded=206 lb_full=0 lb_swa=206 stale_full=0 stale_swa=0
+[2026-10-05 19:11:25] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1023, #new_token_ratio: 0.2359 -> 0.2393
+[2026-10-05 19:11:25] PFXDBG rid=af2c975414f741fd875a3cdf8ff259db hash=28c9974436a8 fill=3405 device_hit=0 host_hit=206 swa_host_hit=206 loaded=206 lb_full=0 lb_swa=206 stale_full=0 stale_swa=0
+[2026-10-05 19:11:25] KV cache pool is full. Retract requests. #retracted_reqs: 2, #new_tokens_gained: 706, #new_token_ratio: 0.2393 -> 0.2610
+[2026-10-05 19:11:25] PFXDBG rid=5c52f8776cff49f9b2f35dfc85394932 hash=8ea02fd96af3 fill=2414 device_hit=5 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:25] PFXDBG rid=1617099af5654ac3957e8fb9b1eda558 hash=b661ece59f46 fill=5488 device_hit=5 host_hit=201 swa_host_hit=201 loaded=201 lb_full=0 lb_swa=201 stale_full=0 stale_swa=0
+[2026-10-05 19:11:27] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1002, #new_token_ratio: 0.1787 -> 0.4989
+[2026-10-05 19:11:27] PFXDBG rid=cec63bab202d4482903617046f42b31d hash=92304b5ace48 fill=9043 device_hit=0 host_hit=9042 swa_host_hit=1645 loaded=9042 lb_full=622 lb_swa=1645 stale_full=0 stale_swa=0
+[2026-10-05 19:11:28] PFXDBG rid=3a0a403377554094b394c5fa963ed37d hash=f4cbc8a8b3ca fill=3979 device_hit=0 host_hit=3978 swa_host_hit=1606 loaded=3978 lb_full=583 lb_swa=1606 stale_full=0 stale_swa=0
+[2026-10-05 19:11:28] PFXDBG rid=9e09f1ec2fb540d0903f162764c727ab hash=70098d5af8f0 fill=2875 device_hit=0 host_hit=2874 swa_host_hit=1296 loaded=2874 lb_full=273 lb_swa=1296 stale_full=0 stale_swa=0
+[2026-10-05 19:11:29] PFXDBG rid=dff0133c1b32486fa2c3d9cd2d12ccc2 hash=799606537180 fill=7354 device_hit=0 host_hit=7351 swa_host_hit=2022 loaded=7351 lb_full=6118 lb_swa=2022 stale_full=0 stale_swa=0
+[2026-10-05 19:11:29] PFXDBG rid=1617099af5654ac3957e8fb9b1eda558 hash=b661ece59f46 fill=5568 device_hit=0 host_hit=5488 swa_host_hit=1185 loaded=5488 lb_full=5282 lb_swa=1185 stale_full=0 stale_swa=0
+[2026-10-05 19:11:29] PFXDBG rid=4a3c2521ef74401ea0641c510ed96640 hash=7adc0cc27cb7 fill=4526 device_hit=0 host_hit=208 swa_host_hit=208 loaded=208 lb_full=0 lb_swa=208 stale_full=0 stale_swa=0
+[2026-10-05 19:11:29] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 469, #new_token_ratio: 0.3364 -> 0.6772
+[2026-10-05 19:11:29] PFXDBG rid=b7f7bac9088141a38231c4ce2c7584a0 hash=5cb3b17effd8 fill=3546 device_hit=0 host_hit=206 swa_host_hit=206 loaded=206 lb_full=0 lb_swa=206 stale_full=0 stale_swa=0
+[2026-10-05 19:11:30] PFXDBG rid=dbbe49d1372943d39fd6b7a87d4ea669 hash=2f29b74b3344 fill=7320 device_hit=5 host_hit=203 swa_host_hit=203 loaded=203 lb_full=0 lb_swa=203 stale_full=0 stale_swa=0
+[2026-10-05 19:11:30] PFXDBG rid=a02cfa24088c4aa6b264d15d61de69a1 hash=1d7cf3080300 fill=4769 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:31] PFXDBG rid=bcb20776f6714b3e94af5c5ea84cccb0 hash=20eb871c5105 fill=3241 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:31] PFXDBG rid=a7928280d41046bf8726e70a2dbc5d34 hash=dfeb7c0ad6b6 fill=4535 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:31] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 431, #new_token_ratio: 0.6260 -> 0.4635
+[2026-10-05 19:11:31] PFXDBG rid=dff0133c1b32486fa2c3d9cd2d12ccc2 hash=799606537180 fill=7382 device_hit=0 host_hit=7354 swa_host_hit=2025 loaded=7354 lb_full=7135 lb_swa=2025 stale_full=0 stale_swa=0
+[2026-10-05 19:11:31] PFXDBG rid=d284a28e7e6a45788bc2fbd5c5d6c202 hash=8e2fdd66b779 fill=5333 device_hit=0 host_hit=240 swa_host_hit=240 loaded=240 lb_full=0 lb_swa=240 stale_full=0 stale_swa=0
+[2026-10-05 19:11:31] PFXDBG rid=7e6e958bffd642e09f80aaaf4ba7c2ad hash=6d69ec4567ca fill=4125 device_hit=0 host_hit=240 swa_host_hit=240 loaded=240 lb_full=0 lb_swa=240 stale_full=0 stale_swa=0
+[2026-10-05 19:11:32] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 372, #new_token_ratio: 0.4625 -> 0.3416
+[2026-10-05 19:11:32] PFXDBG rid=4007902a09a04a1f9bdfb8993b19b071 hash=3625959cdee5 fill=4503 device_hit=0 host_hit=240 swa_host_hit=240 loaded=240 lb_full=0 lb_swa=240 stale_full=0 stale_swa=0
+[2026-10-05 19:11:32] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 929, #new_token_ratio: 0.3416 -> 0.3449
+[2026-10-05 19:11:32] PFXDBG rid=c398e98da2654c339b335b2e482ccb7a hash=a22116796e85 fill=1776 device_hit=0 host_hit=6 swa_host_hit=6 loaded=6 lb_full=0 lb_swa=6 stale_full=0 stale_swa=0
+[2026-10-05 19:11:32] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 343, #new_token_ratio: 0.3449 -> 0.3482
+[2026-10-05 19:11:34] PFXDBG rid=bcb20776f6714b3e94af5c5ea84cccb0 hash=20eb871c5105 fill=3242 device_hit=0 host_hit=3241 swa_host_hit=1976 loaded=3241 lb_full=3001 lb_swa=1976 stale_full=0 stale_swa=0
+[2026-10-05 19:11:34] PFXDBG rid=5facbe7d4b914f879ec37eed2e9ee8a2 hash=b14fba6f3db2 fill=4107 device_hit=0 host_hit=6 swa_host_hit=6 loaded=6 lb_full=0 lb_swa=6 stale_full=0 stale_swa=0
+[2026-10-05 19:11:34] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 326, #new_token_ratio: 0.2118 -> 0.6957
+[2026-10-05 19:11:34] PFXDBG rid=d284a28e7e6a45788bc2fbd5c5d6c202 hash=8e2fdd66b779 fill=5334 device_hit=0 host_hit=5333 swa_host_hit=1519 loaded=5333 lb_full=3567 lb_swa=1519 stale_full=0 stale_swa=0
+[2026-10-05 19:11:35] PFXDBG rid=7e6e958bffd642e09f80aaaf4ba7c2ad hash=6d69ec4567ca fill=4126 device_hit=0 host_hit=4125 swa_host_hit=1483 loaded=4125 lb_full=3885 lb_swa=1483 stale_full=0 stale_swa=0
+[2026-10-05 19:11:35] PFXDBG rid=4007902a09a04a1f9bdfb8993b19b071 hash=3625959cdee5 fill=4504 device_hit=0 host_hit=4503 swa_host_hit=1835 loaded=4503 lb_full=4263 lb_swa=1835 stale_full=0 stale_swa=0
+[2026-10-05 19:11:36] PFXDBG rid=dd73b0c3d5af4d8ab5096168554a3f5a hash=7311ae700b3c fill=5565 device_hit=0 host_hit=240 swa_host_hit=240 loaded=240 lb_full=0 lb_swa=240 stale_full=0 stale_swa=0
+[2026-10-05 19:11:36] PFXDBG rid=eb495fcfea154457a9621e10484c4108 hash=af17e6ca4e87 fill=3235 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:36] PFXDBG rid=bcb20776f6714b3e94af5c5ea84cccb0 hash=20eb871c5105 fill=3243 device_hit=240 host_hit=3002 swa_host_hit=1977 loaded=3002 lb_full=954 lb_swa=1977 stale_full=0 stale_swa=0
+[2026-10-05 19:11:36] PFXDBG rid=5c6ebcdf933b47399ee05632ecc95822 hash=c81f612d048a fill=7433 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:36] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 633, #new_token_ratio: 0.5873 -> 0.5420
+[2026-10-05 19:11:36] PFXDBG rid=86843cea9b214b2eb527df6a4ac1a514 hash=b290c0cf3820 fill=2556 device_hit=0 host_hit=4 swa_host_hit=4 loaded=4 lb_full=0 lb_swa=4 stale_full=0 stale_swa=0
+[2026-10-05 19:11:37] PFXDBG rid=4a6539f976fd4446974b79e1d7373bbd hash=af2a18e93da7 fill=4703 device_hit=0 host_hit=241 swa_host_hit=241 loaded=241 lb_full=0 lb_swa=241 stale_full=0 stale_swa=0
+[2026-10-05 19:11:37] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 231, #new_token_ratio: 0.5220 -> 0.5080
+[2026-10-05 19:11:37] PFXDBG rid=a6f5e51c007c4f7a982b102940b0e9f8 hash=a7dea22f923e fill=6511 device_hit=0 host_hit=241 swa_host_hit=241 loaded=241 lb_full=0 lb_swa=241 stale_full=0 stale_swa=0
+[2026-10-05 19:11:37] PFXDBG rid=3284b9f6f266488aa7e2cc1f52b22675 hash=4101cfa7c157 fill=3798 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:38] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 743, #new_token_ratio: 0.4989 -> 0.4332
+[2026-10-05 19:11:38] PFXDBG rid=e5755a3359764857bafcaee12f6fafd2 hash=3b2cedede132 fill=2877 device_hit=0 host_hit=242 swa_host_hit=242 loaded=242 lb_full=0 lb_swa=242 stale_full=0 stale_swa=0
+[2026-10-05 19:11:38] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 309, #new_token_ratio: 0.4332 -> 0.4365
+[2026-10-05 19:11:38] PFXDBG rid=bcb20776f6714b3e94af5c5ea84cccb0 hash=20eb871c5105 fill=3244 device_hit=0 host_hit=3243 swa_host_hit=1978 loaded=3243 lb_full=955 lb_swa=1978 stale_full=0 stale_swa=0
+[2026-10-05 19:11:38] PFXDBG rid=6a58c3cbbbb14df48a487d2424c6c481 hash=cdc7bc3abbaa fill=4423 device_hit=0 host_hit=6 swa_host_hit=6 loaded=6 lb_full=0 lb_swa=6 stale_full=0 stale_swa=0
+[2026-10-05 19:11:39] PFXDBG rid=5c6ebcdf933b47399ee05632ecc95822 hash=c81f612d048a fill=7454 device_hit=0 host_hit=7433 swa_host_hit=1416 loaded=7433 lb_full=3464 lb_swa=1416 stale_full=0 stale_swa=0
+[2026-10-05 19:11:39] PFXDBG rid=5a80f1ae661c4891af4551a5e5b5b954 hash=9eed75506d97 fill=5779 device_hit=0 host_hit=241 swa_host_hit=241 loaded=241 lb_full=0 lb_swa=241 stale_full=0 stale_swa=0
+[2026-10-05 19:11:39] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 998, #new_token_ratio: 0.3883 -> 0.3743
+[2026-10-05 19:11:39] PFXDBG rid=a6f5e51c007c4f7a982b102940b0e9f8 hash=a7dea22f923e fill=6512 device_hit=0 host_hit=6511 swa_host_hit=1149 loaded=6511 lb_full=126 lb_swa=1149 stale_full=0 stale_swa=0
+[2026-10-05 19:11:39] PFXDBG rid=3284b9f6f266488aa7e2cc1f52b22675 hash=4101cfa7c157 fill=3799 device_hit=0 host_hit=3798 swa_host_hit=1238 loaded=3798 lb_full=215 lb_swa=1238 stale_full=0 stale_swa=0
+[2026-10-05 19:11:39] PFXDBG rid=8039f10a1b8548deb96dcc6a78792326 hash=b5f06cd8ff8d fill=4555 device_hit=0 host_hit=241 swa_host_hit=241 loaded=241 lb_full=0 lb_swa=241 stale_full=0 stale_swa=0
+[2026-10-05 19:11:39] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 665, #new_token_ratio: 0.3643 -> 0.3535
+[2026-10-05 19:11:41] PFXDBG rid=4d1ae447512444e2b38bf6c071eff4e6 hash=a9c2af057442 fill=3370 device_hit=0 host_hit=241 swa_host_hit=241 loaded=241 lb_full=0 lb_swa=241 stale_full=0 stale_swa=0
+[2026-10-05 19:11:41] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 967, #new_token_ratio: 0.2663 -> 0.6746
+[2026-10-05 19:11:41] PFXDBG rid=139cb3bc759b49abb73695ee56bc1e5b hash=388169b3cf05 fill=5185 device_hit=0 host_hit=4 swa_host_hit=4 loaded=4 lb_full=0 lb_swa=4 stale_full=0 stale_swa=0
+[2026-10-05 19:11:41] PFXDBG rid=5c6ebcdf933b47399ee05632ecc95822 hash=c81f612d048a fill=7455 device_hit=0 host_hit=7454 swa_host_hit=1437 loaded=7454 lb_full=21 lb_swa=1437 stale_full=0 stale_swa=0
+[2026-10-05 19:11:41] PFXDBG rid=c9900a5b6c13410b999a6981408a81fd hash=10516c3754f2 fill=4998 device_hit=0 host_hit=4 swa_host_hit=4 loaded=4 lb_full=0 lb_swa=4 stale_full=0 stale_swa=0
+[2026-10-05 19:11:41] PFXDBG rid=3284b9f6f266488aa7e2cc1f52b22675 hash=4101cfa7c157 fill=3800 device_hit=0 host_hit=3799 swa_host_hit=1239 loaded=3799 lb_full=1 lb_swa=1239 stale_full=0 stale_swa=0
+[2026-10-05 19:11:41] PFXDBG rid=8325de590b3749e88bbcf6d47064eef9 hash=711c9c60bcc8 fill=3212 device_hit=0 host_hit=8 swa_host_hit=8 loaded=8 lb_full=0 lb_swa=8 stale_full=0 stale_swa=0
+[2026-10-05 19:11:42] PFXDBG rid=5a80f1ae661c4891af4551a5e5b5b954 hash=9eed75506d97 fill=5878 device_hit=0 host_hit=5779 swa_host_hit=1497 loaded=5779 lb_full=5532 lb_swa=1497 stale_full=0 stale_swa=0
+[2026-10-05 19:11:42] PFXDBG rid=44ed5c8701a24589aa9d5aa973e9200d hash=c3b9ab558021 fill=4227 device_hit=0 host_hit=254 swa_host_hit=254 loaded=254 lb_full=0 lb_swa=254 stale_full=0 stale_swa=0
+[2026-10-05 19:11:43] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 409, #new_token_ratio: 0.6003 -> 0.5775
+[2026-10-05 19:11:43] PFXDBG rid=918d4151a1cd4aca8149f962d51a9965 hash=d560e9909840 fill=4696 device_hit=0 host_hit=8 swa_host_hit=8 loaded=8 lb_full=0 lb_swa=8 stale_full=0 stale_swa=0
+[2026-10-05 19:11:43] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 252, #new_token_ratio: 0.5775 -> 0.6175
+[2026-10-05 19:11:43] PFXDBG rid=00afc92ce03547009862bae6b4cb0b99 hash=bb0fb9a23a6e fill=9371 device_hit=0 host_hit=254 swa_host_hit=254 loaded=254 lb_full=0 lb_swa=254 stale_full=0 stale_swa=0
+[2026-10-05 19:11:43] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 726, #new_token_ratio: 0.6175 -> 0.6209
+[2026-10-05 19:11:43] PFXDBG rid=843f2ce66a4a4b21a6c4d9fdbc8163d9 hash=b4423425dbe4 fill=6133 device_hit=0 host_hit=254 swa_host_hit=254 loaded=254 lb_full=0 lb_swa=254 stale_full=0 stale_swa=0
+[2026-10-05 19:11:43] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 1023, #new_token_ratio: 0.6209 -> 0.6242
+[2026-10-05 19:11:44] PFXDBG rid=98540652b0f94e159b9517cfa27d1429 hash=c858a8986eb0 fill=5992 device_hit=0 host_hit=282 swa_host_hit=282 loaded=282 lb_full=0 lb_swa=282 stale_full=0 stale_swa=0
+[2026-10-05 19:11:44] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 755, #new_token_ratio: 0.6242 -> 0.6275
+[2026-10-05 19:11:44] PFXDBG rid=5ccfabc0b7de4696a101b06e75f494f2 hash=55895885d3a2 fill=1891 device_hit=0 host_hit=254 swa_host_hit=254 loaded=254 lb_full=0 lb_swa=254 stale_full=0 stale_swa=0
+[2026-10-05 19:11:44] PFXDBG rid=44ed5c8701a24589aa9d5aa973e9200d hash=c3b9ab558021 fill=4241 device_hit=0 host_hit=4227 swa_host_hit=1924 loaded=4227 lb_full=3972 lb_swa=1924 stale_full=0 stale_swa=0
+[2026-10-05 19:11:44] PFXDBG rid=8325de590b3749e88bbcf6d47064eef9 hash=711c9c60bcc8 fill=3277 device_hit=0 host_hit=3212 swa_host_hit=1155 loaded=3212 lb_full=2930 lb_swa=1155 stale_full=0 stale_swa=0
+[2026-10-05 19:11:45] PFXDBG rid=918d4151a1cd4aca8149f962d51a9965 hash=d560e9909840 fill=4697 device_hit=0 host_hit=4696 swa_host_hit=1856 loaded=4696 lb_full=4414 lb_swa=1856 stale_full=0 stale_swa=0
+[2026-10-05 19:11:45] PFXDBG rid=00afc92ce03547009862bae6b4cb0b99 hash=bb0fb9a23a6e fill=9372 device_hit=0 host_hit=9371 swa_host_hit=1686 loaded=9371 lb_full=9117 lb_swa=1686 stale_full=0 stale_swa=0
+[2026-10-05 19:11:45] PFXDBG rid=843f2ce66a4a4b21a6c4d9fdbc8163d9 hash=b4423425dbe4 fill=6134 device_hit=0 host_hit=6133 swa_host_hit=1359 loaded=6133 lb_full=5879 lb_swa=1359 stale_full=0 stale_swa=0
+[2026-10-05 19:11:45] PFXDBG rid=9466db1a59a145f09d7eac67e66af6b7 hash=b7afdb2ee5b1 fill=3946 device_hit=0 host_hit=282 swa_host_hit=282 loaded=282 lb_full=0 lb_swa=282 stale_full=0 stale_swa=0
+[2026-10-05 19:11:46] KV cache pool is full. Retract requests. #retracted_reqs: 2, #new_tokens_gained: 820, #new_token_ratio: 0.5312 -> 0.5414
+[2026-10-05 19:11:46] PFXDBG rid=9dd1bf8cd3e9483aac4db76fe8d9001d hash=cc1fa92cadc9 fill=3709 device_hit=0 host_hit=4 swa_host_hit=4 loaded=4 lb_full=0 lb_swa=4 stale_full=0 stale_swa=0
+[2026-10-05 19:11:46] PFXDBG rid=5a7e9f45311f41bea4e2c309ebc1f78b hash=e91fab5fab20 fill=5974 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:46] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 705, #new_token_ratio: 0.5414 -> 0.4920
+[2026-10-05 19:11:46] PFXDBG rid=56e2e23a793c47d4a0610fb6ef9e1167 hash=b74ae06f0240 fill=4876 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:46] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 848, #new_token_ratio: 0.4920 -> 0.4954
+[2026-10-05 19:11:46] PFXDBG rid=667a6e17ac574fc7a6a57421ee95da10 hash=d40ab95b8d12 fill=4433 device_hit=0 host_hit=225 swa_host_hit=225 loaded=225 lb_full=0 lb_swa=225 stale_full=0 stale_swa=0
+[2026-10-05 19:11:46] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 423, #new_token_ratio: 0.4954 -> 0.4987
+[2026-10-05 19:11:46] PFXDBG rid=53b0fc72848a416eb7dfd1a868e480fc hash=f4d90f5dfb67 fill=4406 device_hit=0 host_hit=225 swa_host_hit=225 loaded=225 lb_full=0 lb_swa=225 stale_full=0 stale_swa=0
+[2026-10-05 19:11:47] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 820, #new_token_ratio: 0.4987 -> 0.5020
+[2026-10-05 19:11:47] PFXDBG rid=843f2ce66a4a4b21a6c4d9fdbc8163d9 hash=b4423425dbe4 fill=6135 device_hit=0 host_hit=6134 swa_host_hit=1360 loaded=6134 lb_full=1 lb_swa=1360 stale_full=0 stale_swa=0
+[2026-10-05 19:11:47] PFXDBG rid=00afc92ce03547009862bae6b4cb0b99 hash=bb0fb9a23a6e fill=9380 device_hit=0 host_hit=9372 swa_host_hit=1687 loaded=9372 lb_full=9118 lb_swa=1687 stale_full=0 stale_swa=0
+[2026-10-05 19:11:48] PFXDBG rid=9466db1a59a145f09d7eac67e66af6b7 hash=b7afdb2ee5b1 fill=3947 device_hit=0 host_hit=3946 swa_host_hit=1889 loaded=3946 lb_full=3664 lb_swa=1889 stale_full=0 stale_swa=0
+[2026-10-05 19:11:48] PFXDBG rid=5a7e9f45311f41bea4e2c309ebc1f78b hash=e91fab5fab20 fill=5975 device_hit=0 host_hit=5974 swa_host_hit=1468 loaded=5974 lb_full=5968 lb_swa=1468 stale_full=0 stale_swa=0
+[2026-10-05 19:11:48] PFXDBG rid=56e2e23a793c47d4a0610fb6ef9e1167 hash=b74ae06f0240 fill=4877 device_hit=0 host_hit=4876 swa_host_hit=1420 loaded=4876 lb_full=4635 lb_swa=1420 stale_full=0 stale_swa=0
+[2026-10-05 19:11:49] PFXDBG rid=667a6e17ac574fc7a6a57421ee95da10 hash=d40ab95b8d12 fill=4434 device_hit=0 host_hit=4433 swa_host_hit=1695 loaded=4433 lb_full=4206 lb_swa=1695 stale_full=0 stale_swa=0
+[2026-10-05 19:11:50] PFXDBG rid=ffc5ef4757254c2490b4535531c6e308 hash=d8b3c35686bd fill=4152 device_hit=0 host_hit=225 swa_host_hit=225 loaded=225 lb_full=0 lb_swa=225 stale_full=0 stale_swa=0
+[2026-10-05 19:11:50] PFXDBG rid=6ee7b236240141119e40de8395f88dc7 hash=b9f604651d67 fill=2999 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:51] PFXDBG rid=8ffdd6a9ed1749c6b3c6acb56d88424c hash=f1b1f27b3fb2 fill=5851 device_hit=0 host_hit=227 swa_host_hit=227 loaded=227 lb_full=0 lb_swa=227 stale_full=0 stale_swa=0
+[2026-10-05 19:11:52] PFXDBG rid=9a27f5540b734c8a908f70fbb871e830 hash=65594348b7ab fill=9122 device_hit=6 host_hit=235 swa_host_hit=235 loaded=235 lb_full=0 lb_swa=235 stale_full=0 stale_swa=0
+[2026-10-05 19:11:52] PFXDBG rid=ba74c54670be497886f8dab5638eaf2d hash=e12ce5f5c3af fill=4954 device_hit=6 host_hit=221 swa_host_hit=221 loaded=221 lb_full=0 lb_swa=221 stale_full=0 stale_swa=0
+[2026-10-05 19:11:52] PFXDBG rid=86b003a4c703479698c3e0ce414536c0 hash=14834a0a761a fill=4251 device_hit=0 host_hit=4 swa_host_hit=4 loaded=4 lb_full=0 lb_swa=4 stale_full=0 stale_swa=0
+[2026-10-05 19:11:52] PFXDBG rid=65dacfdb8ee84690bbfec10004a1b315 hash=0f9ceebda1a0 fill=4276 device_hit=199 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:53] KV cache pool is full. Retract requests. #retracted_reqs: 1, #new_tokens_gained: 768, #new_token_ratio: 0.2000 -> 0.4698
+[2026-10-05 19:11:53] PFXDBG rid=c4bdad5e45b843ec8e643e2b0fe8d476 hash=ae8acb7acdca fill=2789 device_hit=0 host_hit=6 swa_host_hit=6 loaded=6 lb_full=0 lb_swa=6 stale_full=0 stale_swa=0
+[2026-10-05 19:11:54] PFXDBG rid=83d850d2bcbb493cb4b49a7e221bcede hash=4101a4357534 fill=3979 device_hit=223 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:54] PFXDBG rid=fecaa1e1a89a42ad8211ea94a722f7e3 hash=4a1d1a33e172 fill=5712 device_hit=223 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:55] PFXDBG rid=bb95a6660b994166858763fe358148a8 hash=229276af52b6 fill=3230 device_hit=6 host_hit=193 swa_host_hit=193 loaded=193 lb_full=0 lb_swa=193 stale_full=0 stale_swa=0
+[2026-10-05 19:11:55] PFXDBG rid=5612d5e328ae49b3804002695c48f576 hash=fc71de40c5a8 fill=3264 device_hit=199 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:56] PFXDBG rid=86b003a4c703479698c3e0ce414536c0 hash=14834a0a761a fill=4252 device_hit=0 host_hit=4251 swa_host_hit=1174 loaded=4251 lb_full=4052 lb_swa=1174 stale_full=0 stale_swa=0
+[2026-10-05 19:11:57] PFXDBG rid=7417ef595e7a4eaca3c8a85699bae99e hash=cfb3bf1a10cb fill=9084 device_hit=0 host_hit=223 swa_host_hit=223 loaded=223 lb_full=0 lb_swa=223 stale_full=0 stale_swa=0
+[2026-10-05 19:11:57] PFXDBG rid=a4fc14ce444c46119cca632e7f5b0f31 hash=f687d45a0329 fill=5259 device_hit=223 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:11:57] KV cache pool is full. Retract requests. #retracted_reqs: 2, #new_tokens_gained: 474, #new_token_ratio: 0.2481 -> 0.6656
+[2026-10-05 19:11:57] PFXDBG rid=88bf4100e52e40939abda1a42f6dd021 hash=d81ebdd4ccb4 fill=3588 device_hit=6 host_hit=193 swa_host_hit=193 loaded=193 lb_full=0 lb_swa=193 stale_full=0 stale_swa=0
+[2026-10-05 19:11:58] PFXDBG rid=7417ef595e7a4eaca3c8a85699bae99e hash=cfb3bf1a10cb fill=9085 device_hit=0 host_hit=9084 swa_host_hit=1692 loaded=9084 lb_full=669 lb_swa=1692 stale_full=0 stale_swa=0
+[2026-10-05 19:11:58] PFXDBG rid=86b003a4c703479698c3e0ce414536c0 hash=14834a0a761a fill=4265 device_hit=0 host_hit=4252 swa_host_hit=1175 loaded=4252 lb_full=1 lb_swa=1175 stale_full=0 stale_swa=0
+[2026-10-05 19:12:01] PFXDBG rid=572cb16f6a4e4e06936c4ea66c9cecf3 hash=bc109344e99d fill=6400 device_hit=0 host_hit=4 swa_host_hit=4 loaded=4 lb_full=0 lb_swa=4 stale_full=0 stale_swa=0
+[2026-10-05 19:12:01] PFXDBG rid=977f599375b54d059e2b7f73fadd36a2 hash=7f4249d38976 fill=5291 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:02] PFXDBG rid=6c57bbae8c99427c9a1433e2e9cb5d9c hash=433a69dcbb10 fill=4650 device_hit=234 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:02] PFXDBG rid=fdb4f01c6e774918ab5b937b187e7ca6 hash=f7d0f3fa0e5d fill=4204 device_hit=235 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:02] PFXDBG rid=78d41cc6cb6049e198d06c6b642dc16c hash=fbe262dec2dd fill=3212 device_hit=234 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:02] PFXDBG rid=6dcc152c853942e0a5b9f8510314832d hash=2c6df25e771f fill=5316 device_hit=235 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:02] PFXDBG rid=02bb4943698d42c39c18925560e8c9af hash=25cd90cd11c8 fill=3958 device_hit=234 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:03] PFXDBG rid=f2ab0afee5da4e95a0e9458aaf0e1ce7 hash=e9ba3d2c1dbf fill=8501 device_hit=234 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:03] PFXDBG rid=f8082369101e426d960b3e66f9877bf8 hash=2653644b9021 fill=3980 device_hit=235 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:03] PFXDBG rid=b76014bd066641f4bbb8501a8466068a hash=b028ce9e9bc2 fill=4803 device_hit=234 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:03] PFXDBG rid=e92bc9ad834449119fb1528fee88099f hash=936b56dadd2f fill=5276 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:04] PFXDBG rid=782b76211f8d4b899d119728b6c0dfd4 hash=a5f1088acc2b fill=7907 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:04] PFXDBG rid=d8da6b6d7dcc41a0981361eb6ab68d7e hash=54384b1c2c42 fill=2025 device_hit=216 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:04] PFXDBG rid=cab419cc20ab48d5b8f963788a5f4ff2 hash=55dbf03ca49a fill=5595 device_hit=216 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:04] PFXDBG rid=45f521b55b76458196e1246c4d303183 hash=a8410c98bfc1 fill=3080 device_hit=208 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:04] PFXDBG rid=e88322c476a846a1ac6ff0f2c4cb6175 hash=805f91f898d1 fill=5173 device_hit=216 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:05] PFXDBG rid=f8ea2bfbbb74470aa627997d039bea65 hash=e514245043f7 fill=5693 device_hit=216 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:05] PFXDBG rid=a481a50ed997491fbde64395fe64e99e hash=d4501c0469ac fill=7651 device_hit=208 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:05] PFXDBG rid=39cb56bf21054f0fa796279a48d70bcf hash=f38698afc870 fill=9342 device_hit=219 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:06] PFXDBG rid=c5163a5adfc646c290f5e1b7c4f5aae1 hash=e59fda183421 fill=4035 device_hit=208 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:06] PFXDBG rid=2d2f49138bad4241a80ef10944ea5e99 hash=db0bccb20eac fill=5886 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:06] PFXDBG rid=df1d0f5f376745f0a00b5acb176fd031 hash=fb1071f022ea fill=2626 device_hit=5 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:06] PFXDBG rid=1c00f20b3ccd4943b6b15d5a599f68fe hash=6a5f99dba973 fill=4270 device_hit=5 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:06] PFXDBG rid=3aa41fa092df48bfaee288f993dc8cfe hash=e0e0ac1891b0 fill=3174 device_hit=206 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:07] PFXDBG rid=7a29c93e1b804b4ea265f9e8122a98ce hash=477f50e0d680 fill=3705 device_hit=206 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:07] PFXDBG rid=decf76248a174021b882b50611db1d4d hash=04013114a5d2 fill=2714 device_hit=208 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:07] PFXDBG rid=4791c901116846f8965c42693dac4dde hash=ea883545ed2a fill=5761 device_hit=206 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:07] PFXDBG rid=0f0b568ddc2b4bb29aa61e6e9860188f hash=ee72c88cbf09 fill=4826 device_hit=208 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:07] PFXDBG rid=bd7a8aac92aa42438bee1ab0a44b9fde hash=bacb87a57d80 fill=3846 device_hit=206 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:07] PFXDBG rid=ad4af817e8be418396f08f01fe7ba374 hash=f62e0652e7bd fill=7580 device_hit=208 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:08] PFXDBG rid=0b0e9e6211b144b1ad596737bdde1dd9 hash=44a4d44d5a3c fill=5069 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:08] PFXDBG rid=debc0c1067dd4ddb91eb5e8c049ddccb hash=54da4f56f40c fill=3524 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:08] PFXDBG rid=657a6b995c234174831351b109b3fdbc hash=623582d1d573 fill=4835 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:08] PFXDBG rid=2bed5e3bcdd04df7ad5288dfecdea090 hash=17c62882a70e fill=5633 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:09] PFXDBG rid=cce2d360a1d043a3b82c90d0afacbb32 hash=50d0c465b0ac fill=4169 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:09] PFXDBG rid=589781d0c9a54d86ba84e96ee9e14045 hash=70a4daee33af fill=4803 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:09] PFXDBG rid=1431a90c74a34cc19bfdb247cbedd357 hash=8e8786fea875 fill=2076 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:09] PFXDBG rid=946e5f5df94e4aa5baf8b9a9669d81a8 hash=171bfb1ffc97 fill=4407 device_hit=204 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:09] PFXDBG rid=b415e350db984717943cd7de70b4c7a8 hash=2d2543436eb9 fill=5865 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:10] PFXDBG rid=78b083f625ae492cab0538ddbb2296da hash=d950ab36d615 fill=3388 device_hit=240 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:10] PFXDBG rid=e78e787ca8a54045ab3bcbc94a8524b8 hash=5295a76b5d6a fill=7568 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:10] PFXDBG rid=c8e9297b69674f32941e3a3f41dab924 hash=f581f659054c fill=2646 device_hit=241 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:10] PFXDBG rid=06c3257c4d6146c290e611b3052d8b92 hash=9f9a2a2de414 fill=4765 device_hit=241 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:10] PFXDBG rid=731c47e2bd0d4e8499881e705c6c403b hash=df70083dbb59 fill=6811 device_hit=242 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:11] PFXDBG rid=041ae28b5f2441de834b8b5cafd8fd51 hash=78178bdb3b1e fill=3848 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:11] PFXDBG rid=a0febac46abb4d20bd44943c846ed340 hash=f971cea529e8 fill=3069 device_hit=242 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:11] PFXDBG rid=477d7f3836d044ed898d5a905ed6aa4e hash=f08fe5b64db3 fill=4723 device_hit=221 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:11] PFXDBG rid=ba7fd0d443144163a7af0c7ae8cbead2 hash=8dc84b408487 fill=6079 device_hit=241 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:11] PFXDBG rid=f1e7862d043f410d834ab2ec90f4b9fc hash=94f7448865f7 fill=4646 device_hit=247 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:12] PFXDBG rid=0f122102d5724dfd8d4aeddba90269d3 hash=d97eb48374dd fill=3456 device_hit=241 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:12] PFXDBG rid=f06853de2d4c48c1b0b2bb1bc3b53993 hash=81c96189a387 fill=5404 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:12] PFXDBG rid=22a7487d86814d459f4585d49a6874a5 hash=637237d73b71 fill=5298 device_hit=254 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:12] PFXDBG rid=67e0d259b73e47bfb32cc4aea16550fe hash=92d6bf0111cb fill=3512 device_hit=8 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:12] PFXDBG rid=af5237801ea5484ba84cdc22b5c22a64 hash=f8a697b22019 fill=4527 device_hit=254 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:13] PFXDBG rid=3021a290df3043dcb1a95f16837ca11a hash=89495670d04b fill=4996 device_hit=282 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:13] PFXDBG rid=c5bbc84ea929448e869d198c78b68e42 hash=172a2ba1c2a1 fill=9671 device_hit=254 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:13] PFXDBG rid=b890662529aa42fb80c1583b245102cb hash=bfe9098b9c3e fill=6433 device_hit=254 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:14] PFXDBG rid=b34e8050526540b390d2aa4ac7278bd0 hash=28e9d671f3b9 fill=6147 device_hit=282 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:14] PFXDBG rid=6e66f9071dfd40a7ad0343771beae190 hash=873fd44843f0 fill=2098 device_hit=254 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:14] PFXDBG rid=b7692fe0b1ae4675929ea9254391b363 hash=a229540fb45a fill=4232 device_hit=282 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:14] PFXDBG rid=8648f8fd4b87439ab77cd134b4bdbca9 hash=15edafcbf466 fill=4009 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:14] PFXDBG rid=920eb50336e34e2f99ae21e523be8440 hash=95dccf0d9a5a fill=6266 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:15] PFXDBG rid=d796fc7eb0d8471e823c0b5d42f692c6 hash=d825c4d2bdb3 fill=5176 device_hit=225 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:15] PFXDBG rid=384786d8c3ad46daa10f1236d12b4131 hash=c43546c9b8c7 fill=4501 device_hit=225 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:15] PFXDBG rid=9b7f6dde8c7241b385cd94cddb57a694 hash=c929b5105608 fill=4706 device_hit=227 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:15] PFXDBG rid=5493088b00b14d69b965ad1219f47723 hash=6a2b2b896ff5 fill=4452 device_hit=225 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:15] PFXDBG rid=f959a6d23bc741c2bcf2c7e8c834b8b2 hash=44517342c019 fill=3254 device_hit=6 host_hit=221 swa_host_hit=221 loaded=221 lb_full=0 lb_swa=221 stale_full=0 stale_swa=0
+[2026-10-05 19:12:16] PFXDBG rid=7265f9fb495742b389df75525c8f3daa hash=80c8f10b0883 fill=6151 device_hit=227 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:16] PFXDBG rid=eb055911ce1148218d71dbaaf5a9c3d3 hash=16600162205a fill=9195 device_hit=225 host_hit=16 swa_host_hit=16 loaded=16 lb_full=0 lb_swa=16 stale_full=0 stale_swa=0
+[2026-10-05 19:12:16] PFXDBG rid=6855d187c68d41309285278a35353fdb hash=aed1ee71fd5c fill=5254 device_hit=346 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:16] PFXDBG rid=5a863b547edf42d4b79eca548d7d18c1 hash=de224dc09832 fill=4437 device_hit=4 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:17] PFXDBG rid=2703cfd90e07414683a552843c7f81f4 hash=c00b69d1b83b fill=4576 device_hit=199 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:17] PFXDBG rid=c7de42c47a7242d6a352c0e74edb4f0e hash=02a3176eaf5a fill=3019 device_hit=6 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:17] PFXDBG rid=c291b250a3b9427dae7d787a7c465826 hash=847669b2dc95 fill=4279 device_hit=223 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:17] PFXDBG rid=caf7cee2b7674b15880214ba67adf605 hash=bf3d6e083aec fill=5858 device_hit=223 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:17] PFXDBG rid=fcc3a821170341c69b8a28bfe8cc7384 hash=7d696f719e62 fill=3530 device_hit=199 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:18] PFXDBG rid=46f5391dbf3d4fcea1bce402bcbe313a hash=151ca26ab728 fill=3564 device_hit=199 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:18] PFXDBG rid=f34b9b1a481a4a279994d63111415555 hash=753444b32e69 fill=9285 device_hit=223 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:18] PFXDBG rid=94643c9c925743fea380bd21de84849d hash=4506d2b8c872 fill=5559 device_hit=223 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
+[2026-10-05 19:12:18] PFXDBG rid=abcfe3dc4dad4f36a1036b3dddf60c70 hash=c1e697f094e2 fill=3888 device_hit=199 host_hit=0 swa_host_hit=0 loaded=0 lb_full=0 lb_swa=0 stale_full=0 stale_swa=0
