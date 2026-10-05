@@ -3,7 +3,7 @@
 Workload: `WORKLOAD.md`. Base: PA's r03 (`BASELINE-FP8.md`), gate ref `base`. The study's final config is
 `final-hc-cp2048-lpm` (section 3) for traffic with requests always in flight; chat with think time is better served
 by the device prefix cache alone (section 5). All numbers here are bs2 unless marked bs3. Where both hosts ran the same
-point, they agree within ~1%.
+point, they agree within ~1% in flight and ~3% under think time.
 
 **Headline.** With requests always in flight, one RTX 5090 serves Gemma-4-26B-A4B FP8 for multi-turn role-play at
 **28 in flight, held for 30 min: p90 8.59 s, p99 11.1 s, 952 output tok/s, $0.204 per 1M output tokens at
@@ -422,8 +422,8 @@ idle session's history still has to live somewhere or be recomputed. The zero-th
 
 **At 30 s of mean think time a GPU serves ~70 live sessions under a 10 s p90 SLO (measured: p90 8.97 s at 67, 10.41 s
 at 73), at ~$0.45 per 1M output tokens: 2.3x the floor.** At 60 s it serves ≥ 118 at ~$0.45. Session traffic is
-recompute-bound there: ~2.3-2.5 turns/s per GPU at p90 ~9-10 s. A 12 GB host pool does not help at these think times. How much of the gap more host RAM
-would close is a model result (below).
+recompute-bound there: ~2.3-2.5 turns/s per GPU at p90 ~9-10 s. A 12 GB host pool does not help at these think times.
+How much of the gap more host RAM would close is a model result (below).
 
 **Which config for which traffic:**
 
@@ -446,8 +446,9 @@ At these think times the HiCache configs are no better than device-only. final-h
 slightly worse at T60 (p90 10.43 vs 9.37 s at 119 live). Chunk 2048 + lpm is worse again at T30 (below). The device
 pool alone is the simplest and costs the least.
 
-**Measured with poisson session arrivals** (loads `pthink30`/`pthink60`: independent sessions, no bursts, queue max
-≤ 4, at most 1 failed request per point; PC2 traced its failures to a client keep-alive race, section 6; the reference for think-time capacity). PC2 ran bs3; the final's sweep ran on bs2
+**Measured with poisson session arrivals** (loads `pthink30`/`pthink60`: independent sessions, no bursts, queue max ≤
+4, at most 1 failed request per point; PC2 traced its failures to a client keep-alive race, section 6; the reference
+for think-time capacity). PC2 ran bs3; the final's sweep ran on bs2
 (`runs/sweep-final-hc-cp2048-lpm-20261006-030116-build-server-2-654b74`). Rows with the same `C` replay the same
 arrival plan on both hosts:
 
