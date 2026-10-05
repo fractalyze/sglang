@@ -1,0 +1,8 @@
+[2026-10-05 12:23:01] Load weight begin. avail mem=30.71 GB
+[2026-10-05 12:23:04] Load weight end. elapsed=2.77 s, type=Gemma4ForCausalLM, quant=compressed-tensors, avail mem=6.28 GB, mem usage=24.43 GB.
+[2026-10-05 12:23:06] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 139415, K size: 0.66 GB, V size: 0.66 GB
+[2026-10-05 12:23:06] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 37363, K size: 1.78 GB, V size: 1.78 GB
+[2026-10-05 12:23:06] Memory pool end. avail mem=1.32 GB
+[2026-10-05 12:23:06] Capture target decode CUDA graph begin. backend=full, num_tokens_per_req=1, bs=[1, 2, 4, 8, 12, 16, 24, 32], avail mem=1.28 GB
+[2026-10-05 12:23:26] Capture target decode CUDA graph end. elapsed=20.66 s, mem usage=0.11 GB, avail mem=1.16 GB.
+[2026-10-05 12:23:26] max_total_num_tokens=139415, chunked_prefill_size=4096, max_prefill_tokens=16384, max_running_requests=64, context_len=16384, available_gpu_mem=1.16 GB

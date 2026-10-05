@@ -130,15 +130,22 @@ INFLIGHT_C12 = msgspec.structs.replace(INFLIGHT, name="inflight-C12", concurrenc
 # Stability soak: the in-flight layer held for 30 min (pass the concurrency with --concurrency).
 SOAK = SessionLoad(name="soak", arrival="slots", concurrency=32, warmup_s=60.0, window_s=1800.0,
                    expected_session_s=0.0, think_scale=0.0)
-# Chat sessions with think time (PC2's loads, jumanzii/g4poc-c fd08bf8fbf): each slot is one live session (its turns
-# sent think_s x think_scale after the previous reply, the next session starting when one ends), so --concurrency is
-# the number of concurrent sessions. The session file's mean think time is 17.9 s (WORKLOAD.md); the scales give means
-# of ~30 s and ~60 s.
+# Chat sessions with think time: each slot is one live session (its turns sent think_s x think_scale after the
+# previous reply, the next session starting when one ends), so --concurrency is the number of concurrent sessions.
+# The session file's mean think time is 17.9 s (WORKLOAD.md); the scales give means of ~30 s and ~60 s.
 THINK30 = SessionLoad(name="think30", arrival="slots", concurrency=120, warmup_s=240.0, window_s=480.0,
                       expected_session_s=0.0, think_scale=30.0 / 17.9)
 THINK60 = SessionLoad(name="think60", arrival="slots", concurrency=220, warmup_s=240.0, window_s=480.0,
                       expected_session_s=0.0, think_scale=60.0 / 17.9)
-LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, INFLIGHT_C12, SOAK, THINK30, THINK60)}
+# The same think times with open (poisson) session arrivals, so sessions are independent (the slots loads keep the
+# sessions that started together phase-correlated). Mean session length = (turns - 1) x think + turns x E2E with
+# 5.15 turns and E2E ~5-6 s; arrivals at concurrency / expected_session_s keep ~concurrency sessions live.
+PTHINK30 = SessionLoad(name="pthink30", concurrency=48, warmup_s=240.0, window_s=480.0, expected_session_s=150.0,
+                       think_scale=30.0 / 17.9)
+PTHINK60 = SessionLoad(name="pthink60", concurrency=96, warmup_s=300.0, window_s=480.0, expected_session_s=280.0,
+                       think_scale=60.0 / 17.9)
+LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, INFLIGHT_C12, SOAK, THINK30, THINK60, PTHINK30, PTHINK60)}
+# PB's compute levers gate at inflight-C12 (PC's memory levers gate on capacity probes and sweeps, not `gate run`).
 GATED_LOAD = INFLIGHT_C12
 
 MIN_PAIRS = 4

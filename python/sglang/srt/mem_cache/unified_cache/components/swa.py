@@ -922,6 +922,97 @@ class SWAComponent(TreeComponent):
                 break
             cur = cur.parent
 
+    def release_window_lock_below(
+        self,
+        node: UnifiedTreeNode,
+        swa_uuid_for_lock: Optional[int],
+        node_end: int,
+        release_below: int,
+    ) -> Optional[int]:
+        """Shrink the lock segment anchored at ``node`` (prefix ending at token
+        ``node_end``) to positions >= ``release_below``: split there, drop this
+        holder's lock below the split, and return the uuid of the new boundary,
+        which the holder's receipt must carry from now on."""
+        ct = self.component_type
+        root = self.tree_core.root_node
+        page_size = self.tree_core.page_size
+        release_below = release_below // page_size * page_size
+        assert release_below < node_end, (release_below, node_end)
+
+        def is_boundary(n: UnifiedTreeNode) -> bool:
+            uuid = n.component_data[ct].metadata.get("uuid")
+            return swa_uuid_for_lock is not None and uuid == swa_uuid_for_lock
+
+        # Find the segment node holding position release_below (the new boundary).
+        cur, end = node, node_end
+        while True:
+            if cur is root:
+                return swa_uuid_for_lock
+            start = end - len(cur.key)
+            if start <= release_below:
+                break
+            if is_boundary(cur):
+                # The segment already starts above release_below.
+                return swa_uuid_for_lock
+            cur, end = cur.parent, start
+
+        new_boundary = cur
+        if start < release_below:
+            # The split's older half becomes the parent and inherits the lock
+            # count and any boundary uuid; new_boundary keeps its id.
+            first_released, action = self.tree_core._split_node(
+                new_boundary.key, new_boundary, release_below - start
+            )
+            assert action is None, "SWA window release cannot split a write-through"
+        elif is_boundary(new_boundary):
+            return swa_uuid_for_lock
+        else:
+            first_released = new_boundary.parent
+
+        # Drop this request's lock on [first_released, old boundary], mirroring
+        # release_component_lock.
+        unlocked_values = []
+        cur = first_released
+        while cur is not root:
+            comp = cur.component_data[ct]
+            ref = comp.lock_ref
+            assert ref > 0, f"SWA window release hit lock_ref=0 on node {cur.id}"
+            if ref == 1 and comp.value is not None:
+                self.tree_core.component_evictable_size_[ct] += len(comp.value)
+                self.tree_core.component_protected_size_[ct] -= len(comp.value)
+                unlocked_values.append(comp.value)
+            comp.lock_ref = ref - 1
+            if ref == 1:
+                self.tree_core._update_evictable_leaf_sets(cur)
+            if is_boundary(cur):
+                break
+            cur = cur.parent
+        if unlocked_values and envs.SGLANG_DEBUG_SWA_POISON_RELEASED_WINDOW.get():
+            self._poison_swa_slots(torch.cat(unlocked_values))
+
+        boundary_data = new_boundary.component_data[ct]
+        if boundary_data.metadata.get("uuid") is None:
+            boundary_data.metadata["uuid"] = next_component_uuid()
+        return boundary_data.metadata["uuid"]
+
+    def _poison_swa_slots(self, swa_indices: torch.Tensor) -> None:
+        # Debug: a later read of a released slot turns the reader's output into NaN.
+        # The sync keeps an in-flight overlap step from racing the write.
+        torch.cuda.synchronize()
+        kvcache = self.cache.token_to_kv_pool_allocator.get_kvcache()
+        for layer_id, (_, is_swa_layer) in kvcache.layers_mapping.items():
+            if not is_swa_layer:
+                continue
+            for buf in (
+                kvcache.get_key_buffer(layer_id),
+                kvcache.get_value_buffer(layer_id),
+            ):
+                if buf.dtype == torch.float8_e4m3fn:
+                    # 0x7F is E4M3's NaN; index_put_ has no float8 kernel.
+                    buf.view(torch.uint8)[swa_indices] = 0x7F
+                else:
+                    buf[swa_indices] = float("nan")
+
     def prepare_for_caching_req(
         self,
         req: Req,

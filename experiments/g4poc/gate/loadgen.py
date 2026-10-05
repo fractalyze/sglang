@@ -186,7 +186,7 @@ class _Run:
             if self.now() >= self.t_end:
                 return
             # A session cut by the window end must not hand its slot to a fresh session: with think time that
-            # would fire every slot's uncached first turn in the window's last think period (PC2's fix, dff92efc2b).
+            # would fire every slot's uncached first turn in the window's last think period.
             if await self.session(http, msgspec.structs.replace(st, t_start=self.now())):
                 return
 

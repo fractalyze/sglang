@@ -695,6 +695,28 @@ class Envs:
     # Registered TreeCore backend serving the unified radix cache.
     SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND = EnvStr("python")
     SGLANG_OPT_SWA_RELEASE_LEAF_LOCK_AFTER_WINDOW = EnvBool(False)
+    # During decode, every SGLANG_SWA_EVICTION_INTERVAL tokens, release the
+    # request's SWA tree lock on the part of its prefill-time window that has
+    # slid out (split at the slide frontier), so the pool can reclaim it while
+    # the request runs. Off: a request pins its whole prefill-time window
+    # until it finishes (window + reply length slots for replies shorter than
+    # a window). Python unified tree core only, no SWA host pool, no EAGLE.
+    SGLANG_OPT_SWA_RELEASE_SLID_WINDOW = EnvBool(False)
+    # Debug for the above: write NaN into the SWA KV of every slot it unlocks,
+    # so any later read of a released slot shows up as corrupted output.
+    SGLANG_DEBUG_SWA_POISON_RELEASED_WINDOW = EnvBool(False)
+    # HiCache load-back on a sliding-window model: during prefill admission,
+    # also pin the request's best_match_node, whose window the request locks
+    # once the host prefix is loaded. Off: only the device-matched last_node is
+    # pinned, so device SWA inside the post-load window counts as evictable,
+    # the load-back locks it uncharged, and the allocator can come up short.
+    SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW = EnvBool(False)
+    # HiCache under the overlap scheduler: order each write-through D2H copy
+    # after the forwards already queued on the forward stream. Off: a node
+    # inserted while its KV is still being written (a finished request's last
+    # token, a stashed prefill chunk) can be copied to host half-written, and a
+    # later load-back restores that stale KV.
+    SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH = EnvBool(False)
 
     # ===================================================================
     # PD disaggregation runtime
@@ -1418,6 +1440,10 @@ class Envs:
     # verify up to B=8); wider batches keep the BF16 embedding. Off by default:
     # it changes target numerics and adds the 740 MB copy.
     SGLANG_OPT_GEMMA4_FP8_LM_HEAD = EnvBool(False)
+    # Replace the Gemma-4 target's tied BF16 embedding/LM head (262144 x 2816)
+    # with one FP8 E4M3 table (per-row scales) for both the lookup and the head,
+    # freeing ~0.69 GB for the KV pool. Off by default: it changes numerics.
+    SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE = EnvBool(False)
     SGLANG_NGRAM_FORCE_GREEDY_VERIFY = EnvBool(False)
 
     # ===================================================================

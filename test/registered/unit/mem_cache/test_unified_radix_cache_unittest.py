@@ -10759,5 +10759,117 @@ class TestStreamingSessionLockLifecycle(CustomTestCase):
         cache.sanity_check()
 
 
+_SLID_WINDOW = 8
+_SLID_PROMPT_LEN = 40
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "cache fixtures need CUDA")
+class TestSWASlidWindowRelease(CustomTestCase):
+    """SGLANG_OPT_SWA_RELEASE_SLID_WINDOW: a decoding request drops its SWA tree
+    lock below the slide frontier, keeps the rest, and still releases at finish."""
+
+    cfg = CacheConfig(
+        page_size=1,
+        components=(ComponentType.FULL, ComponentType.SWA),
+        sliding_window_size=_SLID_WINDOW,
+        kv_size=256,
+    )
+
+    def setUp(self):
+        self.cache, self.allocator, _ = build_fixture(self.cfg)
+        self.assertTrue(self.cache.supports_swa_window_release())
+        seq = list(range(1, _SLID_PROMPT_LEN + 1))
+        self.cache.insert(
+            InsertParams(
+                key=RadixKey(array("q", seq)),
+                value=self.allocator.alloc(_SLID_PROMPT_LEN),
+            )
+        )
+        # The insert caps the in-window leaf at one window: [32, 40).
+        self.anchor = self.cache.match_prefix(
+            MatchPrefixParams(key=RadixKey(array("q", seq)))
+        ).last_device_node
+
+    def _lock(self) -> SimpleNamespace:
+        receipt = self.cache.inc_lock_ref(self.anchor).to_dec_params()
+        return SimpleNamespace(last_node=self.anchor, lock_receipt=receipt)
+
+    def _parent(self, node_id):
+        return self.cache.tree_core.node_by_id(node_id).parent.id
+
+    def test_release_splits_at_frontier_and_finish_releases_the_rest(self):
+        req = self._lock()
+        evictable = self.cache.swa_evictable_size()
+        protected = self.cache.swa_protected_size()
+
+        self.cache.release_swa_window_below(req, release_below=35)
+        released = self._parent(self.anchor)
+        self.assertEqual(len(self.cache.tree_core.node_by_id(released).key), 3)
+        self.assertEqual(_device_lock_ref(self.cache, released, ComponentType.SWA), 0)
+        self.assertEqual(_device_lock_ref(self.cache, released, ComponentType.FULL), 1)
+        self.assertEqual(
+            _device_lock_ref(self.cache, self.anchor, ComponentType.SWA), 1
+        )
+        self.assertEqual(self.cache.swa_evictable_size(), evictable + 3)
+        self.assertEqual(self.cache.swa_protected_size(), protected - 3)
+        self.cache.sanity_check()
+
+        # SWA eviction may now reclaim the released part, never the locked tail.
+        self.cache.evict(EvictParams(num_tokens=0, swa_num_tokens=_SLID_PROMPT_LEN))
+        self.assertIsNone(_device_value(self.cache, released, ComponentType.SWA))
+        self.assertIsNotNone(_device_value(self.cache, released, ComponentType.FULL))
+        self.assertIsNotNone(_device_value(self.cache, self.anchor, ComponentType.SWA))
+
+        self.cache.release_swa_window_below(req, release_below=38)
+        self.assertEqual(len(self.cache.tree_core.node_by_id(self.anchor).key), 2)
+        self.cache.sanity_check()
+
+        self.cache.dec_lock_ref(self.anchor, req.lock_receipt)
+        self.assertEqual(
+            _device_lock_ref(self.cache, self.anchor, ComponentType.SWA), 0
+        )
+        self.assertEqual(
+            _device_lock_ref(self.cache, self.anchor, ComponentType.FULL), 0
+        )
+        self.assertEqual(self.cache.swa_protected_size(), 0)
+        self.cache.sanity_check()
+
+    def test_a_shared_window_stays_locked_for_the_other_holder(self):
+        req_a, req_b = self._lock(), self._lock()
+        evictable = self.cache.swa_evictable_size()
+
+        self.cache.release_swa_window_below(req_a, release_below=35)
+        released = self._parent(self.anchor)
+        self.assertEqual(_device_lock_ref(self.cache, released, ComponentType.SWA), 1)
+        self.assertEqual(self.cache.swa_evictable_size(), evictable)
+        self.cache.sanity_check()
+
+        # B's untouched receipt still releases its whole segment, split part included.
+        self.cache.dec_lock_ref(self.anchor, req_b.lock_receipt)
+        self.assertEqual(_device_lock_ref(self.cache, released, ComponentType.SWA), 0)
+        self.assertEqual(
+            _device_lock_ref(self.cache, self.anchor, ComponentType.SWA), 1
+        )
+        self.cache.dec_lock_ref(self.anchor, req_a.lock_receipt)
+        self.assertEqual(
+            _device_lock_ref(self.cache, self.anchor, ComponentType.SWA), 0
+        )
+        self.assertEqual(self.cache.swa_protected_size(), 0)
+        self.cache.sanity_check()
+
+    def test_frontier_at_or_before_the_segment_start_changes_nothing(self):
+        req = self._lock()
+        receipt = req.lock_receipt
+        self.cache.release_swa_window_below(
+            req, release_below=_SLID_PROMPT_LEN - _SLID_WINDOW
+        )
+        self.assertEqual(req.lock_receipt, receipt)
+        self.assertEqual(
+            len(self.cache.tree_core.node_by_id(self.anchor).key), _SLID_WINDOW
+        )
+        self.cache.dec_lock_ref(self.anchor, req.lock_receipt)
+        self.cache.sanity_check()
+
+
 if __name__ == "__main__":
     unittest.main()

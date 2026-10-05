@@ -237,5 +237,95 @@
    "1024"
   ],
   "numerics_unchanged": true
+ },
+ "mem-hc-c24": {
+  "description": "Flag-only probe: mem-hc with --max-running-requests 24, to test whether capping the running batch keeps the scheduler from the C28 SWA admission crash (the queue takes the excess). Run in a 28G scope.",
+  "extends": "mem-hc",
+  "server_args": [
+   "--max-running-requests",
+   "24"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-qr-base-r025": {
+  "description": "Second numerics-neutral config change for the role-play language-adherence band: mem-qr-base with --swa-full-tokens-ratio 0.25 (same memory, different full/sliding pool sizes).",
+  "extends": "mem-qr-base",
+  "server_args": [
+   "--swa-full-tokens-ratio",
+   "0.25"
+  ],
+  "numerics_unchanged": true
+ },
+ "mem-final-c24": {
+  "description": "Admission-cap control: mem-final with --max-running-requests 24 and no HiCache (24G scope), to split the overload hold seen with mem-hc-c24 between the running cap and the host cache.",
+  "extends": "mem-final",
+  "server_args": [
+   "--max-running-requests",
+   "24"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-c1c2a-qa": {
+  "description": "Full quality anchor, final-mem-c1-c2a arm (cross-host replicate of PB's combined final on bs3): GSM8K/tool-JSON at a 0.85 static fraction, against mem-qa-base.",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-c1c2a-qr": {
+  "description": "Role-play anchor, final-mem-c1-c2a arm: 0.85 with 1024-token prefill chunks (same as mem-qr-base).",
+  "extends": "final-c1c2a-qa",
+  "server_args": [
+   "--chunked-prefill-size",
+   "1024"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-qa": {
+  "description": "Full quality anchor, final-hc arm: GSM8K/tool-JSON at a 0.85 static fraction, against mem-qa-base. Run in a 28G scope (HiCache host pool).",
+  "extends": "final-hc",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-qr": {
+  "description": "Role-play anchor, final-hc arm: 0.85 with 1024-token prefill chunks (same as mem-qr-base). 28G scope.",
+  "extends": "final-hc-qa",
+  "server_args": [
+   "--chunked-prefill-size",
+   "1024"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-c1c2a-qr-r025": {
+  "description": "Third numerics-neutral config change for the role-play band: final-c1c2a-qr with --swa-full-tokens-ratio 0.25 (same memory, different pool sizes).",
+  "extends": "final-c1c2a-qr",
+  "server_args": [
+   "--swa-full-tokens-ratio",
+   "0.25"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-cpl-qr": {
+  "description": "Role-play quality arm for the final config final-hc-cp2048-lpm at a 0.85 static fraction, keeping its 2048-token prefill chunks (the numerics under test). 28G scope.",
+  "extends": "final-hc-cp2048-lpm",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-cpl-qr-c1024": {
+  "description": "Fallback for final-cpl-qr if the input-logprob requests do not fit with 2048-token chunks: 1024-token chunks as in every other role-play arm.",
+  "extends": "final-cpl-qr",
+  "server_args": [
+   "--chunked-prefill-size",
+   "1024"
+  ],
+  "numerics_unchanged": true
  }
 }

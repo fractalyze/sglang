@@ -1,0 +1,9 @@
+[2026-10-05 13:05:31] Load weight begin. avail mem=30.71 GB
+[2026-10-05 13:05:33] Replaced the tied BF16 embedding/LM head [262144, 2816] with an FP8 E4M3 table (per-row scales).
+[2026-10-05 13:05:33] Load weight end. elapsed=2.62 s, type=Gemma4ForCausalLM, quant=compressed-tensors, avail mem=6.97 GB, mem usage=23.74 GB.
+[2026-10-05 13:05:35] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 179427, K size: 0.86 GB, V size: 0.86 GB
+[2026-10-05 13:05:35] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 40550, K size: 1.93 GB, V size: 1.93 GB
+[2026-10-05 13:05:35] Memory pool end. avail mem=1.34 GB
+[2026-10-05 13:05:35] Capture target decode CUDA graph begin. backend=full, num_tokens_per_req=1, bs=[1, 2, 4, 8, 12, 16, 24, 32, 40, 48], avail mem=1.30 GB
+[2026-10-05 13:05:56] Capture target decode CUDA graph end. elapsed=21.32 s, mem usage=0.20 GB, avail mem=1.10 GB.
+[2026-10-05 13:05:56] max_total_num_tokens=179427, chunked_prefill_size=4096, max_prefill_tokens=16384, max_running_requests=64, context_len=16384, available_gpu_mem=1.10 GB

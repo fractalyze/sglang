@@ -282,6 +282,18 @@ class UnifiedTreeCoreInterface(ABC):
         counts; the result carries the freed slots."""
         ...
 
+    def release_swa_window_below(
+        self,
+        node_id: NodeId,
+        params: DecLockRefParams,
+        release_below: int,
+    ) -> DecLockRefParams:
+        """Drop the SWA lock this receipt holds below token ``release_below``
+        (SGLANG_OPT_SWA_RELEASE_SLID_WINDOW); returns the receipt to keep."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support SGLANG_OPT_SWA_RELEASE_SLID_WINDOW"
+        )
+
     # ==== Device eviction (driven step-wise by the Controller's evict()) ====
 
     @abstractmethod

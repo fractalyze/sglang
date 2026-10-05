@@ -1,0 +1,10 @@
+[2026-10-05 11:45:33] Load weight begin. avail mem=30.71 GB
+[2026-10-05 11:45:38] Load weight end. elapsed=5.54 s, type=Gemma4ForCausalLM, quant=compressed-tensors, avail mem=5.59 GB, mem usage=25.12 GB.
+[2026-10-05 11:45:40] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 114375, K size: 0.55 GB, V size: 0.55 GB
+[2026-10-05 11:45:40] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 34312, K size: 1.64 GB, V size: 1.64 GB
+[2026-10-05 11:45:40] Memory pool end. avail mem=0.96 GB
+[2026-10-05 11:45:40] Capture target decode CUDA graph begin. backend=full, num_tokens_per_req=1, bs=[1, 2, 4, 8, 12, 16, 24, 32], avail mem=0.91 GB
+[2026-10-05 11:46:01] Capture target decode CUDA graph end. elapsed=20.32 s, mem usage=0.13 GB, avail mem=0.78 GB.
+[2026-10-05 11:46:01] max_total_num_tokens=114375, chunked_prefill_size=4096, max_prefill_tokens=16384, max_running_requests=3574, context_len=16384, available_gpu_mem=0.78 GB
+[2026-10-05 11:46:01] Init Unified Radix Cache. Components: (<ComponentType.FULL: 0>, <ComponentType.SWA: 1>). Tree Core: UnifiedTreeCore
+[2026-10-05 11:46:01] Tree cache initialized: source=default impl=UnifiedRadixCache hybrid_swa=True hybrid_ssm=False hicache_attached=False streaming_wrapped=False

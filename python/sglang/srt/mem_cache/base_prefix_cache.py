@@ -573,6 +573,13 @@ class BasePrefixCache(ABC, PrefixCacheTrait):
     def supports_swa(self) -> bool:
         return False
 
+    def supports_swa_window_release(self) -> bool:
+        # SGLANG_OPT_SWA_RELEASE_SLID_WINDOW; see release_swa_window_below.
+        return False
+
+    def release_swa_window_below(self, req, release_below: int) -> None:
+        raise NotImplementedError(f"{type(self).__name__} cannot release an SWA window")
+
     def swa_retain_floor(self, req) -> int | None:
         # A match lands on a state checkpoint rather than on the tail, so a cache
         # that pairs SWA with mamba/conv checkpoints has to keep the window behind

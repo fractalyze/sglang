@@ -1,0 +1,400 @@
+[2026-10-05 15:39:05] SWADBG alloc.post_evict swa_avail=3766 swa_evict=1849 swa_prot=29669 full_avail=759 full_evict=4284 need=28
+[2026-10-05 15:39:05] SWADBG alloc.pre_evict swa_avail=3738 swa_evict=1849 swa_prot=29669 full_avail=731 full_evict=4284 need=28
+[2026-10-05 15:39:05] SWADBG alloc.post_evict swa_avail=3738 swa_evict=1849 swa_prot=29669 full_avail=731 full_evict=4284 need=28
+[2026-10-05 15:39:05] SWADBG alloc.pre_evict swa_avail=3710 swa_evict=1849 swa_prot=29669 full_avail=703 full_evict=4284 need=28
+[2026-10-05 15:39:05] SWADBG alloc.post_evict swa_avail=3710 swa_evict=1849 swa_prot=29669 full_avail=703 full_evict=4284 need=28
+[2026-10-05 15:39:05] SWADBG alloc.pre_evict swa_avail=3682 swa_evict=1849 swa_prot=29669 full_avail=675 full_evict=4284 need=28
+[2026-10-05 15:39:05] SWADBG alloc.post_evict swa_avail=3682 swa_evict=1849 swa_prot=29669 full_avail=675 full_evict=4284 need=28
+[2026-10-05 15:39:05] SWADBG alloc.pre_evict swa_avail=3654 swa_evict=1849 swa_prot=29884 full_avail=647 full_evict=4284 need=27
+[2026-10-05 15:39:05] SWADBG alloc.post_evict swa_avail=3654 swa_evict=1849 swa_prot=29884 full_avail=647 full_evict=4284 need=27
+[2026-10-05 15:39:05] SWADBG add.selected swa_avail=3627 swa_evict=3087 swa_prot=28646 full_avail=620 full_evict=9250 swa_offset=0 rem_swa=6714 rid=a940556f admission=_PrefillAdmission(prefix_len=15, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:05] SWADBG add.loaded swa_avail=3625 swa_evict=3087 swa_prot=28648 full_avail=620 full_evict=9248 swa_offset=0 rem_swa=6712 rid=a940556f promised=2 loaded=2
+[2026-10-05 15:39:05] SWADBG add.commit swa_avail=3625 swa_evict=3087 swa_prot=28648 full_avail=620 full_evict=9248 swa_offset=4097 rem_swa=2615 rid=a940556f admission=_PrefillAdmission(prefix_len=15, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:05] SWADBG pre_alloc swa_avail=3625 swa_evict=3087 swa_prot=28648 full_avail=620 full_evict=9248 swa_offset=4097 rem_swa=2615 extends=[4096] rids=['a940556f']
+[2026-10-05 15:39:05] SWADBG alloc.pre_evict swa_avail=3625 swa_evict=3087 swa_prot=28648 full_avail=620 full_evict=9248 need=4096
+[2026-10-05 15:39:05] SWADBG alloc.post_evict swa_avail=4715 swa_evict=1997 swa_prot=28648 full_avail=4152 full_evict=5716 need=4096
+[2026-10-05 15:39:06] SWADBG chunk.add swa_avail=3691 swa_evict=2005 swa_prot=30020 full_avail=56 full_evict=5716 swa_offset=0 rem_swa=5696 rid=a940556f prefix=4111 cand=824 new_len=824
+[2026-10-05 15:39:06] SWADBG add.selected swa_avail=3691 swa_evict=2005 swa_prot=30020 full_avail=56 full_evict=5716 swa_offset=1024 rem_swa=4672 rid=8478c7ac admission=_PrefillAdmission(prefix_len=7612, extend_len=327, max_new_tokens=293, is_chunked=False)
+[2026-10-05 15:39:06] SWADBG add.commit swa_avail=3691 swa_evict=2005 swa_prot=30020 full_avail=56 full_evict=5716 swa_offset=1645 rem_swa=4051 rid=8478c7ac admission=_PrefillAdmission(prefix_len=7612, extend_len=327, max_new_tokens=293, is_chunked=False)
+[2026-10-05 15:39:06] SWADBG pre_alloc swa_avail=3691 swa_evict=2005 swa_prot=30020 full_avail=56 full_evict=5716 swa_offset=1645 rem_swa=4051 extends=[824, 327] rids=['a940556f', '8478c7ac']
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=3691 swa_evict=2005 swa_prot=30020 full_avail=56 full_evict=5716 need=1151
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=5681 swa_evict=15 swa_prot=30020 full_avail=2046 full_evict=3726 need=1151
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=4530 swa_evict=313 swa_prot=29722 full_avail=895 full_evict=4024 need=28
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=4530 swa_evict=313 swa_prot=29722 full_avail=895 full_evict=4024 need=28
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=4502 swa_evict=312 swa_prot=30874 full_avail=867 full_evict=4024 need=28
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=4502 swa_evict=312 swa_prot=30874 full_avail=867 full_evict=4024 need=28
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=4474 swa_evict=313 swa_prot=31163 full_avail=839 full_evict=4024 need=27
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=4474 swa_evict=313 swa_prot=31163 full_avail=839 full_evict=4024 need=27
+[2026-10-05 15:39:06] SWADBG add.selected swa_avail=4447 swa_evict=1625 swa_prot=29851 full_avail=812 full_evict=10588 swa_offset=0 rem_swa=6072 rid=a60316a1 admission=_PrefillAdmission(prefix_len=15, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:06] SWADBG add.loaded swa_avail=4445 swa_evict=1625 swa_prot=29853 full_avail=812 full_evict=10586 swa_offset=0 rem_swa=6070 rid=a60316a1 promised=2 loaded=2
+[2026-10-05 15:39:06] SWADBG add.commit swa_avail=4445 swa_evict=1625 swa_prot=29853 full_avail=812 full_evict=10586 swa_offset=4097 rem_swa=1973 rid=a60316a1 admission=_PrefillAdmission(prefix_len=15, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:06] SWADBG pre_alloc swa_avail=4445 swa_evict=1625 swa_prot=29853 full_avail=812 full_evict=10586 swa_offset=4097 rem_swa=1973 extends=[4096] rids=['a60316a1']
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=4445 swa_evict=1625 swa_prot=29853 full_avail=812 full_evict=10586 need=4096
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=4445 swa_evict=1625 swa_prot=29853 full_avail=4538 full_evict=6860 need=4096
+[2026-10-05 15:39:06] SWADBG chunk.add swa_avail=3421 swa_evict=1628 swa_prot=30874 full_avail=4538 full_evict=2764 swa_offset=0 rem_swa=5049 rid=a60316a1 prefix=4111 cand=2502 new_len=2502
+[2026-10-05 15:39:06] SWADBG pre_alloc swa_avail=3421 swa_evict=1628 swa_prot=30874 full_avail=4538 full_evict=2764 swa_offset=2503 rem_swa=2546 extends=[2502] rids=['a60316a1']
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=3421 swa_evict=1628 swa_prot=30874 full_avail=4538 full_evict=2764 need=2502
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=3421 swa_evict=1628 swa_prot=30874 full_avail=4538 full_evict=2764 need=2502
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=919 swa_evict=1628 swa_prot=30874 full_avail=2036 full_evict=2764 need=28
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=919 swa_evict=1628 swa_prot=30874 full_avail=2036 full_evict=2764 need=28
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=3058 swa_evict=1633 swa_prot=30874 full_avail=4180 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=3058 swa_evict=1633 swa_prot=30874 full_avail=4180 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=3030 swa_evict=1633 swa_prot=30874 full_avail=4152 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=3030 swa_evict=1633 swa_prot=30874 full_avail=4152 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=3002 swa_evict=1633 swa_prot=30874 full_avail=4124 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=3002 swa_evict=1633 swa_prot=30874 full_avail=4124 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=2974 swa_evict=1633 swa_prot=30874 full_avail=4096 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=2974 swa_evict=1633 swa_prot=30874 full_avail=4096 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=2946 swa_evict=1633 swa_prot=30874 full_avail=4068 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=2946 swa_evict=1633 swa_prot=30874 full_avail=4068 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=2918 swa_evict=1633 swa_prot=30874 full_avail=4040 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=2918 swa_evict=1633 swa_prot=30874 full_avail=4040 full_evict=592 need=28
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=2890 swa_evict=1633 swa_prot=31172 full_avail=4012 full_evict=592 need=27
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=2890 swa_evict=1633 swa_prot=31172 full_avail=4012 full_evict=592 need=27
+[2026-10-05 15:39:06] SWADBG add.selected swa_avail=2863 swa_evict=2954 swa_prot=29851 full_avail=3985 full_evict=6739 swa_offset=0 rem_swa=5817 rid=c9ff52eb admission=_PrefillAdmission(prefix_len=15, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:06] SWADBG add.loaded swa_avail=2861 swa_evict=2954 swa_prot=29853 full_avail=3985 full_evict=6737 swa_offset=0 rem_swa=5815 rid=c9ff52eb promised=2 loaded=2
+[2026-10-05 15:39:06] SWADBG add.commit swa_avail=2861 swa_evict=2954 swa_prot=29853 full_avail=3985 full_evict=6737 swa_offset=4097 rem_swa=1718 rid=c9ff52eb admission=_PrefillAdmission(prefix_len=15, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:06] SWADBG pre_alloc swa_avail=2861 swa_evict=2954 swa_prot=29853 full_avail=3985 full_evict=6737 swa_offset=4097 rem_swa=1718 extends=[4096] rids=['c9ff52eb']
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=2861 swa_evict=2954 swa_prot=29853 full_avail=3985 full_evict=6737 need=4096
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=4494 swa_evict=1321 swa_prot=29853 full_avail=4573 full_evict=6149 need=4096
+[2026-10-05 15:39:06] SWADBG chunk.add swa_avail=3470 swa_evict=1323 swa_prot=30875 full_avail=4573 full_evict=2053 swa_offset=0 rem_swa=4793 rid=c9ff52eb prefix=4111 cand=2078 new_len=2078
+[2026-10-05 15:39:06] SWADBG pre_alloc swa_avail=3470 swa_evict=1323 swa_prot=30875 full_avail=4573 full_evict=2053 swa_offset=2079 rem_swa=2714 extends=[2078] rids=['c9ff52eb']
+[2026-10-05 15:39:06] SWADBG alloc.pre_evict swa_avail=3470 swa_evict=1323 swa_prot=30875 full_avail=4573 full_evict=2053 need=2078
+[2026-10-05 15:39:06] SWADBG alloc.post_evict swa_avail=3470 swa_evict=1323 swa_prot=30875 full_avail=4573 full_evict=2053 need=2078
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=1392 swa_evict=1323 swa_prot=30875 full_avail=2495 full_evict=2053 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=1392 swa_evict=1323 swa_prot=30875 full_avail=2495 full_evict=2053 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3106 swa_evict=1328 swa_prot=30875 full_avail=4214 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3106 swa_evict=1328 swa_prot=30875 full_avail=4214 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3078 swa_evict=1328 swa_prot=30875 full_avail=4186 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3078 swa_evict=1328 swa_prot=30875 full_avail=4186 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3050 swa_evict=1328 swa_prot=30875 full_avail=4158 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3050 swa_evict=1328 swa_prot=30875 full_avail=4158 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3022 swa_evict=1328 swa_prot=30875 full_avail=4130 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3022 swa_evict=1328 swa_prot=30875 full_avail=4130 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2994 swa_evict=1328 swa_prot=30875 full_avail=4102 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2994 swa_evict=1328 swa_prot=30875 full_avail=4102 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2966 swa_evict=1328 swa_prot=30875 full_avail=4074 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2966 swa_evict=1328 swa_prot=30875 full_avail=4074 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2938 swa_evict=1328 swa_prot=30875 full_avail=4046 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2938 swa_evict=1328 swa_prot=30875 full_avail=4046 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2910 swa_evict=1328 swa_prot=30875 full_avail=4018 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2910 swa_evict=1328 swa_prot=30875 full_avail=4018 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2882 swa_evict=1328 swa_prot=30875 full_avail=3990 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2882 swa_evict=1328 swa_prot=30875 full_avail=3990 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2854 swa_evict=1328 swa_prot=30875 full_avail=3962 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2854 swa_evict=1328 swa_prot=30875 full_avail=3962 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2826 swa_evict=1328 swa_prot=30875 full_avail=3934 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2826 swa_evict=1328 swa_prot=30875 full_avail=3934 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2798 swa_evict=1328 swa_prot=30875 full_avail=3906 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2798 swa_evict=1328 swa_prot=30875 full_avail=3906 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2770 swa_evict=1328 swa_prot=30875 full_avail=3878 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2770 swa_evict=1328 swa_prot=30875 full_avail=3878 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2742 swa_evict=1328 swa_prot=30875 full_avail=3850 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2742 swa_evict=1328 swa_prot=30875 full_avail=3850 full_evict=306 need=28
+[2026-10-05 15:39:07] SWADBG add.selected swa_avail=2714 swa_evict=1328 swa_prot=31999 full_avail=3822 full_evict=306 swa_offset=0 rem_swa=4042 rid=6652f790 admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2714 swa_evict=1330 swa_prot=31997 full_avail=3822 full_evict=306 need=27
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=2714 swa_evict=1330 swa_prot=31997 full_avail=3822 full_evict=306 need=27
+[2026-10-05 15:39:07] SWADBG add.selected swa_avail=2687 swa_evict=2452 swa_prot=30875 full_avail=3795 full_evict=4357 swa_offset=0 rem_swa=5139 rid=6652f790 admission=_PrefillAdmission(prefix_len=15, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:07] SWADBG add.commit swa_avail=2687 swa_evict=2452 swa_prot=30875 full_avail=3795 full_evict=4357 swa_offset=4097 rem_swa=1042 rid=6652f790 admission=_PrefillAdmission(prefix_len=15, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:07] SWADBG pre_alloc swa_avail=2687 swa_evict=2452 swa_prot=30875 full_avail=3795 full_evict=4357 swa_offset=4097 rem_swa=1042 extends=[4096] rids=['6652f790']
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=2687 swa_evict=2452 swa_prot=30875 full_avail=3795 full_evict=4357 need=4096
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=4116 swa_evict=1023 swa_prot=30875 full_avail=4101 full_evict=4051 need=4096
+[2026-10-05 15:39:07] SWADBG chunk.add swa_avail=3862 swa_evict=106 swa_prot=31897 full_avail=3952 full_evict=104 swa_offset=0 rem_swa=3968 rid=6652f790 prefix=4111 cand=176 new_len=176
+[2026-10-05 15:39:07] SWADBG pre_alloc swa_avail=3862 swa_evict=106 swa_prot=31897 full_avail=3952 full_evict=104 swa_offset=467 rem_swa=3501 extends=[176] rids=['6652f790']
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3862 swa_evict=106 swa_prot=31897 full_avail=3952 full_evict=104 need=176
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3862 swa_evict=106 swa_prot=31897 full_avail=3952 full_evict=104 need=176
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3686 swa_evict=106 swa_prot=31897 full_avail=3776 full_evict=104 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3686 swa_evict=106 swa_prot=31897 full_avail=3776 full_evict=104 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3658 swa_evict=211 swa_prot=32117 full_avail=3748 full_evict=104 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3658 swa_evict=211 swa_prot=32117 full_avail=3748 full_evict=104 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3630 swa_evict=211 swa_prot=32117 full_avail=3720 full_evict=104 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3630 swa_evict=211 swa_prot=32117 full_avail=3720 full_evict=104 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3602 swa_evict=211 swa_prot=32117 full_avail=3692 full_evict=104 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3602 swa_evict=211 swa_prot=32117 full_avail=3692 full_evict=104 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3574 swa_evict=216 swa_prot=32691 full_avail=3664 full_evict=104 need=27
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3574 swa_evict=216 swa_prot=32691 full_avail=3664 full_evict=104 need=27
+[2026-10-05 15:39:07] SWADBG add.selected swa_avail=3547 swa_evict=304 swa_prot=32603 full_avail=3637 full_evict=192 swa_offset=0 rem_swa=3851 rid=b6ee7447 admission=_PrefillAdmission(prefix_len=5234, extend_len=112, max_new_tokens=16, is_chunked=False)
+[2026-10-05 15:39:07] SWADBG add.commit swa_avail=3547 swa_evict=304 swa_prot=32603 full_avail=3637 full_evict=192 swa_offset=129 rem_swa=3722 rid=b6ee7447 admission=_PrefillAdmission(prefix_len=5234, extend_len=112, max_new_tokens=16, is_chunked=False)
+[2026-10-05 15:39:07] SWADBG pre_alloc swa_avail=3547 swa_evict=304 swa_prot=32603 full_avail=3637 full_evict=192 swa_offset=129 rem_swa=3722 extends=[112] rids=['b6ee7447']
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3547 swa_evict=304 swa_prot=32603 full_avail=3637 full_evict=192 need=112
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3547 swa_evict=304 swa_prot=32603 full_avail=3637 full_evict=192 need=112
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3435 swa_evict=304 swa_prot=32603 full_avail=3525 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3435 swa_evict=304 swa_prot=32603 full_avail=3525 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3407 swa_evict=304 swa_prot=32715 full_avail=3497 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3407 swa_evict=304 swa_prot=32715 full_avail=3497 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3379 swa_evict=304 swa_prot=32715 full_avail=3469 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3379 swa_evict=304 swa_prot=32715 full_avail=3469 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3351 swa_evict=304 swa_prot=32715 full_avail=3441 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3351 swa_evict=304 swa_prot=32715 full_avail=3441 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3323 swa_evict=304 swa_prot=32715 full_avail=3413 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3323 swa_evict=304 swa_prot=32715 full_avail=3413 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3295 swa_evict=304 swa_prot=32715 full_avail=3385 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3295 swa_evict=304 swa_prot=32715 full_avail=3385 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3395 swa_evict=304 swa_prot=32715 full_avail=3357 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3395 swa_evict=304 swa_prot=32715 full_avail=3357 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3367 swa_evict=304 swa_prot=32715 full_avail=3329 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3367 swa_evict=304 swa_prot=32715 full_avail=3329 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3339 swa_evict=304 swa_prot=32715 full_avail=3301 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3339 swa_evict=304 swa_prot=32715 full_avail=3301 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3439 swa_evict=304 swa_prot=32715 full_avail=3273 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3439 swa_evict=304 swa_prot=32715 full_avail=3273 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3411 swa_evict=304 swa_prot=32715 full_avail=3245 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3411 swa_evict=304 swa_prot=32715 full_avail=3245 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3383 swa_evict=304 swa_prot=32715 full_avail=3217 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3383 swa_evict=304 swa_prot=32715 full_avail=3217 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3355 swa_evict=304 swa_prot=32715 full_avail=3189 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3355 swa_evict=304 swa_prot=32715 full_avail=3189 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3327 swa_evict=304 swa_prot=32715 full_avail=3161 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3327 swa_evict=304 swa_prot=32715 full_avail=3161 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3299 swa_evict=304 swa_prot=32715 full_avail=3133 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3299 swa_evict=304 swa_prot=32715 full_avail=3133 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3271 swa_evict=304 swa_prot=32715 full_avail=3105 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3271 swa_evict=304 swa_prot=32715 full_avail=3105 full_evict=192 need=28
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3243 swa_evict=304 swa_prot=32731 full_avail=3077 full_evict=192 need=27
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3243 swa_evict=304 swa_prot=32731 full_avail=3077 full_evict=192 need=27
+[2026-10-05 15:39:07] SWADBG add.selected swa_avail=3216 swa_evict=324 swa_prot=32711 full_avail=3050 full_evict=212 swa_offset=0 rem_swa=3540 rid=94819176 admission=_PrefillAdmission(prefix_len=5342, extend_len=55, max_new_tokens=30, is_chunked=False)
+[2026-10-05 15:39:07] SWADBG add.commit swa_avail=3216 swa_evict=324 swa_prot=32711 full_avail=3050 full_evict=212 swa_offset=86 rem_swa=3454 rid=94819176 admission=_PrefillAdmission(prefix_len=5342, extend_len=55, max_new_tokens=30, is_chunked=False)
+[2026-10-05 15:39:07] SWADBG pre_alloc swa_avail=3216 swa_evict=324 swa_prot=32711 full_avail=3050 full_evict=212 swa_offset=86 rem_swa=3454 extends=[55] rids=['94819176']
+[2026-10-05 15:39:07] SWADBG alloc.pre_evict swa_avail=3216 swa_evict=324 swa_prot=32711 full_avail=3050 full_evict=212 need=55
+[2026-10-05 15:39:07] SWADBG alloc.post_evict swa_avail=3216 swa_evict=324 swa_prot=32711 full_avail=3050 full_evict=212 need=55
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=3161 swa_evict=324 swa_prot=32711 full_avail=2995 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=3161 swa_evict=324 swa_prot=32711 full_avail=2995 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=3133 swa_evict=324 swa_prot=32766 full_avail=2967 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=3133 swa_evict=324 swa_prot=32766 full_avail=2967 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=3105 swa_evict=324 swa_prot=32766 full_avail=2939 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=3105 swa_evict=324 swa_prot=32766 full_avail=2939 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=3077 swa_evict=324 swa_prot=32766 full_avail=2911 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=3077 swa_evict=324 swa_prot=32766 full_avail=2911 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=3049 swa_evict=324 swa_prot=32766 full_avail=2883 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=3049 swa_evict=324 swa_prot=32766 full_avail=2883 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=3021 swa_evict=324 swa_prot=32766 full_avail=2855 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=3021 swa_evict=324 swa_prot=32766 full_avail=2855 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2993 swa_evict=324 swa_prot=32766 full_avail=2827 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2993 swa_evict=324 swa_prot=32766 full_avail=2827 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2965 swa_evict=324 swa_prot=32766 full_avail=2799 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2965 swa_evict=324 swa_prot=32766 full_avail=2799 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2937 swa_evict=324 swa_prot=32766 full_avail=2771 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2937 swa_evict=324 swa_prot=32766 full_avail=2771 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2909 swa_evict=324 swa_prot=32766 full_avail=2743 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2909 swa_evict=324 swa_prot=32766 full_avail=2743 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2881 swa_evict=324 swa_prot=32766 full_avail=2715 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2881 swa_evict=324 swa_prot=32766 full_avail=2715 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2853 swa_evict=324 swa_prot=32766 full_avail=2687 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2853 swa_evict=324 swa_prot=32766 full_avail=2687 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2825 swa_evict=324 swa_prot=32766 full_avail=2659 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2825 swa_evict=324 swa_prot=32766 full_avail=2659 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2797 swa_evict=324 swa_prot=32766 full_avail=2631 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2797 swa_evict=324 swa_prot=32766 full_avail=2631 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2769 swa_evict=324 swa_prot=32766 full_avail=2603 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2769 swa_evict=324 swa_prot=32766 full_avail=2603 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2741 swa_evict=324 swa_prot=32766 full_avail=2575 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2741 swa_evict=324 swa_prot=32766 full_avail=2575 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2713 swa_evict=324 swa_prot=32766 full_avail=2547 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2713 swa_evict=324 swa_prot=32766 full_avail=2547 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2685 swa_evict=324 swa_prot=32766 full_avail=2519 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2685 swa_evict=324 swa_prot=32766 full_avail=2519 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2657 swa_evict=324 swa_prot=32766 full_avail=2491 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2657 swa_evict=324 swa_prot=32766 full_avail=2491 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2629 swa_evict=324 swa_prot=32766 full_avail=2463 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2629 swa_evict=324 swa_prot=32766 full_avail=2463 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2601 swa_evict=324 swa_prot=32766 full_avail=2435 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2601 swa_evict=324 swa_prot=32766 full_avail=2435 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2573 swa_evict=324 swa_prot=32766 full_avail=2407 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2573 swa_evict=324 swa_prot=32766 full_avail=2407 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2545 swa_evict=324 swa_prot=32766 full_avail=2379 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2545 swa_evict=324 swa_prot=32766 full_avail=2379 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2517 swa_evict=324 swa_prot=32766 full_avail=2351 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2517 swa_evict=324 swa_prot=32766 full_avail=2351 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2489 swa_evict=324 swa_prot=32766 full_avail=2323 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2489 swa_evict=324 swa_prot=32766 full_avail=2323 full_evict=212 need=28
+[2026-10-05 15:39:08] SWADBG add.selected swa_avail=2461 swa_evict=324 swa_prot=33913 full_avail=2295 full_evict=212 swa_offset=0 rem_swa=2785 rid=07e9702b admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2461 swa_evict=326 swa_prot=33911 full_avail=2295 full_evict=212 need=26
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2461 swa_evict=326 swa_prot=33911 full_avail=2295 full_evict=212 need=26
+[2026-10-05 15:39:08] SWADBG add.selected swa_avail=2435 swa_evict=3116 swa_prot=31121 full_avail=2269 full_evict=11248 swa_offset=0 rem_swa=5551 rid=07e9702b admission=_PrefillAdmission(prefix_len=15, extend_len=3075, max_new_tokens=251, is_chunked=False)
+[2026-10-05 15:39:08] SWADBG add.commit swa_avail=2435 swa_evict=3116 swa_prot=31121 full_avail=2269 full_evict=11248 swa_offset=3076 rem_swa=2475 rid=07e9702b admission=_PrefillAdmission(prefix_len=15, extend_len=3075, max_new_tokens=251, is_chunked=False)
+[2026-10-05 15:39:08] SWADBG add.selected swa_avail=2435 swa_evict=3116 swa_prot=31121 full_avail=2269 full_evict=11248 swa_offset=3076 rem_swa=2475 rid=d7d063a4 admission=_PrefillAdmission(prefix_len=12, extend_len=1021, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:08] SWADBG add.commit swa_avail=2435 swa_evict=3116 swa_prot=31121 full_avail=2269 full_evict=11248 swa_offset=4098 rem_swa=1453 rid=d7d063a4 admission=_PrefillAdmission(prefix_len=12, extend_len=1021, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:08] SWADBG pre_alloc swa_avail=2435 swa_evict=3116 swa_prot=31121 full_avail=2269 full_evict=11248 swa_offset=4098 rem_swa=1453 extends=[3075, 1021] rids=['07e9702b', 'd7d063a4']
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2435 swa_evict=3116 swa_prot=31121 full_avail=2269 full_evict=11248 need=4096
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=4379 swa_evict=1172 swa_prot=31121 full_avail=4213 full_evict=9304 need=4096
+[2026-10-05 15:39:08] SWADBG chunk.add swa_avail=283 swa_evict=1172 swa_prot=31123 full_avail=119 full_evict=9302 swa_offset=0 rem_swa=1455 rid=d7d063a4 prefix=1033 cand=3068 new_len=1454
+[2026-10-05 15:39:08] SWADBG pre_alloc swa_avail=283 swa_evict=1172 swa_prot=31123 full_avail=119 full_evict=9302 swa_offset=1455 rem_swa=0 extends=[1454] rids=['d7d063a4']
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=283 swa_evict=1172 swa_prot=31123 full_avail=119 full_evict=9302 need=1454
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=1455 swa_evict=0 swa_prot=31123 full_avail=1926 full_evict=7495 need=1454
+[2026-10-05 15:39:08] SWADBG chunk.add swa_avail=3272 swa_evict=3 swa_prot=33168 full_avail=3318 full_evict=4649 swa_offset=0 rem_swa=3275 rid=d7d063a4 prefix=2487 cand=1614 new_len=1614
+[2026-10-05 15:39:08] SWADBG pre_alloc swa_avail=3272 swa_evict=3 swa_prot=33168 full_avail=3318 full_evict=4649 swa_offset=1615 rem_swa=1660 extends=[1614] rids=['d7d063a4']
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=3272 swa_evict=3 swa_prot=33168 full_avail=3318 full_evict=4649 need=1614
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=3272 swa_evict=3 swa_prot=33168 full_avail=3318 full_evict=4649 need=1614
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=1658 swa_evict=5 swa_prot=33166 full_avail=1704 full_evict=4649 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=1658 swa_evict=5 swa_prot=33166 full_avail=1704 full_evict=4649 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2220 swa_evict=4 swa_prot=34191 full_avail=1676 full_evict=4649 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2220 swa_evict=4 swa_prot=34191 full_avail=1676 full_evict=4649 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2192 swa_evict=1029 swa_prot=33166 full_avail=1648 full_evict=4649 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2192 swa_evict=1029 swa_prot=33166 full_avail=1648 full_evict=4649 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2164 swa_evict=1029 swa_prot=33166 full_avail=1620 full_evict=4649 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2164 swa_evict=1029 swa_prot=33166 full_avail=1620 full_evict=4649 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2136 swa_evict=1029 swa_prot=33196 full_avail=1592 full_evict=4649 need=27
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2136 swa_evict=1029 swa_prot=33196 full_avail=1592 full_evict=4649 need=27
+[2026-10-05 15:39:08] SWADBG add.selected swa_avail=2109 swa_evict=1068 swa_prot=33603 full_avail=1565 full_evict=4683 swa_offset=0 rem_swa=3177 rid=0981b479 admission=_PrefillAdmission(prefix_len=5393, extend_len=87, max_new_tokens=28, is_chunked=False)
+[2026-10-05 15:39:08] SWADBG add.commit swa_avail=2109 swa_evict=1068 swa_prot=33603 full_avail=1565 full_evict=4683 swa_offset=116 rem_swa=3061 rid=0981b479 admission=_PrefillAdmission(prefix_len=5393, extend_len=87, max_new_tokens=28, is_chunked=False)
+[2026-10-05 15:39:08] SWADBG pre_alloc swa_avail=2109 swa_evict=1068 swa_prot=33603 full_avail=1565 full_evict=4683 swa_offset=116 rem_swa=3061 extends=[87] rids=['0981b479']
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2109 swa_evict=1068 swa_prot=33603 full_avail=1565 full_evict=4683 need=87
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2109 swa_evict=1068 swa_prot=33603 full_avail=1565 full_evict=4683 need=87
+[2026-10-05 15:39:08] SWADBG add.selected swa_avail=2022 swa_evict=1205 swa_prot=33466 full_avail=1478 full_evict=4820 swa_offset=0 rem_swa=3227 rid=ecbd2bae admission=_PrefillAdmission(prefix_len=5645, extend_len=157, max_new_tokens=300, is_chunked=False)
+[2026-10-05 15:39:08] SWADBG add.commit swa_avail=2022 swa_evict=1205 swa_prot=33466 full_avail=1478 full_evict=4820 swa_offset=458 rem_swa=2769 rid=ecbd2bae admission=_PrefillAdmission(prefix_len=5645, extend_len=157, max_new_tokens=300, is_chunked=False)
+[2026-10-05 15:39:08] SWADBG pre_alloc swa_avail=2022 swa_evict=1205 swa_prot=33466 full_avail=1478 full_evict=4820 swa_offset=458 rem_swa=2769 extends=[157] rids=['ecbd2bae']
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=2022 swa_evict=1205 swa_prot=33466 full_avail=1478 full_evict=4820 need=157
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=2022 swa_evict=1205 swa_prot=33466 full_avail=1478 full_evict=4820 need=157
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=1865 swa_evict=1205 swa_prot=33553 full_avail=1321 full_evict=4820 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=1865 swa_evict=1205 swa_prot=33553 full_avail=1321 full_evict=4820 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=1837 swa_evict=1205 swa_prot=33710 full_avail=1293 full_evict=4820 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=1837 swa_evict=1205 swa_prot=33710 full_avail=1293 full_evict=4820 need=28
+[2026-10-05 15:39:08] SWADBG alloc.pre_evict swa_avail=1809 swa_evict=1205 swa_prot=33710 full_avail=1265 full_evict=4820 need=28
+[2026-10-05 15:39:08] SWADBG alloc.post_evict swa_avail=1809 swa_evict=1205 swa_prot=33710 full_avail=1265 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1781 swa_evict=1205 swa_prot=33710 full_avail=1237 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1781 swa_evict=1205 swa_prot=33710 full_avail=1237 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1753 swa_evict=1205 swa_prot=33710 full_avail=1209 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1753 swa_evict=1205 swa_prot=33710 full_avail=1209 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1725 swa_evict=1205 swa_prot=33710 full_avail=1181 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1725 swa_evict=1205 swa_prot=33710 full_avail=1181 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1697 swa_evict=1205 swa_prot=33710 full_avail=1153 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1697 swa_evict=1205 swa_prot=33710 full_avail=1153 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1669 swa_evict=1205 swa_prot=33710 full_avail=1125 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1669 swa_evict=1205 swa_prot=33710 full_avail=1125 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1641 swa_evict=1205 swa_prot=33710 full_avail=1097 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1641 swa_evict=1205 swa_prot=33710 full_avail=1097 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1613 swa_evict=1205 swa_prot=33710 full_avail=1069 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1613 swa_evict=1205 swa_prot=33710 full_avail=1069 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1713 swa_evict=1205 swa_prot=33710 full_avail=1041 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1713 swa_evict=1205 swa_prot=33710 full_avail=1041 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1685 swa_evict=1205 swa_prot=33710 full_avail=1013 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1685 swa_evict=1205 swa_prot=33710 full_avail=1013 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1657 swa_evict=1205 swa_prot=33710 full_avail=985 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1657 swa_evict=1205 swa_prot=33710 full_avail=985 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1629 swa_evict=1205 swa_prot=33710 full_avail=957 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1629 swa_evict=1205 swa_prot=33710 full_avail=957 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1601 swa_evict=1205 swa_prot=33710 full_avail=929 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1601 swa_evict=1205 swa_prot=33710 full_avail=929 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1573 swa_evict=1205 swa_prot=33710 full_avail=901 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1573 swa_evict=1205 swa_prot=33710 full_avail=901 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1545 swa_evict=1205 swa_prot=33710 full_avail=873 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1545 swa_evict=1205 swa_prot=33710 full_avail=873 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1517 swa_evict=1205 swa_prot=33710 full_avail=845 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1517 swa_evict=1205 swa_prot=33710 full_avail=845 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1489 swa_evict=1205 swa_prot=33710 full_avail=817 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1489 swa_evict=1205 swa_prot=33710 full_avail=817 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1461 swa_evict=1205 swa_prot=33710 full_avail=789 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1461 swa_evict=1205 swa_prot=33710 full_avail=789 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1433 swa_evict=1205 swa_prot=33710 full_avail=761 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1433 swa_evict=1205 swa_prot=33710 full_avail=761 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1405 swa_evict=1205 swa_prot=33710 full_avail=733 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1405 swa_evict=1205 swa_prot=33710 full_avail=733 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1377 swa_evict=1205 swa_prot=33710 full_avail=705 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1377 swa_evict=1205 swa_prot=33710 full_avail=705 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1349 swa_evict=1205 swa_prot=33710 full_avail=677 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1349 swa_evict=1205 swa_prot=33710 full_avail=677 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1321 swa_evict=1205 swa_prot=33710 full_avail=649 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1321 swa_evict=1205 swa_prot=33710 full_avail=649 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1293 swa_evict=1205 swa_prot=33710 full_avail=621 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1293 swa_evict=1205 swa_prot=33710 full_avail=621 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1265 swa_evict=1205 swa_prot=33710 full_avail=593 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1265 swa_evict=1205 swa_prot=33710 full_avail=593 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1237 swa_evict=1205 swa_prot=33710 full_avail=565 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1237 swa_evict=1205 swa_prot=33710 full_avail=565 full_evict=4820 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1209 swa_evict=2989 swa_prot=31954 full_avail=537 full_evict=10315 need=27
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1209 swa_evict=2989 swa_prot=31954 full_avail=537 full_evict=10315 need=27
+[2026-10-05 15:39:09] SWADBG add.selected swa_avail=1182 swa_evict=1237 swa_prot=33706 full_avail=510 full_evict=4852 swa_offset=0 rem_swa=2419 rid=0f363004 admission=_PrefillAdmission(prefix_len=5476, extend_len=90, max_new_tokens=34, is_chunked=False)
+[2026-10-05 15:39:09] SWADBG add.commit swa_avail=1182 swa_evict=1237 swa_prot=33706 full_avail=510 full_evict=4852 swa_offset=125 rem_swa=2294 rid=0f363004 admission=_PrefillAdmission(prefix_len=5476, extend_len=90, max_new_tokens=34, is_chunked=False)
+[2026-10-05 15:39:09] SWADBG pre_alloc swa_avail=1182 swa_evict=1237 swa_prot=33706 full_avail=510 full_evict=4852 swa_offset=125 rem_swa=2294 extends=[90] rids=['0f363004']
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1182 swa_evict=1237 swa_prot=33706 full_avail=510 full_evict=4852 need=90
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1182 swa_evict=1237 swa_prot=33706 full_avail=510 full_evict=4852 need=90
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1092 swa_evict=1237 swa_prot=33706 full_avail=420 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1092 swa_evict=1237 swa_prot=33706 full_avail=420 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1064 swa_evict=1237 swa_prot=33796 full_avail=392 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1064 swa_evict=1237 swa_prot=33796 full_avail=392 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1036 swa_evict=1237 swa_prot=33796 full_avail=364 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1036 swa_evict=1237 swa_prot=33796 full_avail=364 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=1008 swa_evict=1237 swa_prot=33796 full_avail=336 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=1008 swa_evict=1237 swa_prot=33796 full_avail=336 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=980 swa_evict=1237 swa_prot=33796 full_avail=308 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=980 swa_evict=1237 swa_prot=33796 full_avail=308 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=952 swa_evict=1237 swa_prot=33796 full_avail=280 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=952 swa_evict=1237 swa_prot=33796 full_avail=280 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=924 swa_evict=1237 swa_prot=33796 full_avail=252 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=924 swa_evict=1237 swa_prot=33796 full_avail=252 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=896 swa_evict=1237 swa_prot=33796 full_avail=224 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=896 swa_evict=1237 swa_prot=33796 full_avail=224 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=868 swa_evict=1237 swa_prot=33796 full_avail=196 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=868 swa_evict=1237 swa_prot=33796 full_avail=196 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=840 swa_evict=1237 swa_prot=33796 full_avail=168 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=840 swa_evict=1237 swa_prot=33796 full_avail=168 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=812 swa_evict=1237 swa_prot=33796 full_avail=140 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=812 swa_evict=1237 swa_prot=33796 full_avail=140 full_evict=4852 need=28
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=784 swa_evict=1237 swa_prot=34028 full_avail=112 full_evict=4852 need=27
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=784 swa_evict=1237 swa_prot=34028 full_avail=112 full_evict=4852 need=27
+[2026-10-05 15:39:09] SWADBG add.selected swa_avail=757 swa_evict=2492 swa_prot=32773 full_avail=85 full_evict=10758 swa_offset=0 rem_swa=3249 rid=8556347b admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=757 swa_evict=2492 swa_prot=32773 full_avail=85 full_evict=10758 need=27
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=757 swa_evict=2492 swa_prot=32773 full_avail=85 full_evict=10758 need=27
+[2026-10-05 15:39:09] SWADBG add.selected swa_avail=730 swa_evict=2492 swa_prot=32773 full_avail=58 full_evict=10758 swa_offset=0 rem_swa=3222 rid=8556347b admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=730 swa_evict=2492 swa_prot=32773 full_avail=58 full_evict=10758 need=27
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=730 swa_evict=2492 swa_prot=32773 full_avail=58 full_evict=10758 need=27
+[2026-10-05 15:39:09] SWADBG add.selected swa_avail=703 swa_evict=2492 swa_prot=32773 full_avail=31 full_evict=10758 swa_offset=0 rem_swa=3195 rid=8556347b admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=703 swa_evict=2492 swa_prot=32773 full_avail=31 full_evict=10758 need=27
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=703 swa_evict=2492 swa_prot=32773 full_avail=31 full_evict=10758 need=27
+[2026-10-05 15:39:09] SWADBG add.selected swa_avail=676 swa_evict=2492 swa_prot=32773 full_avail=4 full_evict=10758 swa_offset=0 rem_swa=3168 rid=8556347b admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=676 swa_evict=2492 swa_prot=32773 full_avail=3077 full_evict=7685 need=27
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=676 swa_evict=2492 swa_prot=32773 full_avail=3077 full_evict=7685 need=27
+[2026-10-05 15:39:09] SWADBG add.selected swa_avail=649 swa_evict=2492 swa_prot=32773 full_avail=3050 full_evict=7685 swa_offset=0 rem_swa=3141 rid=8556347b admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=649 swa_evict=2492 swa_prot=32773 full_avail=3050 full_evict=7685 need=27
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=649 swa_evict=2492 swa_prot=32773 full_avail=3050 full_evict=7685 need=27
+[2026-10-05 15:39:09] SWADBG add.selected swa_avail=622 swa_evict=2492 swa_prot=32923 full_avail=3023 full_evict=7685 swa_offset=0 rem_swa=3114 rid=8556347b admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=622 swa_evict=2492 swa_prot=32923 full_avail=3023 full_evict=7685 need=26
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=622 swa_evict=2492 swa_prot=32923 full_avail=3023 full_evict=7685 need=26
+[2026-10-05 15:39:09] SWADBG add.selected swa_avail=596 swa_evict=3974 swa_prot=31441 full_avail=2997 full_evict=14968 swa_offset=0 rem_swa=4570 rid=8556347b admission=_PrefillAdmission(prefix_len=14, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:09] SWADBG add.loaded swa_avail=595 swa_evict=3974 swa_prot=31442 full_avail=2997 full_evict=14967 swa_offset=0 rem_swa=4569 rid=8556347b promised=1 loaded=1
+[2026-10-05 15:39:09] SWADBG add.commit swa_avail=595 swa_evict=3974 swa_prot=31442 full_avail=2997 full_evict=14967 swa_offset=4097 rem_swa=472 rid=8556347b admission=_PrefillAdmission(prefix_len=14, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:09] SWADBG pre_alloc swa_avail=595 swa_evict=3974 swa_prot=31442 full_avail=2997 full_evict=14967 swa_offset=4097 rem_swa=472 extends=[4096] rids=['8556347b']
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=595 swa_evict=3974 swa_prot=31442 full_avail=2997 full_evict=14967 need=4096
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=4106 swa_evict=463 swa_prot=31442 full_avail=5000 full_evict=12964 need=4096
+[2026-10-05 15:39:09] SWADBG chunk.add swa_avail=3082 swa_evict=464 swa_prot=32465 full_avail=5000 full_evict=8868 swa_offset=0 rem_swa=3546 rid=8556347b prefix=4110 cand=1820 new_len=1820
+[2026-10-05 15:39:09] SWADBG add.selected swa_avail=3082 swa_evict=464 swa_prot=32465 full_avail=5000 full_evict=8868 swa_offset=1821 rem_swa=1725 rid=31fc9e8c admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:09] SWADBG pre_alloc swa_avail=3082 swa_evict=464 swa_prot=32465 full_avail=5000 full_evict=8868 swa_offset=1821 rem_swa=1725 extends=[1820] rids=['8556347b']
+[2026-10-05 15:39:09] SWADBG alloc.pre_evict swa_avail=3082 swa_evict=464 swa_prot=32465 full_avail=5000 full_evict=8868 need=1820
+[2026-10-05 15:39:09] SWADBG alloc.post_evict swa_avail=3082 swa_evict=464 swa_prot=32465 full_avail=5000 full_evict=8868 need=1820
+[2026-10-05 15:39:10] SWADBG add.selected swa_avail=1262 swa_evict=464 swa_prot=32465 full_avail=3180 full_evict=8868 swa_offset=0 rem_swa=1726 rid=31fc9e8c admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:10] SWADBG alloc.pre_evict swa_avail=1262 swa_evict=464 swa_prot=32465 full_avail=3180 full_evict=8868 need=27
+[2026-10-05 15:39:10] SWADBG alloc.post_evict swa_avail=1262 swa_evict=464 swa_prot=32465 full_avail=3180 full_evict=8868 need=27
+[2026-10-05 15:39:10] SWADBG add.selected swa_avail=1784 swa_evict=1488 swa_prot=32465 full_avail=4726 full_evict=7295 swa_offset=0 rem_swa=3272 rid=31fc9e8c admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:10] SWADBG alloc.pre_evict swa_avail=1784 swa_evict=1488 swa_prot=32465 full_avail=4726 full_evict=7295 need=27
+[2026-10-05 15:39:10] SWADBG alloc.post_evict swa_avail=1784 swa_evict=1488 swa_prot=32465 full_avail=4726 full_evict=7295 need=27
+[2026-10-05 15:39:10] SWADBG add.selected swa_avail=1757 swa_evict=1488 swa_prot=32465 full_avail=4699 full_evict=7295 swa_offset=0 rem_swa=3245 rid=31fc9e8c admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:10] SWADBG alloc.pre_evict swa_avail=1757 swa_evict=1488 swa_prot=32465 full_avail=4699 full_evict=7295 need=27
+[2026-10-05 15:39:10] SWADBG alloc.post_evict swa_avail=1757 swa_evict=1488 swa_prot=32465 full_avail=4699 full_evict=7295 need=27
+[2026-10-05 15:39:10] SWADBG add.selected swa_avail=1730 swa_evict=1488 swa_prot=32465 full_avail=4672 full_evict=7295 swa_offset=0 rem_swa=3218 rid=31fc9e8c admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:10] SWADBG alloc.pre_evict swa_avail=1730 swa_evict=1488 swa_prot=32465 full_avail=4672 full_evict=7295 need=27
+[2026-10-05 15:39:10] SWADBG alloc.post_evict swa_avail=1730 swa_evict=1488 swa_prot=32465 full_avail=4672 full_evict=7295 need=27
+[2026-10-05 15:39:10] SWADBG add.selected swa_avail=1703 swa_evict=1488 swa_prot=32465 full_avail=4645 full_evict=7295 swa_offset=0 rem_swa=3191 rid=31fc9e8c admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:10] SWADBG alloc.pre_evict swa_avail=1703 swa_evict=1488 swa_prot=32465 full_avail=4645 full_evict=7295 need=27
+[2026-10-05 15:39:10] SWADBG alloc.post_evict swa_avail=1703 swa_evict=1488 swa_prot=32465 full_avail=4645 full_evict=7295 need=27
+[2026-10-05 15:39:10] SWADBG add.selected swa_avail=1676 swa_evict=1488 swa_prot=32619 full_avail=4618 full_evict=7295 swa_offset=0 rem_swa=3164 rid=31fc9e8c admission=AddReqResult.NO_TOKEN
+[2026-10-05 15:39:10] SWADBG alloc.pre_evict swa_avail=1676 swa_evict=1488 swa_prot=32619 full_avail=4618 full_evict=7295 need=26
+[2026-10-05 15:39:10] SWADBG alloc.post_evict swa_avail=1676 swa_evict=1488 swa_prot=32619 full_avail=4618 full_evict=7295 need=26
+[2026-10-05 15:39:10] SWADBG add.selected swa_avail=1650 swa_evict=3015 swa_prot=31092 full_avail=4592 full_evict=12739 swa_offset=0 rem_swa=4665 rid=31fc9e8c admission=_PrefillAdmission(prefix_len=12, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:10] SWADBG add.commit swa_avail=1650 swa_evict=3015 swa_prot=31092 full_avail=4592 full_evict=12739 swa_offset=4097 rem_swa=568 rid=31fc9e8c admission=_PrefillAdmission(prefix_len=12, extend_len=4096, max_new_tokens=0, is_chunked=True)
+[2026-10-05 15:39:10] SWADBG pre_alloc swa_avail=1650 swa_evict=3015 swa_prot=31092 full_avail=4592 full_evict=12739 swa_offset=4097 rem_swa=568 extends=[4096] rids=['31fc9e8c']
+[2026-10-05 15:39:10] SWADBG alloc.pre_evict swa_avail=1650 swa_evict=3015 swa_prot=31092 full_avail=4592 full_evict=12739 need=4096
+[2026-10-05 15:39:10] SWADBG alloc.post_evict swa_avail=4157 swa_evict=508 swa_prot=31092 full_avail=4742 full_evict=12589 need=4096
+[2026-10-05 15:39:10] SWADBG chunk.add swa_avail=3131 swa_evict=508 swa_prot=31094 full_avail=648 full_evict=12587 swa_offset=0 rem_swa=3639 rid=31fc9e8c prefix=4108 cand=2071 new_len=2071
+[2026-10-05 15:39:10] SWADBG add.selected swa_avail=3131 swa_evict=508 swa_prot=31094 full_avail=648 full_evict=12587 swa_offset=2072 rem_swa=1567 rid=d99115e9 admission=_PrefillAdmission(prefix_len=5299, extend_len=247, max_new_tokens=175, is_chunked=False)
+[2026-10-05 15:39:10] SWADBG add.loaded swa_avail=2112 swa_evict=158 swa_prot=32463 full_avail=648 full_evict=7301 swa_offset=2072 rem_swa=198 rid=d99115e9 promised=5286 loaded=5286
+[2026-10-05 15:39:10] SWADBG add.commit swa_avail=2112 swa_evict=158 swa_prot=32463 full_avail=648 full_evict=7301 swa_offset=2495 rem_swa=-225 rid=d99115e9 admission=_PrefillAdmission(prefix_len=5299, extend_len=247, max_new_tokens=175, is_chunked=False)
+[2026-10-05 15:39:10] SWADBG pre_alloc swa_avail=2112 swa_evict=158 swa_prot=32463 full_avail=648 full_evict=7301 swa_offset=2495 rem_swa=-225 extends=[2071, 247] rids=['31fc9e8c', 'd99115e9']
+[2026-10-05 15:39:10] SWADBG alloc.pre_evict swa_avail=2112 swa_evict=158 swa_prot=32463 full_avail=648 full_evict=7301 need=2318
+[2026-10-05 15:39:10] SWADBG alloc.post_evict swa_avail=2270 swa_evict=0 swa_prot=32463 full_avail=4137 full_evict=3812 need=2318
+[2026-10-05 15:39:10] Out of memory. Try to lower your batch size.
+Available full tokens: 7949 (full_available_size=4137 + full_evictable_size_=3812)
+Available swa: 2270 (available_size=2270 + component_evictable_size_=0)
+                          [2026-10-05 15:39:10] Scheduler hit an exception: Traceback (most recent call last):
+RuntimeError: Out of memory. Try to lower your batch size.
+Available full tokens: 7949 (full_available_size=4137 + full_evictable_size_=3812)
+Available swa: 2270 (available_size=2270 + component_evictable_size_=0)

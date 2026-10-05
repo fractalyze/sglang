@@ -1,0 +1,12 @@
+[2026-10-05 11:47:42] Load weight begin. avail mem=30.71 GB
+[2026-10-05 11:47:44] Load weight end. elapsed=2.64 s, type=Gemma4ForCausalLM, quant=compressed-tensors, avail mem=5.59 GB, mem usage=25.12 GB.
+[2026-10-05 11:47:46] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 122443, K size: 0.58 GB, V size: 0.58 GB
+[2026-10-05 11:47:46] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 36732, K size: 1.75 GB, V size: 1.75 GB
+[2026-10-05 11:47:46] Memory pool end. avail mem=0.67 GB
+[2026-10-05 11:47:46] Capture target decode CUDA graph begin. backend=full, num_tokens_per_req=1, bs=[1, 2, 4, 8, 12, 16, 24, 32], avail mem=0.63 GB
+[2026-10-05 11:48:06] Capture target decode CUDA graph end. elapsed=20.05 s, mem usage=0.13 GB, avail mem=0.49 GB.
+[2026-10-05 11:48:06] max_total_num_tokens=122443, chunked_prefill_size=4096, max_prefill_tokens=16384, max_running_requests=3826, context_len=16384, available_gpu_mem=0.49 GB
+[2026-10-05 11:48:06] Init Unified Radix Cache. Components: (<ComponentType.FULL: 0>, <ComponentType.SWA: 1>). Tree Core: UnifiedTreeCore
+[2026-10-05 11:48:06] Tree cache initialized: source=default impl=UnifiedRadixCache hybrid_swa=True hybrid_ssm=False hicache_attached=False streaming_wrapped=False
+[2026-10-05 11:48:14] Scheduler hit an exception: Traceback (most recent call last):
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 176.00 MiB. GPU 0 has a total capacity of 31.40 GiB of which 172.38 MiB is free. Including non-PyTorch memory, this process has 31.21 GiB memory in use. Of the allocated memory 30.36 GiB is allocated by PyTorch, with 24.00 MiB allocated in private pools (e.g., CUDA Graphs), and 101.35 MiB is reserved by PyTorch but unallocated. If reser
