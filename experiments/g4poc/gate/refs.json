@@ -72,5 +72,12 @@
    "SGLANG_MOE_CONFIG_DIR": "/data/jooman/g4poc/moe-configs/c1",
    "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1"
   }
+ },
+ "final-mem-c1-c2a-nocache": {
+  "description": "Fleet model input, not a candidate: final-mem-c1-c2a with the radix cache off, so every turn re-prefills its whole history (the policy where idle sessions' histories fall out of the device pool).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--disable-radix-cache"
+  ]
  }
 }

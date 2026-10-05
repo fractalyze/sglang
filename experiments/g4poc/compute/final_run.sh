@@ -2,7 +2,8 @@
 # The bs2 final: PC's mem-final plus PB's kept compute levers (<final ref>), against the base.
 # The base's quality anchor, the final's in-flight sweep 4-32 with GPU memory sampled every 100 ms
 # (compute/mem_check.py: plateau <= torch capacity - 512 MiB), the final's quality against the anchor,
-# mem-final alone at 16/20/24 (memory and compute contributions apart), and the final's P/D measurement.
+# mem-final alone at 16/20/24 (memory and compute contributions apart), the final with the radix cache off
+# (fleet model: every turn re-prefills its history; ref <final ref>-nocache), and the final's P/D measurement.
 # Each step whose output exists is skipped, so a rerun resumes.
 #   compute/final_run.sh <final ref> > /home/jooman/g4poc/logs/pb-final.log 2>&1
 set -euo pipefail
@@ -14,6 +15,7 @@ R=$G4POC_RUNS_DIR
 out=$R/final-$final
 mkdir -p "$out"
 step() { echo "=== $(date -Is) $*"; }
+server_ref_exists() { python -c "import sys; from gate import server; sys.exit(0 if sys.argv[1] in server.all_refs() else 1)" "$1"; }
 sampled() {  # sampled <name> <command...>: GPU memory every 100 ms while the command runs
   local name=$1; shift
   nvidia-smi --query-gpu=timestamp,memory.used --format=csv,noheader,nounits -lms 100 > "$out/mem-$name.csv" &
@@ -41,6 +43,15 @@ if [ ! -f "$out/mem-final-sweep.txt" ]; then
   step "sweep mem-final alone at 16, 20, 24"
   sampled mem-final python -m gate sweep --ref mem-final --load inflight --concurrency 16,20,24
   ls -td "$R"/sweep-mem-final-* | head -1 > "$out/mem-final-sweep.txt"
+fi
+if [ ! -f "$out/nocache-sweep.txt" ]; then
+  step "sweep ${final}-nocache at 4-20 in flight (fleet model: every turn re-prefills its history)"
+  if server_ref_exists "${final}-nocache"; then
+    python -m gate sweep --ref "${final}-nocache" --load inflight --concurrency 4,8,12,16,20
+    ls -td "$R"/sweep-"${final}"-nocache-* | head -1 > "$out/nocache-sweep.txt"
+  else
+    echo "no ref ${final}-nocache; skipped"
+  fi
 fi
 if [ ! -f "$out/pd.txt" ]; then
   step "P/D measurement $final"
