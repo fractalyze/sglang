@@ -1,7 +1,8 @@
 #!/bin/bash
 # HS1'' and HS1' on bs2 (compute/PREREG.md): final-hc with a 12 GB and a 6 GB host pool at 30 s think time (load
 # think30), first at 36 concurrent sessions (HS1'', between the two arms' storage bounds), then at 64 (HS1'); then
-# the final-hc replicate at 16/24/32/40 in flight. Nothing starts after 06:00 KST. 28G scope.
+# a first replicate of the study's final (final-hc-cp2048-lpm) at 16-40 in flight. Nothing starts after 06:00 KST.
+# 28G scope.
 #   compute/hs1.sh > /home/jooman/g4poc/logs/pb-hs1.log 2>&1
 set -uo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,7 +29,7 @@ print('$ref', $n, {k: round(p[k], 3) for k in ('e2e_p90_s', 'output_tok_s_per_gp
   done
 done
 if before_stop; then
-  step "final-hc replicate at 16, 24, 32, 40 in flight"
-  python -m gate sweep --ref final-hc --load inflight --concurrency 16,24,32,40
+  step "final-hc-cp2048-lpm at 16, 24, 28, 32, 36, 40 in flight (first replicate of the final)"
+  python -m gate sweep --ref final-hc-cp2048-lpm --load inflight --concurrency 16,24,28,32,36,40
 fi
 step "hs1 done"
