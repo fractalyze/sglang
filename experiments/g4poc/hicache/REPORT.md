@@ -45,8 +45,24 @@ device pool (so every later turn loads back from host), the outputs are 12/12 to
 device-only final with identical cached-token counts.
 Runs: `exactmt-final-hc-smallpool-20261005-183035` vs `exactmt-final-mem-c1-c2a-20261005-181244`.
 
-> [!gap] Replicate at C24/C32, the C36 point (10 s capacity between C32 and C40) and the fence-cost
-> sweep of `mem-hc-fix2` against `mem-hc-fix` are running; see the status log at the end.
+**Replicate** (`sweep-final-hc-20261005-185153-build-server-3-dcb048`): C24 910 tok/s at p90 7.97 s
+(first run 905 / 7.98 s); C32 940 tok/s at p90 9.53 s (first run 942 / 9.55 s). C32 reproduced within
+0.3%.
+
+**Role-play quality and load-back (task b′).** PC2's final-hc role-play arm
+(`rp-quality-final-hc-qr-20261005-185028`) showed three adherent→non-adherent language flips against
+mem-qr-base, where the re-roll band is 1/80. The same arm was re-run on a log-only debug tree
+(53614116f3, branch `jumanzii/g4poc-final-hicache-pfxdbg`). That tree records each admission's device
+hit, its full/SWA host hit and load-back size, and whether any restored host slot was stale from SWA
+tombstone recovery (`rp-quality-final-hc-qr-pfx-20261005-190542-build-server-3-38647d`, joined with
+[prefix_split.py](prefix_split.py)).
+- Language adherence was 68/80, equal to the baseline, with an NLL rise of 0.0018. The run passes.
+- 48 of 80 items had a host load-back, and none restored a stale (tombstone-recovered) slot.
+- s000135 and s001101 had SWA-only load-backs of the shared persona prefix and did not flip in this
+  run.
+- s000794 flipped (ja→zh) from its first token. Its first admission was a device hit with no load-back;
+  it was retracted later and recomputed from a host-loaded prompt. So no flip in this run traces back to
+  a HiCache load-back.
 
 ## Bug 1: prefill admission under-reserved sliding-window slots on a load-back (scheduler crash)
 
@@ -79,6 +95,13 @@ write submit. CPU regression `test_hicache_write_fence.py` fails without the fen
 byte trace has no per-turn stale token and exactness is 12/12
 (`exactmt-mem-hc-fix2-smallpool-20261005-174224`).
 
+## Bug 3 (PD decode only): retraction backups bypass the fence
+
+`UnifiedRadixCache.retraction_backup` (decode host-pool retraction backup, PD-disaggregated decode
+only) calls `submit_device_to_host` directly, so it had no fence. The fix is on side branch
+`jumanzii/hicache-retraction-fence` (7d0ba713da) with a CPU test. It is not in the final tree, because
+this deployment runs with disaggregation off and never takes that path. See UPSTREAM.md, bug 3.
+
 ## Open items
 
 - **Host copy kept on SWA tombstone recovery.** When a node whose SWA was evicted adopts a later
@@ -89,5 +112,6 @@ byte trace has no per-turn stale token and exactness is 12/12
 
 ## Status log
 
-- 10-05 18:50 KST: final-hc C20-C56 and exactness done. Replicate, C36 and the fence-cost sweep queued
-  (`memlogs/pc3-tail.sh` on bs3).
+- 10-05 18:50 KST: final-hc C20-C56 and exactness done.
+- 10-05 19:12 KST: replicate and the b′ role-play run done. C36 and the fence-cost sweep are queued
+  behind PC2's C32 soak (`memlogs/pc3-tail3.sh` on bs3).
