@@ -73,7 +73,7 @@
   "mem-hc-fix-smallpool-rt": {
     "description": "Byte-level HiCache round trip: mem-hc-fix-smallpool on a debug tree (fix + G4POC_DEBUG_HICACHE_ROUNDTRIP) that compares device vs host KV bytes per token and layer at every write-through and load-back ack (full and SWA pools) and checks the full->SWA mapping after loads.",
     "extends": "mem-hc-fix-smallpool",
-    "commit": "7def96b521c72d94ccb50dd77fa1482ccb56529d",
+    "commit": "9e26c909218ca8636fbf78585fbafbd0a0b28f24",
     "env": {
       "G4POC_DEBUG_HICACHE_ROUNDTRIP": "1"
     },
