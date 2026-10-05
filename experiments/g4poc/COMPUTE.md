@@ -355,7 +355,7 @@ margin through decode for a branch-inserted prompt (PC4; tree cbf56143b5 = a0491
 `jumanzii/g4poc-swa-margin`; default off). Ref `final-hc-cp2048-lpm-m128`. Prediction: `compute/PREREG.md` M128,
 vault `g4poc-m128f`.
 
-**(a) A-B-B-A at 28 in flight, bs2** (`runs/m128/abba-c28.json`, control drift 0.55%):
+**(a) A-B-B-A at 28 in flight, bs2** (`runs/m128/abba-c28.json`, control drift 0.55%; the second A-B-B-A (e) below):
 
 | | final | final + margin 128 | gain (geomean of 2 pairs) |
 |---|---|---|---|
@@ -365,6 +365,10 @@ vault `g4poc-m128f`.
 | prefix hit | 0.773 / 0.768 | 0.798 / 0.799 | |
 | retracted per 240 s window | 11 / 14 (~1.0%) | 25 / 34 (~2.3%) | 2.4x |
 | failed | 0 / 0 | 0 / 0 | |
+
+**(e) A second A-B-B-A** (`runs/m128/abba-c28-2.json`, control drift 1.1%) repeats it: p90 gain 1.007, tok/s
++1.3%, p99 +3%, retractions 16 -> 62. Over all four pairs: **p90 gain 1.014** (pairs 1.026, 1.015, 1.014, 1.001),
+**output tok/s +1.3%**, **p99 +5.2%**, **retractions 41 -> 121 (2.95x)**, hit 0.77 -> 0.80, 0 failed.
 
 The gain is a third of PC4's on final-hc (+7.1% tok/s, hit 0.71 -> 0.80): chunk 2048 already took most of the hit
 headroom (0.77). Retractions rise 2.4x and set the p99; PC4 attributes them to the extra SWA tokens the margin holds
