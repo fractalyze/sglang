@@ -372,10 +372,10 @@ arrival plan on both hosts:
 | **final-hc-cp2048-lpm** (bs2) | 30 s | 48 | 42 | 1.54 | 5.59 s | 0.24 |
 | **final-hc-cp2048-lpm** (bs2) | 30 s | 64 / 80 | 65 / 66 | 2.28 / 2.37 | **9.31** / 10.46 s | 0.04 / 0.04 |
 | final-hc-cp2048-lpm (bs2) | 30 s | 96 | 114 | 2.98 | 21.5 s (overloaded) | 0.01 |
-| final-mem-c1-c2a (no HiCache, bs3) | 30 s | 48 | 42 | | 5.93 s | 0.05 |
-| final-mem-c1-c2a (bs3) | 30 s | 64 / 80 | 64 / 64 | 2.37 | 8.19 / 8.99 s | |
-| final-mem-c1-c2a (bs3) | 60 s | 96 | 83 | 1.70 | 6.47 s | |
-| final-mem-c1-c2a (bs3) | 60 s | 120 | **113** | 2.30 | **8.65 s** | 0.002 |
+| final-mem-c1-c2a (no HiCache, bs3) | 30 s | 48 | 42 | 1.54 | 5.93 s | 0.05 |
+| final-mem-c1-c2a (bs3) | 30 s | 64 / 80 | 64 / 64 | 2.28 / 2.37 | 8.19 / 8.99 s | 0.005 / 0.003 |
+| final-mem-c1-c2a (bs3) | 60 s | 96 | 83 | 1.70 | 6.47 s | 0.002 |
+| final-mem-c1-c2a (bs3) | 60 s | 120 / 144 | **113** / 118 | 2.30 / 2.41 | **8.65** / 9.37 s | 0.002 |
 
 **C sets the arrival rate, but the plan's random draw sets the offered load.** `gate sweep` seeds each C's plan
 separately (`sweep-<C>`). Replaying a plan's turn schedule with a constant E2E (`compute/plan_offer.py`) reproduces
@@ -384,22 +384,26 @@ an edge. C96 offers ~99 (3.25 turns/s) and C112 ~113 (3.98), both far past the ~
 edges between them are C72 (~70-72 live, 2.45 turns/s) and C76 (~73-75 live, 2.50); for pthink60, C144 (~120 live,
 2.42).
 
-**Chunk 2048 costs think-time hit rate (HS2, the same-host check pending).** On identical plans the final runs
-+14-16% E2E p90 over final-hc at the 10 s edge, and holds half its hit rate at 48 sessions (0.24 vs 0.46). Turn rates
-(1.538 vs 1.544/s) and device evictions (3.47M vs 3.51M tokens) match, so the loss is in host-tier hits. Read
-through the retention model below, the final writes ~0.34 GB of host pool per turn against ~0.22 for final-hc
-(retention ~23 s vs ~35 s at 12 GB).
+**The final is behind final-hc under think time (HS2, the same-host check pending).** On identical plans the
+final shows two gaps:
 
-The proposed mechanism: chunk 2048 splits a ~4.3K-token uncached prefill into 3 chunks. Every chunk boundary leaves
-a sliding-window node of up to ~1K tokens (~0.1 GB), and write_through copies it to the SWA host pool. Fewer hits
-mean more uncached tokens and more chunks. In flight (no think time) the same boundaries raise the *device* hit
-(0.74 -> 0.79, C3), so the flag's sign flips with think time. lpm acts only on a waiting queue, which averaged 0.03
-requests here.
+- **At 48 sessions: half the hit rate** (0.24 vs 0.46, p90 5.59 vs 5.15 s). Turn rates (1.538 vs 1.544/s) and device
+  evictions (3.47M vs 3.51M tokens) match, so this loss is in host-tier hits. Read through the retention model below,
+  the final writes ~0.34 GB of host pool per turn against ~0.22 for final-hc (retention ~23 s vs ~35 s at 12 GB).
+  Proposed mechanism: chunk 2048 splits a ~4.3K-token uncached prefill into 3 chunks. Every chunk boundary leaves a
+  sliding-window node of up to ~1K tokens (~0.1 GB), and write_through copies it to the SWA host pool. Fewer hits
+  mean more uncached tokens and more chunks. In flight (no think time) the same boundaries raise the *device* hit
+  (0.74 -> 0.79, C3), so the flag's sign flips with think time.
+- **At the 10 s edge: +14-16% E2E p90** (9.31 / 10.46 s against final-hc's 8.05 / 9.02 s at C64 / C80). Host-tier
+  hits do not explain this one. The stack without HiCache, also near zero hit there, runs 8.19 / 8.99 s. So either
+  bs2 is slower than bs3 under this load, or a turn that re-prefills its whole ~5.6K history costs more in 2048-token
+  chunks (3 passes instead of 2). On the base at 20 in flight and zero hit, chunk 2048 was not slower (C3).
 
-The comparison above crosses hosts (bs2 vs bs3, which agree within ~1% in flight). HS2 (`compute/PREREG.md`, vault
-`g4poc-hs2`) runs final-hc at the same plans on bs2 after PC4's queue. **If it holds, the recommendation splits:**
-chunk 2048 + lpm for in-flight-heavy traffic (-3% $/1M at 32 in flight), default chunking (`final-hc`) for chat
-with long think times.
+lpm acts only on a waiting queue, which averaged 0.03 requests at 48 sessions. bs2 and bs3 agree within ~1% in
+flight, but these comparisons still cross hosts. HS2 (`compute/PREREG.md`, vault `g4poc-hs2`) runs final-hc at the
+same plans (C48, C64) on bs2 after PC4's queue, which separates the config from the host for both gaps. **If both
+gaps hold, the recommendation splits:** chunk 2048 + lpm for in-flight-heavy traffic (-3% $/1M at 32 in flight),
+default chunking (`final-hc`) for chat with long think times.
 
 **2,200 sessions at a 10 s p90 SLO** (measured lower bounds; the edges are C72/C76 above):
 
