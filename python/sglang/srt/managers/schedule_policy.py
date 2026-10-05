@@ -1362,7 +1362,10 @@ class PrefillAdder:
             from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
 
             _pfx.log_admission(
-                req, device_prefix=device_prefix, loaded=req.host_loaded_length
+                req,
+                device_prefix=device_prefix,
+                loaded=req.host_loaded_length,
+                tree_cache=self.tree_cache,
             )
 
         # This verdict controls the next candidate, not the committed request.
