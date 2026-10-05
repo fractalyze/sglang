@@ -27,11 +27,18 @@ exactly 300 tokens each that all run in one decode batch with no retraction.
 | **stack1** `mem-stack1` | L9 + L10 + `--mem-fraction-static 0.955 --swa-full-tokens-ratio 0.268` | 24.43 | 139,415 / 37,363 | 1.16 | 31,588 | **25** | 26 (interval 25-27) |
 | **stack2** `mem-stack2` | stack1 + L5 (`SGLANG_OPT_SWA_RELEASE_SLID_WINDOW=1`, `SGLANG_SWA_EVICTION_INTERVAL=32`) + ratio 0.226 | 24.43 | 157,376 / 35,566 | 1.18 | 31,574 | **29** | 29 (interval 27-30) |
 | **stack3** `mem-stack3` | stack2 + L8 (`SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE=1`) + `--cuda-graph-max-bs-decode 48` | **23.74** | 179,427 / 40,550 | 1.10 | 31,652 | **33** | 33 (interval 32-34) |
-| **final** `mem-final` | stack1 + L8 + `--cuda-graph-max-bs-decode 48` + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (L5 off) | 23.66 | 160,395 / 42,985 | 1.17 | 32,087 (spike) | **29** | 29 (interval 28-30) |
+| **final** `mem-final` | stack1 + L8 + `--cuda-graph-max-bs-decode 48` + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (L5 off) | 23.66 | 160,395 / 42,985 | 1.17 | 31,560 | **29** | 29 (interval 28-30) |
 
 Decode CUDA graphs to bs 48 (needed once more than 32 requests decode; above the captured sizes decode runs
 eager) cost 0.19-0.20 GiB of graph memory against 0.13 GiB to bs 32; that ~0.07 GiB is inside every stack
 that carries the flag (stack3, final) and was not gated on its own.
+
+**Chunked prefill 2048 (`mem-final-c2048`, probe; the latency verdict is PB's C3).** 27 clean sessions vs 29 at
+the default 4,096 (`cap-mem-final-c2048-20261005-144101-build-server-3-c75d05`), against a predicted +1-2.
+The pools are identical (the static fraction sizes them, not the chunk), and sliding use per session rises:
+peak sliding tokens at N = 27 were 42,526 vs 39,342 (~+118 per session), so the sliding pool fills at 28. The
+smaller chunk lowers the GPU peak by ~240 MiB (31,310-31,318 vs 31,552-31,560); spent as pool (fraction
++~0.008) that buys back about one session, still <= 28.
 
 stack1 holds **25 sessions vs 17 (+47%)** with server flags only and unchanged numerics (pool sizes
 and a RoPE table length). Two code levers behind default-off switches add L5 (+4, numerics exact) and
@@ -133,16 +140,38 @@ expandable segments, L5 off):
 | 28 | 10.63 | 18.05 | 468 | 15,483 | 0.114 |
 | 32 | 14.86 | 19.23 | 476 | 14,091 | 0.002 |
 
-Capacity: 8 at 6 s, **20 at 10 s** (C24 misses by 0.95 s), **24 at 15 s** (mem-base and stack1 20). L8's pool moved
-the cache cliff from C24 (stack1) to C28. Whole-sweep GPU peak 32,079 MiB (one 2 s sample at 14:23:09; plateau
-31,570), so expandable segments did not remove the transient and 0.955 fails the deployment rule (peak <=
-31,642 MiB); the rule's fraction is 0.94 (`mem-final-f094`), verified below.
+No failed request; retractions 0 through C24 (5 at C28, 1 at C32). Prompts reached 10,243 tokens (189
+prefills of >= 9K). Capacity: 8 at 6 s (C12 misses by 0.07 s), **20 at 10 s** (C24 misses by 0.95 s), **24 at
+15 s** (mem-base and stack1 20). L8's pool moved the cache cliff from C24 (stack1) to C28.
 
-*Memory under the real workload:* sampled every 2 s, the GPU peaked at 32,113 MiB (12:33:09, one sample in
-the C12 window), 41 MiB under the CUDA-visible capacity; between such spikes it sat at 31,590-31,770 MiB.
-Prefill batches never exceeded 4,096 new tokens (p50 2,587), so the spike is not a larger prefill batch;
-allocator fragmentation is the suspect. The step-0 bursts (peak 31,588) did not show it, so 0.955 is not a
-deployable value without a fix (allocator setting or a lower fraction).
+Cost-optimal point per SLO (the max-goodput point that meets it), $/1M output tokens at $0.4 / 0.7 / 1.0 /
+1.5 per GPU-hour:
+
+| SLO (E2E p90) | point | output tok/s | $/1M output |
+|---|---|---|---|
+| 6 s | C8 | 479 | 0.232 / 0.406 / 0.580 / 0.870 |
+| 10 s | C20 | 677 | 0.164 / **0.287** / 0.410 / 0.616 |
+| 15 s | C24 | 681 | 0.163 / 0.286 / 0.408 / 0.612 |
+
+At the 10 s SLO that is +21% output tok/s and -18% $/1M output against mem-base on the same host (C12, 558
+tok/s, $0.348 at $0.70).
+
+**Deployable: `mem-final` at 0.955.** The server's own GPU memory stayed flat at 31,556-31,570 MiB over the
+whole sweep (2 s samples), under the rule's 31,642 MiB. Burst capacity 29 sessions (mem-base 17).
+
+*Memory under the real workload, and a co-tenant on the GPU.* Single 2 s samples ~515 MiB above the plateau
+(stack1 sweep 32,113 MiB at 12:33:09, mem-final step-0 32,087 at 14:03:10, mem-final sweep 32,079 at 14:23:09)
+are not SGLang. build-server-3 also runs zorch-playground, whose watchdog submits a canary job to its GPU
+executor container every 10 min at hh:m3:09 (gateway log `POST /api/run`); the job's Python process opens a
+CUDA context for under a second. A 0.2 s per-process sample at 14:33:09.7 caught it (`/usr/local/bin/python`,
+498 MiB) next to `sglang::scheduler` flat at 31,546 MiB. Outside those samples:
+- stack1 (default allocator) sat at 31,590-31,768 MiB, over the rule by up to 126 MiB;
+- mem-final (expandable segments) stayed at 31,556-31,570 MiB, so expandable segments is what makes 0.955
+  meet the rule.
+
+With the canary on top, the card reached 32,079 MiB, 75 MiB under the CUDA-visible capacity, and nothing
+failed. On a host that shares the GPU with another job, leave that job's headroom: the fallback is
+`mem-final-f094` (`--mem-fraction-static 0.94`, ~470 MiB less pool, not measured).
 
 ## 4. Code levers
 
@@ -168,7 +197,7 @@ Python unified tree core only (no SWA host pool, no EAGLE).
 - Batched: at concurrency 16 on 16 role-play prompts, 7/16 outputs match stack1 token for token, against an
   A/A (stack1 vs stack1) of 6/16 with mismatches from token 1 on; all 16 poisoned outputs are normal text.
   This engine is not batch-invariant, so exactness is checkable only at concurrency 1.
-- **Real workload: not kept on the scripted gate workload; the verdict is workload-dependent.**
+- **Real workload: not kept.**
   `sweep-mem-stack2-20261005-132151-build-server-3-cbfe29`:
 
   | in flight | E2E p90 s | output tok/s | hit rate (stack1) |
@@ -182,9 +211,11 @@ Python unified tree core only (no SWA host pool, no EAGLE).
   10 s capacity 12 (stack1 20). In the scripted mode a session's next turn carries the scripted reply, not the
   generated tokens, so its prefix match ends at the previous **prompt's** end, and resuming there needs that
   prompt's last SWA window: the window L5 releases during decode. A released window stays matchable only until
-  the SWA LRU needs room, which starts at C16. Real role-play clients resend the model's own reply, so their
-  match runs through the reply and needs only the window L5's finish keeps; this harness cannot show that
-  (see open items). Vault: `g4poc-l5` parked until a live-reply load shows stack1's hit rate kept.
+  the SWA LRU needs room, which starts at C16. Real chat clients hit the same cut: Gemma-4's chat template
+  ends the generation prompt with an empty thought channel after `<|turn>model\n`, and a past turn in the
+  history never contains it, so the next turn's match also ends at the previous prompt's `<|turn>model\n` and
+  needs the window L5 released. Only a token-level client that resends the exact generated tokens (thought
+  channel included) would keep the match through the reply. Not kept; no live-reply retest.
 
 ### L8: one FP8 vocab table for the tied embedding and LM head (implemented, numerics change)
 
@@ -234,15 +265,18 @@ Code reading of this tree (paths under `python/sglang/srt/`):
 
 ## 6. Open items and harness caveats
 
-- **Scripted replies understate prefix reuse.** The gate's scripted mode puts the session's scripted reply
-  into the next turn's history, so every turn recomputes the previous reply's tokens and its match ends at
-  the previous prompt's end. Real clients resend the model's reply. All arms' hit rates are therefore slightly
-  low, and L5 is judged on its worst case. The gate already has a `closed` mode (the model's own replies enter
-  the history); a stack1-vs-stack2 run at C16/C20 in that mode decides L5.
+- **Where a turn's prefix match ends.** The gate's scripted mode puts the session's scripted reply into the
+  next turn's history, so the match ends at the previous prompt's end and every turn recomputes the previous
+  reply. Real chat clients end at the same point: the generation prompt's empty thought channel after
+  `<|turn>model\n` never appears in a past turn (section 4). The measured hit rates therefore hold for chat
+  clients; only token-level clients that resend the exact generated tokens would match further.
 - **Batched outputs are not reproducible on this engine** (A/A 6/16 identical at concurrency 16): exactness
   checks must run at concurrency 1, and batched numerics need logprob/KL against an A/A bar.
-- **Memory spikes under the real workload.** One 2 s sample of stack1's sweep reached 32,113 MiB (41 MiB of
-  CUDA-visible headroom) with prefill batches never above 4,096 tokens; see section 3 and the final stack.
+- **L5 variant.** Releasing only windows that slide out during decode past the prompt's end (keeping the
+  prompt's last window, the next turn's resume point) might keep L5's burst gain without the hit-rate loss.
+  Not implemented.
+- **Co-tenant GPU job on build-server-3** (zorch-playground canary, ~500 MiB for < 1 s every 10 min); see
+  section 3. Memory records from 14:43 on also log per-process use (`memlogs/gpuprocs.csv`).
 
 ## 7. Reproduce
 
