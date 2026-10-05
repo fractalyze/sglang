@@ -324,34 +324,57 @@ For 2,200 sessions that is **46 GPUs at $0.582/1M output (35 GPUs at $0.484 inte
 
 **Why HiCache barely helps at 30 s think: storage.** PC4's code read (SGLang a0491db764): under write_through the
 host pool is an inclusive mirror of the device (host eviction only removes nodes already evicted from the
-device). So one GPU holds max(device, host) tokens of history, not their sum. A stored session takes ~6.5K
-tokens: its history, the dead reply branches of earlier turns, and ended sessions not yet aged out.
+device). So one GPU holds the larger of what the device and the host pool hold, not their sum.
 
-| | device pool | 12 GB host pool | sessions held |
-|---|---|---|---|
-| tokens | 160K | 318K | |
-| device alone | ~25 sessions | | |
-| with HiCache | | ~49 sessions | ~49 |
+PC4 measured (final-hc, think30 x 48, bs3) that an idle session costs **~0.23 GB of host pool**: a third
+full-layer KV, two thirds sliding-window KV (1.4-1.8K window tokens at 102 KB per token). The window is that
+large because windows are node-granular, the dead reply leaf is kept, and chunk boundaries leave windows. So:
 
-The measured hit rate falls where this predicts. At 48 sessions HiCache holds 0.29 of the prefix, against 0.03
-without it. From 72 sessions both are near zero and every turn re-prefills ~5.8K tokens. Past the storage bound
-the GPU is recompute-bound: ~3 turns/s and ~17K uncached prefill tok/s at saturation (PC2's 96-120 sessions).
-That sets the 10 s capacity at ~48-64 sessions whatever the cache does.
+| | sessions held |
+|---|---|
+| device alone (160K tokens, ~6.5K per stored session) | ~25 |
+| 12 GB host pool, perfect packing | ~52 |
+| 12 GB host pool, with ended-session garbage | ~44 |
 
-**The lever: host RAM per GPU (derived).** Storage stops binding when the host pool holds as many sessions as the
-GPU can compute. That needs ~0.25 GB of `--hicache-size` per session (6.5K tokens / 26.5K tokens per GB).
+At 48 sessions both host pools run at 0.1-0.5% free. The turns split as 22% first turns (nothing to hit), 27%
+hits, 28% misses because the sliding window was gone (full prefix still on host), and 23% misses because the
+full KV was gone. Misses are all-or-nothing.
+
+From 72 sessions both configs are near zero hit, and every turn re-prefills ~5.8K tokens. Past the storage bound
+a HiCache server is just recompute-bound: ~3 turns/s and ~17K uncached prefill tok/s at saturation. That sets
+the 10 s capacity at 48-64 sessions whatever the cache does.
+
+**Drop-idle, measured on bs2** (`final-mem-c1-c2a` with the radix cache off, max running 24; every turn
+re-prefills its whole history; `runs/fleet/`):
+
+| in flight | 4 | 8 | 12 | 16 | 20 |
+|---|---|---|---|---|---|
+| E2E p90 (s) | 4.38 | 6.00 | 7.67 | 9.55 | 11.00 |
+| turns/s | 1.53 | 2.11 | 2.60 | 2.91 | 3.03 |
+
+At a 10 s SLO the drop-idle GPU runs 16 in flight at 2.9 turns/s. By Little's law that is ~86 sessions at 24 s
+of think per turn. The measured slots points (48-64) sit below that, for two reasons: the slots generator bug
+(PC2, fixed in dff92efc2b) made them pessimistic, and bursty think-time arrivals queue more than a closed
+in-flight loop. PC2's poisson think-time runs (10-06 morning) calibrate it.
+
+**The lever: host RAM per GPU.** Storage stops binding when the host pool holds as many sessions as the GPU can
+compute. At 0.23 GB per session (**measured at 12 GB, extrapolated linearly**):
 
 | | value |
 |---|---|
 | compute bound at 30 s think (final-hc's C32 point, by Little's law) | ~187 sessions per GPU |
-| host pool per GPU to hold them | ~46 GB (`--hicache-size` 46) |
+| host pool per GPU to hold them | ~43 GB (`--hicache-size` 43) |
 | GPUs for 2,200 sessions | ~12 |
-| cost per 1M output tokens | back to ~$0.21 |
+| cost per 1M output tokens | ~$0.21 |
+| at 60 s think | ~79 GB host for ~343 sessions per GPU |
 
-This is derived from the storage model, with **one measured anchor (12 GB, ~48 sessions)**. HS1''
-(`compute/PREREG.md`) tests its slope at 6 vs 12 GB inside the host-safety scope. Larger pools need a memory
-scope above the 28G cap, which is the user's decision (two host crashes earlier in the study set that cap). A
-customer server with 64-128 GB of host RAM per GPU would sit on the right side of it.
+Larger pools need a memory scope above the 28G cap, which is the user's decision (two host crashes earlier in the
+study set that cap). A customer server with 64-128 GB of host RAM per GPU would sit on the right side of it.
+
+- **No config lever.** The host pool's full/SWA split is already near balance.
+- **Code levers (open).** Exclusive tiering for hybrid sliding-window models (~+50% distinct capacity), and not
+  caching decode-output tokens, which Gemma-4's template never reuses (~10-15% of the SWA host share).
+- **HS1'' (`compute/PREREG.md`).** It tests the slope inside the scope: 6 vs 12 GB at 36 sessions.
 
 ## 6. Harness fixes found on the way (2026-10-05)
 
