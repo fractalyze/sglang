@@ -21,7 +21,11 @@ Token view: every prompt token is either reused, or recomputed for one of: first
 suffix past `expected` (previous reply + new user message: never reusable), or a returning turn's
 shortfall attributed to its class.
 
-usage: python miss_split.py <server.log> [--warmup-s 240] [--window-s 480] [--suffix 4] [--tol 64]
+`window_trimmed` drops the window's last `--tail-s` seconds: harness fd08bf8fbf's `slots` generator starts a
+fresh session (an uncached turn 0) in every slot whose next turn falls past the window end, which inflates
+first turns and load at the end of each point (PC2; fixed in dff92efc2b, not deployed for these runs).
+
+usage: python miss_split.py <server.log> [--warmup-s 240] [--window-s 480] [--tail-s 60] [--suffix 4] [--tol 64]
 """
 
 import argparse
@@ -126,6 +130,8 @@ def main():
     ap.add_argument("log")
     ap.add_argument("--warmup-s", type=float, default=240.0)
     ap.add_argument("--window-s", type=float, default=480.0)
+    ap.add_argument("--tail-s", type=float, default=60.0,
+                    help="seconds cut from the window's end for window_trimmed (end-of-point generator bias)")
     ap.add_argument("--suffix", type=int, default=4,
                     help="tokens of the empty-thought generation suffix past `<|turn>model\\n`")
     ap.add_argument("--tol", type=int, default=64)
@@ -151,6 +157,7 @@ def main():
             "point": i,
             "start": datetime.datetime.fromtimestamp(t0).strftime("%H:%M:%S"),
             "window": summarize(pts, t0, args.warmup_s, args.warmup_s + args.window_s),
+            "window_trimmed": summarize(pts, t0, args.warmup_s, args.warmup_s + args.window_s - args.tail_s),
             "all": summarize(pts, t0, 0, float("inf")),
         })
     print(json.dumps(result, indent=1))

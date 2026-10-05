@@ -109,3 +109,20 @@ the 72-session in-flight mean (14.5).
 Not tested here: the in-flight operating point (C28). A lower SWA share shrinks the device SWA pool
 that admits concurrent windows, so the ratio is a per-workload choice. Any change to the final
 config would need its own in-flight check.
+
+### SW3 (`swahost-dbg`, think30 x 32, 40): where the hit rate leaves the ceiling
+
+Registered 2026-10-06 ~00:15 KST, after SW1's 48-session point and before any run below. SW1 at 48
+(hit 0.284, E2E p90 7.35 s) split the missed returning turns 55% swa_gone and 45% full_gone, with no
+failed backups. Both host pools are over capacity there, SWA slightly first.
+
+Model: an idle session costs ~0.23 GB of HiCache host (~66 MB Full + ~150-180 MB SWA), counted
+against the host alone. Ended sessions' histories add ~19% until the LRU ages them out. The 12 GB
+pool then holds ~44 live sessions. The hit-rate ceiling is ~0.77 (first turns ~0.19 and the
+per-turn suffix ~0.04 of prompt tokens are never reusable).
+
+- At 32: hit 0.60-0.77; swa_gone + full_gone <= 25% of returning turns; E2E p90 -10% to -50% vs
+  SW1's 48 point.
+- At 40: hit 0.45-0.72.
+
+**Falsified if** the 32-session hit rate is below 0.55, or 40 sessions hits higher than 32.
