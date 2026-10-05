@@ -173,6 +173,37 @@ control/candidate for E2E p90 and candidate/control for output tok/s, geometric 
 
 Vault: `g4poc-c3a`, `g4poc-c3b` (kept on the base, predictions falsified on magnitude).
 
+### C3 flags and C4 on the final stack (overnight, against final-hc)
+
+These are nested sweeps at 24 and 32 in flight, in a 28G scope (`compute/c4_run.sh`; `runs/c4-nested/`). Each
+candidate first passed a smoke run. Control drift was ≤ 0.4%.
+
+| flag on final-hc | p90 gain at 24 / 32 | output tok/s gain at 24 / 32 | prefix hit at 24 / 32 | kept |
+|---|---|---|---|---|
+| C4 `--triton-attention-num-kv-splits 16` | 0.999 / 0.993 | 1.000 / 1.002 | = | no |
+| C3a `--schedule-policy lpm` | 1.001 / **1.076** | 1.002 / 1.010 | 0.75 / 0.73 (0.74 / 0.72) | yes |
+| C3b `--chunked-prefill-size 2048` | **1.034** / 1.014 | 1.029 / 1.021 | 0.79 / 0.77 (0.74 / 0.72) | yes |
+
+- **C4 (decode KV-split cap).** The backend's split heuristic wants more than 8 splits with the served kv-head
+  count. But decode attention speeds up only at small batches (`compute/decode_split_bench.py`: -16% at batch 12,
+  0% at 20, -4.4% at 32), so at the final's operating points it is a null. It is retired, as predicted.
+- **lpm.** Behind HiCache the device pool still holds ~25 histories, so at 32 in flight some turns wait for
+  admission and lpm orders them by cached prefix: -7% p90 at 32, nothing at 24.
+- **Chunk 2048.** As on the base: a higher hit rate and +2-3% throughput.
+
+**Combined, `final-hc-cp2048-lpm`.** Confirming A-B-B-A against final-hc (`runs/c4-nested/c4-confirm-*`):
+
+| in flight | p90 (s) | output tok/s | hit |
+|---|---|---|---|
+| 24 | 7.80 -> 7.53 (gain 1.036) | +2.7% | 0.74 -> 0.79 |
+| 32 | 9.45 -> 8.57 (gain 1.103) | +3.0%, 981 | 0.72 -> 0.78 |
+
+That is $0.198 vs $0.204 per 1M output at $0.70, with 1.4 s of p90 headroom under the 10 s SLO. Long role-play
+KL check against final-hc: batched KL 0.029 / p99 0.34 vs A/A 0.022 / 0.28, a pass. Promotion into the final also
+needs PC3's multi-turn HiCache load-back exactness (12/12) on `final-hc-cp2048-lpm-smallpool`, because chunk size
+changes HiCache's SWA admission and chunked prompt nodes, the code path of the race fixed earlier. Vault:
+`g4poc-c4` (retired), `g4poc-c3a-hc`, `g4poc-c3b-hc`.
+
 ## 3. The study's final stack on bs2: final-hc
 
 `final-hc` (gate ref in `hicache/refs.json`; SGLang a0491db764 on `jumanzii/g4poc-final-hicache`; 28G scope)
