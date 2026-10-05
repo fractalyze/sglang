@@ -6,9 +6,9 @@ by the device prefix cache alone (section 5). All numbers here are bs2 unless ma
 point, they agree within ~1% in flight and ~3% under think time.
 
 **Headline.** With requests always in flight, one RTX 5090 serves Gemma-4-26B-A4B FP8 for multi-turn role-play at
-**28 in flight, held for 30 min: p90 8.59 s, p99 11.1 s, 952 output tok/s, $0.204 per 1M output tokens at
-$0.70/GPU-hour, -41% against the FP8 base ($0.343)**, quality unchanged (bs3 soak, PC2; bs2's same-load sweep
-agrees: p90 8.57 s, p99 11.5 s, 955 tok/s). The 4-min sweeps' cheapest point, 32 in flight at $0.197-0.200, carries
+**28 in flight, held for 30 min on two hosts: p90 8.5-8.6 s, p99 11.1-11.6 s, 952-960 output tok/s, $0.203-0.204
+per 1M output tokens at $0.70/GPU-hour, -41% against the FP8 base ($0.343)**, quality unchanged, 0 failed requests,
+0.7% retracted. The 4-min sweeps' cheapest point, 32 in flight at $0.197-0.200, carries
 a retraction tail over 30 min (p99 37 s), so 28 is the operating point. Chat sessions with 30-60 s of think time cost
 ~$0.45-0.47 per 1M output tokens (~70 sessions per GPU at 30 s, held 30 min on both hosts at ~68; ≥ 118 at
 60 s), and there the device prefix cache alone
@@ -303,11 +303,15 @@ It was replicated twice on bs2 (`runs/sweep-final-hc-cp2048-lpm-20261006-012036-
   That is 250 MiB below final-hc: chunk 2048 halves the prefill transient.
 - **Quality** (paired against the base anchor). GSM8K 96.36% vs 96.13% (+0.23 pt, CI95 [-0.33, +0.78], McNemar
   p 0.58), tool JSON 40/40: pass.
-- **Operating point: 30-min soak at 28 in flight** (PC2, bs3, `sweep-final-hc-cp2048-lpm-20261006-052216-build-server-3-d12892`):
-  9,656 requests, 0 failed, p50 / p90 / p99 = 5.54 / 8.59 / 11.13 s, 952 tok/s (**$0.204/1M at $0.70, -41% vs
-  base**), hit 0.768, 67 retracted (0.69%), GPU memory flat at 31,250 MiB. The same-host bs2 point at 28 (4-min
-  window, `runs/sweep-final-hc-cp2048-lpm-20261006-054426-build-server-2-fd138e`): p90 8.57 s, p99 11.47 s,
-  955 tok/s, hit 0.773, 11 retracted, 0 failed.
+- **Operating point: 30-min soak at 28 in flight, both hosts** (bs2 `runs/sweep-final-hc-cp2048-lpm-20261006-074917-build-server-2-f796c4`,
+  memory `runs/soak-final-c28/mem.json`; bs3 PC2's `sweep-final-hc-cp2048-lpm-20261006-052216-build-server-3-d12892`):
+
+  | host | requests | failed | p50 / p90 / p99 | out tok/s | $/1M @ $0.70 | hit | retracted | GPU memory |
+  |---|---|---|---|---|---|---|---|---|
+  | bs2 | 9,720 | 0 | 5.48 / **8.52** / 11.62 s | 960 | **0.203** | 0.768 | 71 (0.73%) | flat 31,262 MiB |
+  | bs3 | 9,656 | 0 | 5.54 / **8.59** / 11.13 s | 952 | **0.204** | 0.768 | 67 (0.69%) | flat 31,250 MiB |
+
+  -41% per 1M output against the base's $0.343; memory inside the 31,599 MiB rule on both.
 - **30-min soak at 32 in flight** (`runs/sweep-final-hc-cp2048-lpm-20261006-022842-*`): 9,569 requests, 0 failed.
   p50 / p90 / p99 = 5.73 / 9.00 / 37.1 s, 935 tok/s ($0.208/1M at $0.70), hit 0.77. 115 requests (1.2%) were
   retracted, and they make the p99 tail; the 4-min sweep windows do not show it. 32 maximizes p90-bounded goodput
