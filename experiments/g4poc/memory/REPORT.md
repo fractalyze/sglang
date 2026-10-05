@@ -224,6 +224,45 @@ With the canary on top, the card reached 32,079 MiB, 75 MiB under the CUDA-visib
 failed. On a host that shares the GPU with another job, leave that job's headroom: the fallback is
 `mem-final-f094` (`--mem-fraction-static 0.94`, ~470 MiB less pool, not measured).
 
+## 3b. The combined final on this host: memory + compute levers (`final-mem-c1-c2a`)
+
+PB's combined final = mem-final + C1 (tuned Triton fused-MoE config for this checkpoint,
+`SGLANG_MOE_CONFIG_DIR`) + C2-A (sm120 FP8-KV extend-attention tiles,
+`SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES=1`), SGLang tree `1425761173` (= `53752c62aa` + the tile commits);
+ref in `gate/refs.json`. Run on build-server-3 as the cross-host replicate of PB's build-server-2 numbers
+(`sweep-final-mem-c1-c2a-20261005-165852-build-server-3-bea80b`; MoE config sha256 b3bcce12..., Triton 3.7.1 on
+both hosts):
+
+| in flight | E2E p50 s | E2E p90 s | output tok/s | total tok/s | prefix-cache hit | retractions | GPU MiB |
+|---|---|---|---|---|---|---|---|
+| 4 | 1.82 | 3.62 | 318 | 11,899 | 0.773 | 0 | 31,494 |
+| 8 | 2.91 | 4.57 | 516 | 17,109 | 0.747 | 0 | 31,496 |
+| 12 | 3.40 | 5.51 | 645 | 20,337 | 0.715 | 0 | 31,518 |
+| 16 | 4.16 | 6.33 | 744 | 24,134 | 0.703 | 0 | 31,518 |
+| 20 | 4.96 | 7.59 | 778 | 25,794 | 0.649 | 0 | 31,520 |
+| 24 | 5.57 | **8.59** | **833** | 28,911 | 0.624 | 0 | 31,522 |
+| 28 | 7.89 | 13.82 | 616 | 21,085 | 0.148 | 2 | 31,524 |
+| 32 | 10.96 | 15.15 | 600 | 18,860 | 0.002 | 1 | 31,526 |
+
+| SLO (E2E p90) | mem-base | mem-final | final-mem-c1-c2a | $/1M output at $0.4 / 0.7 / 1.0 / 1.5 per GPU-h |
+|---|---|---|---|---|
+| 6 s | C8, 465 tok/s | C8, 479 | **C12, 645** | 0.172 / 0.301 / 0.431 / 0.646 |
+| 10 s | C12, 558 | C20, 677 | **C24, 833** | 0.133 / **0.234** / 0.334 / 0.500 |
+| 15 s | C20, 375 | C24, 681 | C28 by p90; max goodput still C24, 833 | as 10 s |
+
+At the 10 s SLO: +49% output tok/s and -33% $/1M output over mem-base (C12, $0.348 at $0.70), +23% and -18.5%
+over mem-final. The compute levers shorten every turn (p90 at C20 8.77 -> 7.59 s), so C24 now fits under 10 s; the
+cache cliff stays at C28, a memory property (hit rate at C24 0.624 vs mem-final 0.608). Server memory 31,494-31,526
+MiB (rule <= 31,642); no failed request; prompts to 10,243 tokens; host MemAvailable >= 48.9 GB.
+
+Quality anchor vs mem-base (same arms as section 3: 0.85 fraction; role-play with 1,024-token chunks):
+GSM8K 1319 **96.44** vs 96.21 (paired 7 items right only here, 4 only in base, McNemar p = 0.55); tool-JSON 40/40;
+role-play reference NLL +0.0030 nats/token (budget 0.02); language adherence 67 vs 68 of 80, one
+adherent-to-non-adherent flip, inside the 1/80 band (`s001101/0`: a Russian user asks for an English level test;
+both arms frame an English quiz in Russian, and this arm's longer quiz is tagged `en`). Passes.
+
+> [!gap] Same-host replicate of C16/C20/C24 queued behind PC3's GPU jobs.
+
 ## 4. Code levers
 
 ### L5: release the slid-out part of the tree-locked SWA window (implemented, exact)
