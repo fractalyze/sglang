@@ -144,7 +144,11 @@ PTHINK30 = SessionLoad(name="pthink30", concurrency=48, warmup_s=240.0, window_s
                        think_scale=30.0 / 17.9)
 PTHINK60 = SessionLoad(name="pthink60", concurrency=96, warmup_s=300.0, window_s=480.0, expected_session_s=280.0,
                        think_scale=60.0 / 17.9)
-LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, INFLIGHT_C12, SOAK, THINK30, THINK60, PTHINK30, PTHINK60)}
+# Chat soak: pthink30 held for 30 min.
+PSOAK30 = SessionLoad(name="psoak30", concurrency=72, warmup_s=240.0, window_s=1800.0, expected_session_s=150.0,
+                      think_scale=30.0 / 17.9)
+LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, INFLIGHT_C12, SOAK, THINK30, THINK60, PTHINK30, PTHINK60,
+                             PSOAK30)}
 # PB's compute levers gate at inflight-C12 (PC's memory levers gate on capacity probes and sweeps, not `gate run`).
 GATED_LOAD = INFLIGHT_C12
 
