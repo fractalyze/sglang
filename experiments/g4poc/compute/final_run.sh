@@ -4,13 +4,20 @@
 # (compute/mem_check.py: plateau <= torch capacity - 512 MiB), the final's quality against the anchor,
 # mem-final alone at 16/20/24 (memory and compute contributions apart), the final with the radix cache off
 # (fleet model: every turn re-prefills its history; ref <final ref>-nocache), and the final's P/D measurement.
-# Each step whose output exists is skipped, so a rerun resumes.
+# Each step whose output exists is skipped, so a rerun resumes. Overrides (env): FINAL_CONC (the final's sweep,
+# default 4-32), ALONE_REF / ALONE_CONC (the comparison sweep, default mem-final at 16/20/24), and
+# G4POC_SERVER_MEMORY_MAX for a HiCache stack (final-hc runs in a 28G scope).
 #   compute/final_run.sh <final ref> > /home/jooman/g4poc/logs/pb-final.log 2>&1
+#   G4POC_SERVER_MEMORY_MAX=28G FINAL_CONC=4,8,12,16,20,24,28,32,40 ALONE_REF=final-mem-c1-c2a ALONE_CONC=24,28 \
+#     compute/final_run.sh final-hc
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 source "$here/gate/env.sh"
 cd "$here"
 final=$1
+conc=${FINAL_CONC:-4,8,12,16,20,24,28,32}
+alone=${ALONE_REF:-mem-final}
+alone_conc=${ALONE_CONC:-16,20,24}
 R=$G4POC_RUNS_DIR
 out=$R/final-$final
 mkdir -p "$out"
@@ -30,8 +37,8 @@ if [ ! -f "$G4POC/reference/quality_baseline.json" ]; then
   python -m gate quality --ref base --gsm8k-n all --set-baseline --label quality-base-anchor
 fi
 if [ ! -f "$out/sweep.txt" ]; then
-  step "sweep $final at 4-32 in flight"
-  sampled "$final" python -m gate sweep --ref "$final" --load inflight --concurrency 4,8,12,16,20,24,28,32
+  step "sweep $final at $conc in flight (scope ${G4POC_SERVER_MEMORY_MAX:-24G})"
+  sampled "$final" python -m gate sweep --ref "$final" --load inflight --concurrency "$conc"
   ls -td "$R"/sweep-"$final"-* | head -1 > "$out/sweep.txt"
 fi
 if [ ! -f "$out/quality.txt" ]; then
@@ -39,10 +46,10 @@ if [ ! -f "$out/quality.txt" ]; then
   python -m gate quality --ref "$final" --gsm8k-n all --label "quality-$final"
   ls -td "$R"/quality-"$final"-* | head -1 > "$out/quality.txt"
 fi
-if [ ! -f "$out/mem-final-sweep.txt" ]; then
-  step "sweep mem-final alone at 16, 20, 24"
-  sampled mem-final python -m gate sweep --ref mem-final --load inflight --concurrency 16,20,24
-  ls -td "$R"/sweep-mem-final-* | head -1 > "$out/mem-final-sweep.txt"
+if [ ! -f "$out/alone-sweep.txt" ]; then
+  step "sweep $alone at $alone_conc"
+  sampled "$alone" python -m gate sweep --ref "$alone" --load inflight --concurrency "$alone_conc"
+  ls -td "$R"/sweep-"$alone"-* | head -1 > "$out/alone-sweep.txt"
 fi
 if [ ! -f "$out/nocache-sweep.txt" ]; then
   step "sweep ${final}-nocache at 4-20 in flight (fleet model: every turn re-prefills its history)"

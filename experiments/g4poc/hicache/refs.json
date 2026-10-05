@@ -1,0 +1,143 @@
+{
+  "mem-hc-dbg": {
+    "description": "mem-hc on a debug-only tree that logs SWA admission accounting (free/evictable sliding slots at select, load-back, commit, pre-alloc and alloc-time eviction), to locate the C28 SWA admission under-reservation. Run in a 28G scope.",
+    "extends": "mem-hc",
+    "commit": "0b7565cf482d7bdb030fc22ab29f419ecfd1ca8c",
+    "env": {
+      "G4POC_DEBUG_SWA_ADMISSION": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix": {
+    "description": "mem-hc with the SWA admission fix: SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW=1 also pins best_match_node during prefill admission, so device SWA a HiCache load-back will lock leaves the evictable budget before the check (the C28 crash of mem-hc). Run in a 28G scope.",
+    "extends": "mem-hc",
+    "commit": "9ce3db947163c84f090da8eb30bfe7bc3be79d0c",
+    "env": {
+      "SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix-smallpool": {
+    "description": "Exactness only: mem-hc-fix on a 16K-token device pool (full and SWA), so multi-turn sessions at concurrency 1 are evicted to the host pool between turns and every later turn is a HiCache load-back. Control: mem-final (device hits).",
+    "extends": "mem-hc-fix",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "mem-hc-smallpool": {
+    "description": "Exactness attribution: mem-hc (no admission fix) on the same 16K-token device pool as mem-hc-fix-smallpool, so every later multi-turn turn is a HiCache load-back.",
+    "extends": "mem-hc",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix-smallpool-direct": {
+    "description": "Exactness diagnostic: mem-hc-fix-smallpool with the direct copy path and layer_first host layout instead of the kernel io path and page_first, to test whether the load-back divergence comes from the kernel/page_first transfer.",
+    "extends": "mem-hc-fix-smallpool",
+    "server_args": [
+      "--hicache-io-backend",
+      "direct",
+      "--hicache-mem-layout",
+      "layer_first"
+    ],
+    "numerics_unchanged": true
+  },
+  "mem-base-hc-smallpool": {
+    "description": "Exactness attribution to upstream: PC's control mem-base (no study levers: no L8 vocab table, no L9 override, ratio 0.3) + HiCache (12 GB, write-through, kernel io, page_first) on a 16K-token device pool, so every later multi-turn turn is a load-back. Control: mem-base.",
+    "extends": "mem-base",
+    "server_args": [
+      "--enable-hierarchical-cache",
+      "--hicache-size",
+      "12",
+      "--hicache-write-policy",
+      "write_through",
+      "--hicache-io-backend",
+      "kernel",
+      "--hicache-mem-layout",
+      "page_first",
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix-smallpool-rt": {
+    "description": "Byte-level HiCache round trip: mem-hc-fix-smallpool on a debug tree (fix + G4POC_DEBUG_HICACHE_ROUNDTRIP) that compares device vs host KV bytes per token and layer at every write-through and load-back ack (full and SWA pools) and checks the full->SWA mapping after loads.",
+    "extends": "mem-hc-fix-smallpool",
+    "commit": "9e26c909218ca8636fbf78585fbafbd0a0b28f24",
+    "env": {
+      "G4POC_DEBUG_HICACHE_ROUNDTRIP": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix2": {
+    "description": "mem-hc-fix + the write-through fence: SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH=1 orders each D2H write-through after the forwards already queued on the forward stream, so a node inserted while its KV is still being written is not copied half-written (the multi-turn load-back inexactness). Run in a 28G scope.",
+    "extends": "mem-hc-fix",
+    "commit": "19e850a2280b2a74e37d2eff558a8aa5fefdd3c4",
+    "env": {
+      "SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix2-smallpool": {
+    "description": "Exactness only: mem-hc-fix2 on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: mem-final.",
+    "extends": "mem-hc-fix2",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix2-smallpool-rt": {
+    "description": "Byte-level round trip on mem-hc-fix2-smallpool: debug tree with the device-vs-host comparison at every write and load ack (expect 0 mismatches with the fence).",
+    "extends": "mem-hc-fix2-smallpool",
+    "commit": "2686c82e3eee770237aa7e3ed4f9776fc1ae28ac",
+    "env": {
+      "G4POC_DEBUG_HICACHE_ROUNDTRIP": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "final-hc": {
+    "description": "Final-stack candidate: final-mem-c1-c2a (mem-final + C1 MoE config + C2-A sm120 FP8-KV tiles) + HiCache (12 GB, write-through, kernel io, page_first) + both SGLang fixes: SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW (SWA admission crash) and SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH (stale write-through copies). Tree a0491db764 = 1425761173 + the two fix commits + a comment-only correction (branch jumanzii/g4poc-final-hicache). Run in a 28G scope.",
+    "extends": "final-mem-c1-c2a",
+    "commit": "a0491db7643b6ff7da3e9f904d264185b86be270",
+    "server_args": [
+      "--enable-hierarchical-cache",
+      "--hicache-size",
+      "12",
+      "--hicache-write-policy",
+      "write_through",
+      "--hicache-io-backend",
+      "kernel",
+      "--hicache-mem-layout",
+      "page_first"
+    ],
+    "env": {
+      "SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW": "1",
+      "SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "final-hc-smallpool": {
+    "description": "Exactness only: final-hc on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a (device hits).",
+    "extends": "final-hc",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  }
+}
