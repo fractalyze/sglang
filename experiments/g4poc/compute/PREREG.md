@@ -83,3 +83,32 @@ is 0.088 x (1 - 1/2.93) + 0.061 x (1 - 1/2.02) = 8.8%; with the slowest shape's 
 1.71x) 7.4%. The profile's mean kernel time per launch (4.5 ms at 512, 0.62 ms at 256) is above the
 microbench mix's (3.2 ms, 0.40 ms), i.e. the served mix leans to the large chunks with the larger speedups.
 At a fixed in-flight count E2E scales with GPU time per reply, and p90 replies carry the larger prefills.
+
+## C4 and the C3 flags on the final stack (registered 2026-10-05 ~19:50 KST)
+
+Control: `final-hc` (the study's final: mem-final + C1 + C2-A + HiCache, tree a0491db764, 28G scope). Candidates
+(each the control plus one flag): `final-hc-kvs16` (C4: `--triton-attention-num-kv-splits 16`, default 8),
+`final-hc-lpm` (C3a on the final), `final-hc-cp2048` (C3b on the final). Each is smoke-run first (a candidate
+whose server fails is dropped and reported). Nested in-flight sweeps control, candidates..., candidates
+reversed, control (`compute/sweep_nested.sh`) at 24 and 32 in flight, the final's operating range.
+
+Keep rule (`compute/c4_pick.py`): a flag is kept if its mean log E2E p90 gain over 24 and 32 exceeds log 1.01
+and neither point's gain is below 0.99. The kept flags are combined into one ref (final-hc plus all of them),
+which gets the long role-play KL check against final-hc (`compute/kl_check.py`, batched KL within 2x the A/A
+level) and a confirming A-B-B-A at 24 and 32; the morning replicate adds them only if both hold.
+
+Prediction C4 (kv-split cap 16): E2E p90 delta -1.5% .. +0.5% at both 24 and 32 (inside the bar). Basis: the
+decode microbench (`compute/decode_split_bench.py`, c4/decode_split.json): with the served kv-head count the
+backend's split heuristic wants more than 8 splits, but the decode attention step only gains at small batches
+(-16% at 12, 0% at 20, -4.4% at 32 for cap 16; cap 32 and 64 no better), and decode attention is ~8-12% of GPU
+time, so under 0.5% of E2E at the final's operating points. Falsified if either point gains more than 1.5% or
+loses more than 1%.
+
+Prediction C3a on the final (lpm): E2E p90 delta -5% .. +1% at both points. On the base lpm only acted past the
+cliff (-6.3% at 16, where turns queue); with HiCache the cliff lies past 32, but the device pool still holds
+only ~27 histories, so at 32 some turns wait and lpm may order them by device-cached prefix. Falsified if
+either point gains more than 5% or loses more than 1%.
+
+Prediction C3b on the final (chunk 2048): E2E p90 delta -4% .. +1% at both points. On the base it gained 1-4%
+at every point with a higher hit rate below the cliff; on mem-final it cost 2 burst sessions (PC, 27 vs 29),
+which HiCache's host tier should absorb. Falsified if either point gains more than 4% or loses more than 1%.
