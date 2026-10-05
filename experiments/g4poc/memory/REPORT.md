@@ -366,6 +366,7 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   | 20 | 8.80 | 674 | 0.652 | 8.77 / 677 / 0.659 |
   | 24 | 11.06 | 675 | 0.605 | 10.95 / 681 / 0.608 |
   | 28 | 18.15 | 447 | 0.052 | 18.05 / 468 / 0.114 |
+  | 32 | 19.06 | 463 | 0.002 | 19.23 / 476 / 0.002 |
 
   Split: the cap alone changes nothing (C20/C24 within replicate spread, the C28 collapse unchanged); the host
   cache alone gives the C24 gain; with both, the C28/C32 hold is the host cache's, and the cap only keeps the
