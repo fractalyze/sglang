@@ -368,7 +368,25 @@ Runs: `sweep-final-hc-20261005-215152-build-server-3-d847de` (48-96), `sweep-fin
 - Two numbers to keep apart: the zero-think C28 result (919 output tok/s, $0.212 per 1M) is the **per-GPU
   throughput ceiling**; sessions per GPU at realistic think time is the number to **size the fleet** with.
 
-> [!gap] Mean think time 60 s (72 / 108 / 144 sessions, both configs) is running.
+**Mean think time 60 s** (no failed request; `sweep-final-hc-20261005-223037-*`, `sweep-final-mem-c1-c2a-20261005-230954-*`):
+
+| config | sessions | requests in flight | turns/s | output tok/s | E2E p50 s | E2E p90 s* | prefix-cache hit |
+|---|---|---|---|---|---|---|---|
+| final-hc | 72 | 8.2 | 1.56 | 285 | 4.32 | 15.01 | 0.072 |
+| final-hc | 108 | 16.1 | 2.16 | 389 | 6.01 | 20.98 | 0.017 |
+| final-hc | 144 | 25.7 | 2.78 | 493 | 8.14 | 25.62 | 0.004 |
+| final-mem-c1-c2a | 72 | 8.0 | 1.58 | 291 | 4.17 | 14.16 | 0.007 |
+| final-mem-c1-c2a | 108 | 14.8 | 2.21 | 396 | 5.74 | 17.95 | 0.003 |
+| final-mem-c1-c2a | 144 | 24.0 | 2.81 | 495 | 7.38 | 24.38 | 0.003 |
+
+\*The T60 p90s are inflated by the load generator: every session starts within one think time and a slot starts
+its next session at once, so sessions stay phase-correlated, and with a 60 s think time a 240 s warm-up does not
+decorrelate them. Each window holds 2-4 minute bursts (queue 41-77, uncached prefill pinned at its ~16.5K tok/s
+ceiling) although the average prefill demand is ~9-10K tok/s. The means (turns/s, in-flight, hit rate) are usable;
+the T60 session capacity at a 10 s p90 is not measured (by the means, likely ~100-120 sessions with independent
+arrivals). The T30 points have no mid-window bursts at 48 sessions. What T60 does show: histories are evicted
+almost entirely (hit <= 0.07 with HiCache, <= 0.01 without), throughput follows the turn rate, and HiCache again
+gives no gain.
 
 ## 4. Code levers
 
