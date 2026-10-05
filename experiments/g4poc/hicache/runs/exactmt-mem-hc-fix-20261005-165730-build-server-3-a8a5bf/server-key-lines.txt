@@ -1,0 +1,5 @@
+[2026-10-05 16:57:38] server_args={'model_path': '/data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/text', 'tokenizer_path': '/data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/text', 'tokenizer_mode': 'auto', 'tokenizer_backend': 'huggingface', 'tokenizer_worker_num': 1, 'detokenizer_worker_num': 1, 'skip_tokenizer_init': False, 'load_format': 'auto', 'model_loader_extra_config': '{}', 'trust_remote_code': False, 'context_length': 16384, 'is_embedding': False, 'enable_multimodal': None, 'revision': None, 'model_impl': 'auto', 'model_config_parser': 'auto', 'json_model_override_args': '{"max_
+[2026-10-05 16:57:50] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 160394, K size: 0.76 GB, V size: 0.76 GB
+[2026-10-05 16:57:50] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 42985, K size: 2.05 GB, V size: 2.05 GB
+[2026-10-05 16:58:10] Allocating full hierarchical KV host pool: 318444 tokens, 3.26 GB host memory.
+[2026-10-05 16:58:17] Allocating swa hierarchical KV host pool: 85344 tokens, 8.74 GB host memory.
