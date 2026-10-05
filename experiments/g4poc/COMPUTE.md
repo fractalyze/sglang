@@ -5,9 +5,11 @@ Workload: `WORKLOAD.md`. Base: PA's r03 (`BASELINE-FP8.md`), gate ref `base`. Th
 by the device prefix cache alone (section 5). All numbers here are bs2 unless marked bs3. Where both hosts ran the same
 point, they agree within ~1%.
 
-**Headline.** At a 10 s p90 SLO with requests always in flight, one RTX 5090 serves Gemma-4-26B-A4B FP8 for
-multi-turn role-play at 971-988 output tok/s. That is **$0.197-0.200 per 1M output tokens at $0.70/GPU-hour,
--42% against the FP8 base ($0.343)**, quality unchanged. Chat sessions with 30-60 s of think time cost
+**Headline.** With requests always in flight, one RTX 5090 serves Gemma-4-26B-A4B FP8 for multi-turn role-play at
+**28 in flight, held for 30 min: p90 8.59 s, p99 11.1 s, 952 output tok/s, $0.204 per 1M output tokens at
+$0.70/GPU-hour, -41% against the FP8 base ($0.343)**, quality unchanged (bs3 soak, PC2; bs2's same-load sweep
+agrees: p90 8.57 s, p99 11.5 s, 955 tok/s). The 4-min sweeps' cheapest point, 32 in flight at $0.197-0.200, carries
+a retraction tail over 30 min (p99 37 s), so 28 is the operating point. Chat sessions with 30-60 s of think time cost
 ~$0.45 per 1M output tokens (~70 sessions per GPU at 30 s, ≥ 118 at 60 s), and there the device prefix cache alone
 (`final-mem-c1-c2a`) does as well as HiCache with a 12 GB host pool (section 5).
 
@@ -298,14 +300,18 @@ It was replicated twice on bs2 (`runs/sweep-final-hc-cp2048-lpm-20261006-012036-
   That is 250 MiB below final-hc: chunk 2048 halves the prefill transient.
 - **Quality** (paired against the base anchor). GSM8K 96.36% vs 96.13% (+0.23 pt, CI95 [-0.33, +0.78], McNemar
   p 0.58), tool JSON 40/40: pass.
+- **Operating point: 30-min soak at 28 in flight** (PC2, bs3, `sweep-final-hc-cp2048-lpm-20261006-052216-build-server-3-d12892`):
+  9,656 requests, 0 failed, p50 / p90 / p99 = 5.54 / 8.59 / 11.13 s, 952 tok/s (**$0.204/1M at $0.70, -41% vs
+  base**), hit 0.768, 67 retracted (0.69%), GPU memory flat at 31,250 MiB. The same-host bs2 point at 28 (4-min
+  window, `runs/sweep-final-hc-cp2048-lpm-20261006-054426-build-server-2-fd138e`): p90 8.57 s, p99 11.47 s,
+  955 tok/s, hit 0.773, 11 retracted, 0 failed.
 - **30-min soak at 32 in flight** (`runs/sweep-final-hc-cp2048-lpm-20261006-022842-*`): 9,569 requests, 0 failed.
   p50 / p90 / p99 = 5.73 / 9.00 / 37.1 s, 935 tok/s ($0.208/1M at $0.70), hit 0.77. 115 requests (1.2%) were
-  retracted, and they make the p99 tail; the 4-min sweep windows do not show it. **Operating point: 28 in flight**
-  (p90 ~8.5 s, ~955 tok/s, ~$0.20/1M), as on bs3 (PC2's 30-min soaks: C28 919 tok/s at p90 8.92 s, C32 899 at
-  9.92 s). 32 maximizes p90-bounded goodput but carries the retraction tail.
-  The tail is the final's flags under overload. final-hc's 30-min soaks on bs3 retracted 0.3% at C32 (p99 11.0 s)
-  and 0.2% at C28 (p99 9.9 s), against the final's 1.2% and p99 37.1 s at C32: chunk 2048 + lpm retract
-  more at the edge, another reason the operating point is 28.
+  retracted, and they make the p99 tail; the 4-min sweep windows do not show it. 32 maximizes p90-bounded goodput
+  but carries the tail; at 28 the final retracts 0.69% and p99 stays at 11.1 s (above).
+  The tail is the final's flags under overload. final-hc's 30-min soaks on bs3 (PC2) retracted 0.3% at C32 (p99
+  11.0 s, 899 tok/s) and 0.2% at C28 (p99 9.9 s, 919 tok/s), against the final's 1.2% and p99 37.1 s at C32: chunk
+  2048 + lpm retract more at the edge, another reason the operating point is 28.
 
 **Where the saving comes from, bs2** (10 s p90 SLO, cheapest point; every row measured on bs2):
 
@@ -370,7 +376,7 @@ would close is a model result (below).
 
 | traffic | config | measured at a 10 s p90 SLO |
 |---|---|---|
-| requests always in flight (no think time) | `final-hc-cp2048-lpm` (section 3) | capacity 36 in flight; cheapest sweep point 32 ($0.197-0.200/1M at $0.70); operating point 28 after the 30-min soak (~$0.20/1M) |
+| requests always in flight (no think time) | `final-hc-cp2048-lpm` (section 3) | capacity 36 in flight; cheapest sweep point 32 ($0.197-0.200/1M at $0.70); operating point 28 (30-min soak: p90 8.59 s, p99 11.1 s, $0.204/1M) |
 | chat with ≥ 30 s mean think, ~12 GB host RAM per GPU | `final-mem-c1-c2a`: device prefix cache only, default chunking | T30 ~70 sessions ($0.44-0.45/1M); T60 ≥ 118 ($0.446/1M) |
 | chat at 30 s think, ≥ 48 GB host RAM per GPU | `final-hc` with a larger host pool | **model only** (retention model below): ~107 sessions/GPU at 48 GB, $0.30/1M |
 
