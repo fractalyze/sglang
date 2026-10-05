@@ -156,7 +156,11 @@ class TestGemma4Fp8VocabTable(unittest.TestCase):
         self.assertEqual(out.dtype, torch.bfloat16)
         got = out.float()
         ref = (self.embed(ids) * self._EMBED_SCALE).float()
+        # E4M3 subnormals (entries far below the row max) err by up to half their 2^-9
+        # step times the row scale: an absolute floor under the relative bound.
+        row_scale = self.table.weight_scale[ids].unsqueeze(-1) * self._EMBED_SCALE
         bound = _E4M3_REL * (self.w[ids].float().abs() * self._EMBED_SCALE)
+        bound = bound + 2.0**-10 * row_scale
         excess = (got - ref).abs() - (bound + _bf16_ulp(ref) + _bf16_ulp(got))
         self.assertLessEqual(excess.max().item(), 0.0)
         self.assertTrue(torch.equal(got[2], got[5]))
