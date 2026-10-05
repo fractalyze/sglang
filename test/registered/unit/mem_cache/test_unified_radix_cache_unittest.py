@@ -10107,8 +10107,10 @@ class TestSWAPrefillWindowMargin(CustomTestCase):
         )
         req_to_token_pool.alloc([req])
         tokens = list(range(1, self.prompt_len + 1))
-        req.origin_input_ids = tokens
-        req.output_ids = []
+        # Array ids, as the scheduler keeps them: radix keys built from
+        # origin_input_ids + output_ids must match the inserted keys' type.
+        req.origin_input_ids = array("q", tokens)
+        req.output_ids = array("q")
         req.full_untruncated_fill_ids = array("q", tokens)
         req.set_extend_range(0, self.prompt_len)
         req_to_token_pool.write(
@@ -10172,7 +10174,7 @@ class TestSWAPrefillWindowMargin(CustomTestCase):
             self.assertEqual(req.kv.cache_protected_len, 2)
             # Decode num_output tokens, then the decode-path SWA eviction.
             seq_len = self.prompt_len + num_output
-            req.output_ids = list(range(500, 500 + num_output))
+            req.output_ids = array("q", range(500, 500 + num_output))
             req_to_token_pool.write(
                 (req.kv.req_pool_idx, slice(self.prompt_len, seq_len)),
                 self._alloc(allocator, num_output),
