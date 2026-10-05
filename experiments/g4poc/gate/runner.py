@@ -304,7 +304,7 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
     control, candidate = legs["control"], legs["candidate"]
     summary = stats.summarize_pairs(control, candidate)
     noise_file = _load_noise_file()
-    noise = noise_file.get("per_pair_log_sigma", {})
+    noise = noise_for_load(noise_file, meta["load"]["name"])
     timing = stats.timing_verdict(summary, noise, meta.get("decide_on", stats.DEFAULT_DECIDING_METRIC))
     agreement = [timed_output_agreement(c, k) for c, k in zip(control, candidate)]
     fid = fidelity_report(legs)
@@ -337,6 +337,7 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
         "load": meta["load"],
         "summary": summary,
         "noise_used": noise,
+        "noise_from": {k: noise_file.get(k) for k in ("from_exp", "load")},
         "timing": timing,
         "timed_output_agreement": agreement,
         "fidelity": fid,
@@ -346,7 +347,8 @@ def evaluate(meta: Dict, legs: Dict[str, List[Dict]]) -> Dict:
             "integrity_ok": integrity["ok"],
             "fidelity_pass": fid_pass,
             "timing_promote": timing["promote"],
-            "promote": bool(integrity["ok"] and fid_pass and timing["promote"]),
+            "noise_calibrated": timing["noise_calibrated"],
+            "promote": bool(integrity["ok"] and fid_pass and timing["promote"] and timing["noise_calibrated"]),
         },
     }
 
@@ -369,6 +371,13 @@ def fidelity_report(legs: Dict[str, List[Dict]]) -> Dict:
 
 
 NOISE_PATH = os.path.join(config.REFERENCE_DIR, "noise.json")
+
+
+def noise_for_load(noise_file: Dict, load_name: str) -> Dict[str, float]:
+    """Per-pair noise, only if the A/A run that measured it ran the same load (else none: no promotion)."""
+    if noise_file.get("load") != load_name:
+        return {}
+    return noise_file.get("per_pair_log_sigma", {})
 
 
 def _load_noise_file() -> Dict:

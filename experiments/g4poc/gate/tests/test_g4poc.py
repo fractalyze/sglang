@@ -498,6 +498,18 @@ class RunnerTest(absltest.TestCase):
         self.assertNotEmpty(runner.server_arg_diff(a, b, [])["undeclared"])
         self.assertEmpty(runner.server_arg_diff(a, b, ["--kv-cache-dtype", "fp8_e4m3"])["undeclared"])
 
+    def test_noise_only_from_an_aa_run_at_the_same_load(self):
+        noise_file = {"load": "inflight-C12", "per_pair_log_sigma": {"e2e_p90_gain": 0.02}}
+        self.assertEqual(runner.noise_for_load(noise_file, "inflight-C12"), {"e2e_p90_gain": 0.02})
+        self.assertEqual(runner.noise_for_load(noise_file, "L64"), {})
+        self.assertEqual(runner.noise_for_load({}, "inflight-C12"), {})
+
+    def test_gated_load_is_twelve_in_flight(self):
+        self.assertEqual(config.GATED_LOAD.arrival, "slots")
+        self.assertEqual(config.GATED_LOAD.concurrency, 12)
+        self.assertEqual(config.GATED_LOAD.think_scale, 0.0)
+        self.assertIs(config.LOADS[config.GATED_LOAD.name], config.GATED_LOAD)
+
     def test_metrics_flag_added_once(self):
         self.assertEqual(runner.server_extra_args({"server_args": []}), ["--enable-metrics"])
         self.assertEqual(runner.server_extra_args({"server_args": ["--enable-metrics"]}), [])

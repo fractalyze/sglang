@@ -104,8 +104,13 @@ L8_SMOKE = SessionLoad(name="L8-smoke", concurrency=8, warmup_s=20.0, window_s=6
 # In-flight layer: N requests always outstanding (sweeps pass the concurrency).
 INFLIGHT = SessionLoad(name="inflight", arrival="slots", concurrency=16, warmup_s=60.0, window_s=240.0,
                        expected_session_s=0.0, think_scale=0.0)
-LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT)}
-GATED_LOAD = L64
+# The gated load for the compute levers: 12 always in flight. The base's in-flight sweep
+# (2026-10-04, bs2) peaks in goodput here (p90 6.3 s) and keeps a 0.70 prefix-cache hit
+# rate; from 16 up the full-attention pool can no longer hold every history and the hit
+# rate collapses, so a gate there would mostly measure cache thrash.
+INFLIGHT_C12 = msgspec.structs.replace(INFLIGHT, name="inflight-C12", concurrency=12)
+LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, INFLIGHT_C12)}
+GATED_LOAD = INFLIGHT_C12
 
 MIN_PAIRS = 4
 NOISE_SIGMAS = 3.0
