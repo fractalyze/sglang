@@ -58,5 +58,10 @@
   "env": {
    "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1"
   }
+ },
+ "c2-extend-tiles-exact": {
+  "description": "C2-A fallback: like c2-extend-tiles but the table keeps the default KV tile widths (head_dim 512 (16, 32, 32, 4, 1), 256 (32, 64, 64, 8, 1); branch jumanzii/g4poc-b-c2exact), so outputs match the default tiles on the swept shapes.",
+  "extends": "c2-extend-tiles",
+  "commit": "9026c00478"
  }
 }
