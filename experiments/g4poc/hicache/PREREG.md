@@ -58,3 +58,21 @@ the D2H stream wait on the forward stream before each write submit. CPU regressi
 
 **Falsified if** any mismatch in the byte trace, exactness < 12/12, any sweep failure, or a point more
 than 5% below mem-hc-fix.
+
+## HC4: HiCache + both fixes on the current final stack (`final-hc`)
+
+Registered 2026-10-05 ~17:50 KST (bs3 clock), before any final-hc run. `final-hc` = final-mem-c1-c2a
+(mem-final flags + C1 MoE config + C2-A sm120 FP8-KV tiles) + HiCache (12 GB, write-through, kernel io,
+page_first) + `SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW=1` + `SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH=1`, on
+tree 85ad37af45 (= 1425761173 + the two fix commits, branch jumanzii/g4poc-final-hicache), 28G scope.
+Control: final-mem-c1-c2a on bs3 (PC2's sweep: C24 833 tok/s, p90 8.59 s; C28 616 tok/s, hit 0.15).
+
+**Predictions.**
+- No failure at C20-C32.
+- C28 output tok/s +30% to +70% over final-mem-c1-c2a's 616 (801-1047): the host pool keeps the hit
+  rate near HC2's 0.71 where the device-only final falls to 0.15.
+- C24 output tok/s within -3%..+25% of 833 (HC2 gained +17% at C24 over its own control).
+- C20 p90 <= 10 s.
+- Multi-turn exactness (`final-hc-smallpool` vs `final-mem-c1-c2a`, C1): 12/12.
+
+**Falsified if** any failure, C28 <= 616 tok/s, C24 below 808 tok/s, C20 p90 > 10 s, or exactness < 12/12.
