@@ -1,0 +1,8 @@
+/home/jooman/g4poc/runs/sweep-final-hc-20261005-212754-build-server-2-f3da1c
+/home/jooman/g4poc/runs/sweep-final-hc-kvs16-20261005-213908-build-server-2-c4b1a0
+/home/jooman/g4poc/runs/sweep-final-hc-lpm-20261005-215023-build-server-2-aa9777
+/home/jooman/g4poc/runs/sweep-final-hc-cp2048-20261005-220140-build-server-2-a87fac
+/home/jooman/g4poc/runs/sweep-final-hc-cp2048-20261005-221255-build-server-2-9705f0
+/home/jooman/g4poc/runs/sweep-final-hc-lpm-20261005-222410-build-server-2-116131
+/home/jooman/g4poc/runs/sweep-final-hc-kvs16-20261005-223524-build-server-2-2b2560
+/home/jooman/g4poc/runs/sweep-final-hc-20261005-224642-build-server-2-bc462b

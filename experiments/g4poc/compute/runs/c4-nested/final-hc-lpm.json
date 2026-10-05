@@ -1,0 +1,78 @@
+{
+ "refs": [
+  "final-hc",
+  "final-hc-lpm",
+  "final-hc-lpm",
+  "final-hc"
+ ],
+ "sweeps": [
+  "/home/jooman/g4poc/runs/sweep-final-hc-20261005-212754-build-server-2-f3da1c",
+  "/home/jooman/g4poc/runs/sweep-final-hc-lpm-20261005-215023-build-server-2-aa9777",
+  "/home/jooman/g4poc/runs/sweep-final-hc-lpm-20261005-222410-build-server-2-116131",
+  "/home/jooman/g4poc/runs/sweep-final-hc-20261005-224642-build-server-2-bc462b"
+ ],
+ "points": [
+  {
+   "concurrency": 24,
+   "e2e_p90_gain": 1.0012066495794647,
+   "output_tput_gain": 1.0022554691403036,
+   "control_drift_e2e_p90": 0.9979822207050026,
+   "control_drift_tput": 1.0000634871687897,
+   "control_e2e_p90_s": [
+    7.797931806591805,
+    7.813698124885559
+   ],
+   "candidate_e2e_p90_s": [
+    7.794449566083493,
+    7.798357840010431
+   ],
+   "control_out_tok_s": [
+    918.8208333333333,
+    918.8791666666667
+   ],
+   "candidate_out_tok_s": [
+    921.8625,
+    919.9833333333333
+   ],
+   "control_hit": [
+    0.7428563207946769,
+    0.7436106386086309
+   ],
+   "candidate_hit": [
+    0.7459812490158846,
+    0.745036260275422
+   ]
+  },
+  {
+   "concurrency": 32,
+   "e2e_p90_gain": 1.076357782676381,
+   "output_tput_gain": 1.009728954760422,
+   "control_drift_e2e_p90": 0.99564199841672,
+   "control_drift_tput": 1.0044550866632982,
+   "control_e2e_p90_s": [
+    9.37461955760373,
+    9.415652988234068
+   ],
+   "candidate_e2e_p90_s": [
+    8.739961523970123,
+    8.717285403405548
+   ],
+   "control_out_tok_s": [
+    948.3541666666666,
+    952.5791666666667
+   ],
+   "candidate_out_tok_s": [
+    962.2083333333334,
+    957.2208333333333
+   ],
+   "control_hit": [
+    0.7206726414539362,
+    0.7202654185388938
+   ],
+   "candidate_hit": [
+    0.7377233518395439,
+    0.7301788700840226
+   ]
+  }
+ ]
+}
