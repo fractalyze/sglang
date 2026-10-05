@@ -78,5 +78,34 @@
       "G4POC_DEBUG_HICACHE_ROUNDTRIP": "1"
     },
     "numerics_unchanged": true
+  },
+  "mem-hc-fix2": {
+    "description": "mem-hc-fix + the write-through fence: SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH=1 orders each D2H write-through after the forwards already queued on the forward stream, so a node inserted while its KV is still being written is not copied half-written (the multi-turn load-back inexactness). Run in a 28G scope.",
+    "extends": "mem-hc-fix",
+    "commit": "19e850a2280b2a74e37d2eff558a8aa5fefdd3c4",
+    "env": {
+      "SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix2-smallpool": {
+    "description": "Exactness only: mem-hc-fix2 on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: mem-final.",
+    "extends": "mem-hc-fix2",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix2-smallpool-rt": {
+    "description": "Byte-level round trip on mem-hc-fix2-smallpool: debug tree with the device-vs-host comparison at every write and load ack (expect 0 mismatches with the fence).",
+    "extends": "mem-hc-fix2-smallpool",
+    "commit": "2686c82e3eee770237aa7e3ed4f9776fc1ae28ac",
+    "env": {
+      "G4POC_DEBUG_HICACHE_ROUNDTRIP": "1"
+    },
+    "numerics_unchanged": true
   }
 }
