@@ -268,7 +268,59 @@ colocated sweep's point at the SLO for the workload (prompt, hit rate, output):
 
 ## 5. Fleet model: sessions with think time (`compute/fleet_model.py`)
 
-Pending the drop-idle measurement (radix cache off) and PC2's think-time loads (bs3), 10-06 ~01:00.
+**The customer message.** The in-flight sweeps have no think time; real chat sessions idle between turns, and an
+idle session's history still has to live somewhere or be recomputed. The study's zero-think headline (final-hc,
+32 in flight, $0.204 per 1M output tokens at $0.70) is therefore a floor. **At 30 s of mean think time the same GPU
+costs $0.48-0.58 per 1M output tokens, 2.4-2.85x the floor**, and how much of that gap closes depends on where idle
+histories live.
+
+**Measured** (PC2, bs3, load `think30`; 0 failures). Each slot is a live session with lognormal think time (mean
+30 s), and a closed population: a new session starts when one ends, and its turn 0 has no think time, so the
+mean think per turn is 30 x (1 - 1/5.15) = 24 s.
+
+| config | sessions | in flight | out tok/s | p90 (s) | prefix hit |
+|---|---|---|---|---|---|
+| final-hc | 48 | 6.9 | 334 | 7.07 | 0.286 |
+| final-hc | 72 | 14.5 | 434 | 11.41 | 0.076 |
+| final-hc | 96 | 29.1 | 536 | 16.55 | 0.013 |
+| final-hc | 120 | 48.4 | 532 | 24.3 | 0.002 |
+| final-mem-c1-c2a (no HiCache) | 48 | 7.7 | 326 | 7.50 | 0.028 |
+| final-mem-c1-c2a | 72 | 14.3 | 435 | 11.12 | 0.004 |
+| final-mem-c1-c2a | 96 | 27.2 | 552 | 15.07 | 0.002 |
+
+At a 10 s p90 SLO a GPU holds **48 sessions measured (64 interpolated to p90 = 10 s)**, with or without HiCache.
+For 2,200 sessions that is **46 GPUs at $0.582/1M output (35 GPUs at $0.484 interpolated)**.
+
+**Why HiCache barely helps at 30 s think: storage.** PC4's code read (SGLang a0491db764): under write_through the
+host pool is an inclusive mirror of the device (host eviction only removes nodes already evicted from the
+device). So one GPU holds max(device, host) tokens of history, not their sum. A stored session takes ~6.5K
+tokens: its history, the dead reply branches of earlier turns, and ended sessions not yet aged out.
+
+| | device pool | 12 GB host pool | sessions held |
+|---|---|---|---|
+| tokens | 160K | 318K | |
+| device alone | ~25 sessions | | |
+| with HiCache | | ~49 sessions | ~49 |
+
+The measured hit rate falls where this predicts. At 48 sessions HiCache holds 0.29 of the prefix, against 0.03
+without it. From 72 sessions both are near zero and every turn re-prefills ~5.8K tokens. Past the storage bound
+the GPU is recompute-bound: ~3 turns/s and ~17K uncached prefill tok/s at saturation (PC2's 96-120 sessions).
+That sets the 10 s capacity at ~48-64 sessions whatever the cache does.
+
+**The lever: host RAM per GPU (derived).** Storage stops binding when the host pool holds as many sessions as the
+GPU can compute. That needs ~0.25 GB of `--hicache-size` per session (6.5K tokens / 26.5K tokens per GB).
+
+| | value |
+|---|---|
+| compute bound at 30 s think (final-hc's C32 point, by Little's law) | ~187 sessions per GPU |
+| host pool per GPU to hold them | ~46 GB (`--hicache-size` 46) |
+| GPUs for 2,200 sessions | ~12 |
+| cost per 1M output tokens | back to ~$0.21 |
+
+This is derived from the storage model, with **one measured anchor (12 GB, ~48 sessions)**. HS1''
+(`compute/PREREG.md`) tests its slope at 6 vs 12 GB inside the host-safety scope. Larger pools need a memory
+scope above the 28G cap, which is the user's decision (two host crashes earlier in the study set that cap). A
+customer server with 64-128 GB of host RAM per GPU would sit on the right side of it.
 
 ## 6. Harness fixes found on the way (2026-10-05)
 
