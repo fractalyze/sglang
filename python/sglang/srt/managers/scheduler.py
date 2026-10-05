@@ -3640,19 +3640,7 @@ class Scheduler(
             or get_memory().enable_flexkv
             or self.enable_unified_cache_external_linker
         ):
-            from sglang.srt.mem_cache import swa_admission_debug as _swadbg
-
-            alloc = self.token_to_kv_pool_allocator
-            pre = None
-            if _swadbg.ENABLED and hasattr(alloc, "swa_available_size"):
-                pre = (alloc.swa_available_size(), self.tree_cache.swa_evictable_size())
             self.tree_cache.check_hicache_events()
-            if pre is not None:
-                post = (alloc.swa_available_size(), self.tree_cache.swa_evictable_size())
-                if post != pre:
-                    _swadbg.snap(
-                        "hicache_events", alloc, self.tree_cache, pre=pre, post=post
-                    )
             if self.enable_hicache_storage:
                 self._process_storage_prefetch_retries()
 
@@ -4119,16 +4107,6 @@ class Scheduler(
                 self.tree_cache.ready_to_load_host_cache()
             )
 
-        from sglang.srt.mem_cache import swa_admission_debug as _swadbg
-
-        _swadbg.snap(
-            "pre_alloc",
-            self.token_to_kv_pool_allocator,
-            self.tree_cache,
-            adder.memory_budget,
-            extends=[r.extend_range.length for r in can_run_list],
-            rids=[r.rid[:8] for r in can_run_list],
-        )
         new_batch.prepare_for_extend()
 
         if self.tp_worker.model_runner.prefill_aware_swa:

@@ -67,7 +67,6 @@ from sglang.srt.mem_cache.base_prefix_cache import (
     zero_match_result,
 )
 from sglang.srt.mem_cache.radix_cache import RadixCache, RadixKey, TreeNode
-from sglang.srt.mem_cache import swa_admission_debug as _swadbg
 
 if TYPE_CHECKING:
     from sglang.srt.mem_cache.allocator import BaseTokenToKVPoolAllocator
@@ -1057,16 +1056,6 @@ class PrefillAdder:
             return req
         truncated = cand_extend_input_len > _rem_tokens
         new_len = min(cand_extend_input_len, _rem_tokens)
-        _swadbg.snap(
-            "chunk.add",
-            self.token_to_kv_pool_allocator,
-            self.tree_cache,
-            self.memory_budget,
-            rid=req.rid[:8],
-            prefix=len(req.prefix_indices),
-            cand=cand_extend_input_len,
-            new_len=new_len,
-        )
         req.set_extend_range(len(req.prefix_indices), len(req.prefix_indices) + new_len)
         self.can_run_list.append(req)
         self._update_prefill_budget(
@@ -1269,18 +1258,6 @@ class PrefillAdder:
 
         # The temporary pin excludes this prefix from the evictable budget.
         # Selection itself neither allocates slots nor materializes host hits.
-        _swadbg.snap(
-            "add.start",
-            self.token_to_kv_pool_allocator,
-            self.tree_cache,
-            self.memory_budget,
-            rid=req.rid[:8],
-            fill=len(req.full_untruncated_fill_ids),
-            dev_prefix=len(req.prefix_indices),
-            host_hit=req.host_hit_length,
-            swa_host_hit=req.swa_host_hit_length,
-            max_new=max_new,
-        )
         with self._lock_node(req.last_node):
             admission = self._select_prefill_admission(
                 req,
@@ -1289,14 +1266,6 @@ class PrefillAdder:
                 swa_host_hit_length=req.swa_host_hit_length,
                 truncation_align_size=truncation_align_size,
                 has_chunked_req=has_chunked_req,
-            )
-            _swadbg.snap(
-                "add.selected",
-                self.token_to_kv_pool_allocator,
-                self.tree_cache,
-                self.memory_budget,
-                rid=req.rid[:8],
-                admission=admission,
             )
             if isinstance(admission, AddReqResult):
                 return admission
@@ -1326,15 +1295,6 @@ class PrefillAdder:
                     return AddReqResult.OTHER
                 new_indices, req.last_node = loaded
                 req.host_loaded_length = len(new_indices)
-                _swadbg.snap(
-                    "add.loaded",
-                    self.token_to_kv_pool_allocator,
-                    self.tree_cache,
-                    self.memory_budget,
-                    rid=req.rid[:8],
-                    promised=promised_host_hit,
-                    loaded=req.host_loaded_length,
-                )
                 if 0 < req.host_loaded_length < promised_host_hit:
                     raise RuntimeError(
                         "HiCache load-back must commit all promised FULL tokens or none: "
@@ -1378,14 +1338,6 @@ class PrefillAdder:
 
             # Successful materialization has no remaining admission gates.
             self._commit_prefill_admission(req, admission, mamba_gap_reserve)
-            _swadbg.snap(
-                "add.commit",
-                self.token_to_kv_pool_allocator,
-                self.tree_cache,
-                self.memory_budget,
-                rid=req.rid[:8],
-                admission=admission,
-            )
 
         # This verdict controls the next candidate, not the committed request.
         return self.budget_state()
