@@ -27,5 +27,27 @@
       "1.0"
     ],
     "numerics_unchanged": true
+  },
+  "mem-hc-smallpool": {
+    "description": "Exactness attribution: mem-hc (no admission fix) on the same 16K-token device pool as mem-hc-fix-smallpool, so every later multi-turn turn is a HiCache load-back.",
+    "extends": "mem-hc",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix-smallpool-direct": {
+    "description": "Exactness diagnostic: mem-hc-fix-smallpool with the direct copy path and layer_first host layout instead of the kernel io path and page_first, to test whether the load-back divergence comes from the kernel/page_first transfer.",
+    "extends": "mem-hc-fix-smallpool",
+    "server_args": [
+      "--hicache-io-backend",
+      "direct",
+      "--hicache-mem-layout",
+      "layer_first"
+    ],
+    "numerics_unchanged": true
   }
 }
