@@ -1,0 +1,47 @@
+{
+ "refs": [
+  "base",
+  "c1-moe-tuned",
+  "c1-moe-tuned",
+  "base"
+ ],
+ "sweeps": [
+  "/home/jooman/g4poc/runs/sweep-base-20261005-151623-build-server-2-9ab174",
+  "/home/jooman/g4poc/runs/sweep-c1-moe-tuned-20261005-152231-build-server-2-31d450",
+  "/home/jooman/g4poc/runs/sweep-c1-moe-tuned-20261005-152839-build-server-2-0caef6",
+  "/home/jooman/g4poc/runs/sweep-base-20261005-153442-build-server-2-fff3d3"
+ ],
+ "points": [
+  {
+   "concurrency": 8,
+   "e2e_p90_gain": 1.0101318087137312,
+   "output_tput_gain": 1.0052425685924902,
+   "control_drift_e2e_p90": 1.0031118259936416,
+   "control_drift_tput": 1.0,
+   "control_e2e_p90_s": [
+    5.110968563487404,
+    5.095113456991385
+   ],
+   "candidate_e2e_p90_s": [
+    5.051708529412281,
+    5.0519924144027755
+   ],
+   "control_out_tok_s": [
+    469.7125,
+    469.7125
+   ],
+   "candidate_out_tok_s": [
+    472.175,
+    472.175
+   ],
+   "control_hit": [
+    0.7414525735280018,
+    0.7419924974948733
+   ],
+   "candidate_hit": [
+    0.7429754511306387,
+    0.7429754511306387
+   ]
+  }
+ ]
+}
