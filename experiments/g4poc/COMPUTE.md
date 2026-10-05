@@ -355,9 +355,31 @@ colocated sweep's point at the SLO for the workload (prompt, hit rate, output):
 idle session's history still has to live somewhere or be recomputed. The zero-think headline ($0.197-0.200 per
 1M output tokens at $0.70) is therefore a floor.
 
-**At 30 s of mean think time with the tested 12 GB host pool, the same GPU costs ~$0.37-0.48 per 1M output
-tokens, 1.9-2.4x the floor.** The range is the model's ~87 sessions per GPU at $0.371 down to the measured 64
-sessions at p90 7.8 s and 409 tok/s, $0.475. How much of the gap closes depends on host RAM per GPU (below).
+**At 30 s of mean think time with the tested 12 GB host pool, a GPU serves ≥ 64 sessions under a 10 s p90 SLO
+(measured), ~73 by the calibrated model, at ~$0.44-0.48 per 1M output tokens: 2.2-2.4x the floor.** At 60 s it
+serves ≥ 113 (model ~127) at ~$0.46. Session traffic is recompute-bound there: ~2.3-2.4 turns/s per GPU at p90 ~9
+s, with or without HiCache. How much of the gap closes depends on host RAM per GPU (below).
+
+**Measured with poisson session arrivals** (PC2, bs3, loads `pthink30`/`pthink60`: independent sessions, no
+bursts, queue max ≤ 4, 0 failures; the reference for think-time capacity):
+
+| config | mean think | live sessions | turns/s | E2E p90 | prefix hit |
+|---|---|---|---|---|---|
+| final-hc | 30 s | 41 | | 5.15 s | 0.46 |
+| final-hc | 30 s | 63 / 64 | | 8.05 / 9.02 s | 0.12 / 0.11 |
+| final-mem-c1-c2a (no HiCache) | 30 s | 42 | | 5.93 s | 0.05 |
+| final-mem-c1-c2a | 30 s | 64 / 64 | 2.37 | 8.19 / 8.99 s | |
+| final-mem-c1-c2a | 60 s | 83 | 1.70 | 6.47 s | |
+| final-mem-c1-c2a | 60 s | **113** | 2.30 | **8.65 s** | 0.002 |
+
+**2,200 sessions at a 10 s p90 SLO** (measured lower bounds; the edges at T30 96/112 sessions run on bs3 10-06
+~04:30-05:25):
+
+| mean think | sessions per GPU | GPUs for 2,200 | $/1M output @ $0.70 |
+|---|---|---|---|
+| 0 (2,200 requests in flight) | 36 (C36 meets 10 s; cheapest C32) | 62 at C36 (69 at C32) | 0.197-0.200 |
+| 30 s | ≥ 64 (model 73) | ≤ 35 (model 31) | ~0.44-0.48 |
+| 60 s | ≥ 113 (model 127) | ≤ 20 (model 18) | ~0.46 |
 
 **Measured, first pass** (PC2, bs3, load `think30`; 0 failures). These ran **before the slots window-cut fix**
 (PC2's dff92efc2b), which made every point pessimistic: each slot fired an uncached turn 0 in the window's last
@@ -410,9 +432,8 @@ re-prefills its whole history; `runs/fleet/`):
 | turns/s | 1.53 | 2.11 | 2.60 | 2.91 | 3.03 |
 
 At a 10 s SLO the drop-idle GPU runs 16 in flight at 2.9 turns/s. By Little's law that is ~86 sessions at 24 s
-of think per turn. The measured slots points (48-64) sit below that, for two reasons: the slots generator bug
-(PC2, fixed in dff92efc2b) made them pessimistic, and bursty think-time arrivals queue more than a closed
-in-flight loop. PC2's poisson think-time runs (10-06 morning) calibrate it.
+of think per turn, an overestimate: independent session arrivals queue more than a closed in-flight loop. PC2's
+poisson runs sustain ~2.35 turns/s at p90 ~9 s (0.81 of the closed loop), i.e. ~70 sessions.
 
 **The lever: host RAM per GPU.** A host pool keeps an idle session's cache for a roughly fixed retention time,
 not a fixed number of sessions (PC4's SW1). Retention is the host bytes over the aggregate write rate; the
@@ -428,20 +449,22 @@ sliding-window share binds first, at ~0.6 of the full-layer retention. At 12 GB 
   15 s, clipped 2-120 s, then scaled).
 - **Retention:** host GB x turn interval / (sessions x w). The per-turn host write w = 0.28 GB is calibrated on
   SW1's 48-session point.
-- **GPU turn rate at the SLO:** interpolated by hit rate between final-hc's cached point and the no-cache point.
+- **GPU turn rate at the SLO:** interpolated by hit rate between final-hc's cached point and the no-cache point,
+  derated by 0.81 for poisson session arrivals. That is the ratio of PC2's poisson turn rate at p90 ~9 s (2.35/s)
+  to the closed-loop no-cache sweep's (2.91/s at p90 9.55 s).
 
 It reproduces 0.28 at 48 sessions (measured 0.286) and 0.10 at 72 (0.076). On HS1'' (below) it predicts the
 6 GB arm (0.11 vs 0.10) and is conservative on the 12 GB arm (0.44 vs 0.56).
 
-| host pool per GPU | 30 s think: sessions/GPU, hit, GPUs for 2,200, $/1M out @0.70 | 60 s think: sessions/GPU, hit, $/1M out |
+| host pool per GPU | 30 s think: sessions/GPU, hit, GPUs for 2,200, $/1M out @0.70 | 60 s think: sessions/GPU, hit, GPUs, $/1M |
 |---|---|---|
-| 12 GB (as tested) | 87, 0.03, 26, 0.371 | 156, 0.00, 0.376 |
-| 24 GB | 101, 0.25, 22, 0.319 | 163, 0.07, 0.360 |
-| 48 GB | 125, 0.51, 18, 0.258 | 190, 0.29, 0.309 |
-| 96 GB | 147, 0.67, 15, 0.219 | 233, 0.53, 0.251 |
+| 12 GB (as tested) | 73, 0.08, 31, 0.442 | 127, 0.01, 18, 0.462 |
+| 24 GB | 87, 0.33, 26, 0.371 | 136, 0.12, 17, 0.431 |
+| 48 GB | 107, 0.58, 21, 0.301 | 163, 0.37, 14, 0.360 |
+| 96 GB | 121, 0.69, 19, 0.266 | 198, 0.59, 12, 0.296 |
 
-- **At 12 GB HiCache adds almost nothing at 30 s think.** The GPU then runs as drop-idle at ~86 sessions, the
-  same as without HiCache, which is what was measured.
+- **At 12 GB HiCache adds almost nothing at 30 s think.** The GPU then runs close to drop-idle, the same as
+  without HiCache, which is what was measured.
 - **Host RAM buys capacity gradually.** Even 96 GB stays short of the ~187-session compute bound, because long
   thinkers outlive the retention.
 - **Upper bound.** The earlier hard cap (0.23 GB of host pool per stored session, ~43 GB for 187 sessions at
