@@ -22,13 +22,15 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
 - bs2 chain done through logs/pb-pthink.log (final pthink30 48-96 on bs2, 03:01-03:51,
   runs/sweep-final-hc-cp2048-lpm-20261006-030116-build-server-2-654b74). The no-HiCache pair was dropped (PC2's bs3
   covers it). PC4's queue (pid 1603659, harness-pc4/queue-pc4b.sh, ends ~07:25) owns bs2 now; coordinator: PC4 first.
-- Waiting on bs2: /home/jooman/g4poc/pb2-pthink-ab.v2.sh (= compute/pthink_ab.sh, c73d764af0), pid 1609838, log
-  logs/pb-pthink-ab.log. Waits for pid 1603659, then HS2 = final-hc pthink30 48,64 (48 alone if short), then the
-  final at inflight C8/C12 (6 s SLO point), each only if it ends by 07:55.
+- Waiting on bs2: /home/jooman/g4poc/pb2-final-6s.sh (= compute/final_6s.sh, 0f30c09dc2), pid 1640439, log
+  logs/pb-final-6s.log. Waits until no process runs from /data/jooman/g4poc/harness-pc4 (PC4 may hold bs2 to ~07:00),
+  then the final at inflight C8/C12 (6 s SLO point) only if it ends by 07:55. If skipped: 6 s point from C16 (p90 6.16 s).
+- HS2 dropped on bs2 (coordinator 04:10): answered by PC2's same-host bs3 point; vault g4poc-hs2 retired (29e3f8b).
 - Error-detail loadgen change deployed into harness-pb 10-06 03:53 (94 tests OK).
-- Vault: c1 kept, c2 kept, c3a/c3b kept (base), c3a-hc/c3b-hc kept (final), c4 retired; hs1 / hs1b retired; hs2 registered (open, PREREG 6b8177f4e3).
-- 11:00-13:30: COMPUTE.md final numbers (two replicates, pthink calibration of fleet v3, PC2 poisson), wm-record
-  hs2, push. Timebox 14:00.
+- PC2's keep-alive fix (ffa983fd37, client keepalive 2 s) cherry-picked and deployed into harness-pb 10-06 ~04:45.
+- COMPUTE.md: T30 edge ~70 sessions/GPU (PC2 C72/C76), ~32 GPUs for 2,200; fleet v4 (+3.5% T30, +10% T60).
+- Vault: c1 kept, c2 kept, c3a/c3b kept (base), c3a-hc/c3b-hc kept (final), c4 retired; hs1 / hs1b retired; hs2 retired (confirmed, flags stay for in-flight traffic).
+- 11:00-13:30: COMPUTE.md final numbers (two replicates, pthink calibration of fleet v3, PC2 poisson), push. Timebox 14:00.
 
 ## Queue (GPU, in order)
 1. gate calibrate --ref base (fidelity reference + thresholds)
