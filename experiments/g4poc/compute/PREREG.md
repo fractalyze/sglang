@@ -174,3 +174,19 @@ Outcome (10-06 ~04:20): the bs2 final-hc arm was not run. PC2 ran the final on b
 (same host): p90 9.40 s, hit 0.034, against final-hc's 8.05 s, 0.116, and the final's bs2 point (9.31 s, 0.038)
 matches it. At 48 sessions, across hosts, final-hc's hit 0.462 lies in the predicted 0.38 .. 0.55 and the final's
 p90 is +8.7% (interval +3 .. +20%). Not falsified; vault g4poc-hs2 retired (the flags stay for in-flight traffic).
+
+## M128: PC4's bug-4 fix on the final config (registered 2026-10-06 ~05:40 KST)
+
+`final-hc-cp2048-lpm-m128` = the final + `SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN=128` on tree cbf56143b5 (a tree insert
+keeps 128 SWA tokens below the window, and a branch-inserted prompt holds window + margin through decode). PC4's
+result on final-hc (bs2, C28, ABBA): +7.1% output tok/s, -7.3% p90, prefix hit 0.71 -> 0.80, retractions 2-3 -> 7-8
+per 240 s window. The final already holds a higher hit (0.77-0.79: chunk 2048's finer windows), so less is left.
+
+Runs (`compute/m128_run.sh`, bs2, 28G): (a) A-B-B-A at 28 in flight, final vs -m128; (b) quality vs the base anchor;
+(c) 30-min soak of -m128 at 28; (d) 6 s point; (e) a second A-B-B-A if it fits.
+
+Prediction, (a): E2E p90 gain 1.01 .. 1.06, output tok/s +1% .. +5%, prefix hit 0.80 .. 0.86, retractions 2-4x the
+final's, E2E p99 between -5% and +20%. (b): GSM8K within the 1 pt tolerance, tool JSON 40/40. (c): 0 failed
+requests, retractions <= 3% of requests, p99 <= 1.3x the final's C32 soak p99 scaled to C28 (no 28 soak of the final
+on bs2; bs3's C28 soak is the reference).
+Falsified (for promotion) if the p90 gain is < 1.0, or p99 rises > 20%, or the soak fails a request or retracts > 3%.
