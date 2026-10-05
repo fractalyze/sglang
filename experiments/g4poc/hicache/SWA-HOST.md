@@ -351,3 +351,9 @@ after a <= 4096-token first turn are swa_gone. Against that, final-hc's in-fligh
 (0.71-0.74 at C20-C32) is above the ~0.66 ceiling such misses would allow.
 
 **Falsified if** >= 50% of those turns hit.
+
+Addendum to the SW4 preregistration (02:05 KST, before any run): step (b) also runs the exactness
+pair with `exactness_mt --template-cut 4`. The next turn then matches 4 tokens short of the cached
+prompt, the path the margin changes. Prediction: 12/12 identical outputs and identical
+`cached_tokens`, with every turn-2 `cached_tokens` = prompt - 4 in both arms (a hit through the
+margin).
