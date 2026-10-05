@@ -261,7 +261,9 @@ role-play reference NLL +0.0030 nats/token (budget 0.02); language adherence 67 
 adherent-to-non-adherent flip, inside the 1/80 band (`s001101/0`: a Russian user asks for an English level test;
 both arms frame an English quiz in Russian, and this arm's longer quiz is tagged `en`). Passes.
 
-> [!gap] Same-host replicate of C16/C20/C24 queued behind PC3's GPU jobs.
+Same-host replicate (`sweep-final-mem-c1-c2a-20261005-175047-build-server-3-f72a00`, run 75 min later):
+C16/C20/C24 at E2E p90 6.32 / 7.52 / 8.58 s (first 6.33 / 7.59 / 8.59) and 743 / 789 / 832 output tok/s
+(744 / 778 / 833); 10 s capacity C24 in both, $0.234 per 1M output at $0.70. Spread <= 1.4% on tok/s.
 
 ## 4. Code levers
 
