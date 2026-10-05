@@ -153,6 +153,18 @@ def harness_commit(here: str = os.path.dirname(os.path.dirname(os.path.abspath(_
     return out
 
 
+def parse_weights_checksum(body: Dict) -> Dict:
+    """A successful `/weights_checker` checksum body -> the engine digest and the tensor count.
+
+    `per_engine_checksum` is the sha256 over every rank's per-GPU digest; `ranks` holds each
+    rank's per-tensor checksums.
+    """
+    digest, ranks = body.get("per_engine_checksum"), body.get("ranks") or []
+    if not isinstance(digest, str):
+        return {"ok": False, "error": f"no per_engine_checksum string in {sorted(body)}"}
+    return {"ok": True, "checksum": digest, "n_tensors": len(ranks[0].get("checksums", {})) if ranks else None}
+
+
 class Server:
     """One server lifetime for one ref, logging to `log_path`."""
 
@@ -276,9 +288,7 @@ class Server:
             return {"ok": False, "error": repr(e)}
         if r.status_code != 200 or not body.get("success"):
             return {"ok": False, "error": body.get("message", r.text[:500])}
-        per = body.get("per_engine_checksum") or []
-        digest = per[0].get("per_gpu_checksum") if per and isinstance(per[0], dict) else json.dumps(per)
-        return {"ok": True, "checksum": digest, "n_tensors": len(per[0].get("checksums", {})) if per else None}
+        return parse_weights_checksum(body)
 
     def server_info(self) -> Dict:
         return requests.get(f"{self.url}/get_server_info", timeout=30).json()

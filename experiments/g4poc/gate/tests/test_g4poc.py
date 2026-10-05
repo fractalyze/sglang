@@ -550,6 +550,14 @@ class RefsTest(absltest.TestCase):
         self.assertEqual(env["X_EXTRA"], "1")
         self.assertEqual(env["PYTHONPATH"], "/trees/abc/python" + os.pathsep + "/p")
 
+    def test_weights_checksum_body(self):
+        # The shape SGLang's /weights_checker returns for {"action": "checksum"} on one GPU.
+        body = {"success": True, "message": "", "per_engine_checksum": "ab12",
+                "ranks": [{"checksums": {"w1": "x", "w2": "y"}, "per_gpu_checksum": "cd34",
+                           "parallelism_info": {"rank": 0, "size": 1}}]}
+        self.assertEqual(server.parse_weights_checksum(body), {"ok": True, "checksum": "ab12", "n_tensors": 2})
+        self.assertFalse(server.parse_weights_checksum({"success": True, "message": ""})["ok"])
+
     def test_ref_may_not_set_gate_env(self):
         with self.assertRaisesRegex(ValueError, "SGLANG_LOGPROB_CHUNK_SIZE"):
             self._server({"SGLANG_LOGPROB_CHUNK_SIZE": "2048"}).launch_env({})
