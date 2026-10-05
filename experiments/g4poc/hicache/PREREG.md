@@ -34,3 +34,27 @@ CPU regression: `test/registered/unit/managers/test_prefill_adder.py::TestHiCach
 
 **Falsified if** any point fails or retracts into errors, C28 output tok/s <= 468, C24 is outside
 the band above, C20 p90 > 10 s, or exactness < 12/12.
+
+## HC3: mem-hc-fix + write-through fence (`mem-hc-fix2`)
+
+Registered 2026-10-05 ~17:00 KST. The byte-trace run had started (16:58) but its result was unread;
+the exactness and the deciding sweep had not started.
+
+**Root cause of HC2's exactness miss (5/12)**, from the byte-level trace
+`exactmt-mem-hc-fix-smallpool-rt-20261005-165220-build-server-3-34932b`: write-through D2H copies are
+ordered only after the scheduler stream, while under the overlap scheduler the forward writing the
+inserted node's KV is still queued on the forward stream. Each finished turn's host copy holds one
+half-written token (full layer 0, SWA layers 5-24); two chunked prompt nodes were stale in every full
+layer. Attribution: mem-base (no study levers) + HiCache is also 5/12; the device-only A/A and HiCache
+without load-backs are 12/12. Fix: `SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH=1` (commit 19e850a228) makes
+the D2H stream wait on the forward stream before each write submit. CPU regression:
+`test/registered/unit/mem_cache/test_hicache_write_fence.py` (fails without the fence).
+
+**Predictions.**
+- Byte trace (`mem-hc-fix2-smallpool-rt`): 0 device/host mismatches at every write and load ack.
+- Exactness (`mem-hc-fix2-smallpool` vs mem-final): 12/12 token-identical, identical `cached_tokens`.
+- Sweep (`mem-hc-fix2`, C20-C32): no failure; output tok/s at each point within -5%..+3% of mem-hc-fix
+  (714 / 797 / 813 / 835); C20 p90 <= 10 s.
+
+**Falsified if** any mismatch in the byte trace, exactness < 12/12, any sweep failure, or a point more
+than 5% below mem-hc-fix.
