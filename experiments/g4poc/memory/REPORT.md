@@ -71,8 +71,8 @@ analysed, not built.
 
 The cliff past the capacity point is the prefix cache: once more sessions' histories compete for the pool than it
 holds, every turn re-prefills ~5K tokens and goodput falls. **With realistic think time that is the normal regime
-(section 3c, independent sessions): one GPU serves ~64-66 chat sessions at a 30 s mean think time and ~113-119 at
-60 s, at a 10 s p90; at the T30 edge that is ~427 output tok/s, about $0.46 per 1M output tokens at $0.70/GPU-h.**
+(section 3c, independent sessions): one GPU serves ~70 chat sessions at a 30 s mean think time and ~113-119 at
+60 s, at a 10 s p90; at the T30 edge that is ~430 output tok/s, about $0.45 per 1M output tokens at $0.70/GPU-h.**
 Use sessions per GPU, not the zero-think throughput ceiling, to size the fleet. For chat with think time >= 30 s and
 ~12 GB of host RAM per GPU, deploy device-only `final-mem-c1-c2a` (HiCache gains nothing there); HiCache and the two
 in-flight flags pay off for in-flight-heavy traffic.
@@ -411,6 +411,10 @@ live sessions** (PB2 replayed the seeded plans on the CPU; the digests match the
 | final-mem-c1-c2a | 30 s | 48 | 42.0 | 1.54 | 265 | 3.14 | 5.93 | 0.047 | 0 |
 | final-mem-c1-c2a | 30 s | 64 | 63.6 | 2.28 | 395 | 4.35 | 8.19 | 0.005 | 0 |
 | final-mem-c1-c2a | 30 s | 80 | 64.3 | 2.37 | 428 | 5.23 | 8.99 | 0.003 | 0 |
+| final-hc | 30 s | 72 | 67.1 | 2.45 | 430 | 4.91 | 9.03 | 0.088 | 0 |
+| final-hc | 30 s | 76 | 73.0 | 2.51 | 444 | 5.60 | 10.73 | 0.067 | 1 |
+| final-mem-c1-c2a | 30 s | 72 | 67.3 | 2.45 | 430 | 4.99 | 8.97 | 0.003 | 0 |
+| final-mem-c1-c2a | 30 s | 76 | 72.8 | 2.52 | 446 | 5.57 | 10.41 | 0.004 | 1 |
 | final-hc-cp2048-lpm | 30 s | 64 | 64.4 | 2.26 | 390 | 4.89 | 9.40 | 0.034 | 1 |
 | final-hc | 60 s | 96 | 82.3 | 1.68 | 305 | 3.84 | 6.70 | 0.037 | 1 |
 | final-hc | 60 s | 120 | 113.0 | 2.31 | 420 | 5.34 | 9.73 | 0.013 | 0 |
@@ -420,14 +424,11 @@ live sessions** (PB2 replayed the seeded plans on the CPU; the digests match the
 | final-mem-c1-c2a | 60 s | 144 | 118.0 | 2.41 | 436 | 5.41 | 9.37 | 0.002 | 0 |
 
 Runs (`runs/`): `sweep-final-hc-20261006-011528-*`, `-031205-*`, `-032720-*`; `sweep-final-mem-c1-c2a-20261006-015330-*`,
-`-023118-*`; `sweep-final-hc-cp2048-lpm-20261006-035518-*`. The failed requests (one each at three points, <= 0.12%)
+`-023118-*`, `-043524-*`, `-044916-*`; `sweep-final-hc-20261006-040929-*`; `sweep-final-hc-cp2048-lpm-20261006-035518-*`. The failed requests (one each at three points, <= 0.12%)
 are a client artifact: the one recorded with detail is `ServerDisconnectedError` 0.5 ms after send with nothing
 processed. SGLang closes an idle keep-alive connection after 5 s and the client's pool kept connections for 15 s, so
 under think time it sometimes reused a socket the server had just closed. The gate now drops idle connections after
 2 s (`gate/loadgen.py`); no server request failed.
-
-> [!gap] T30 edge refinement at targets C72/C76 (~72 and ~75 live sessions) for final-hc and final-mem-c1-c2a is
-> running.
 
 *Deployment note (keep-alive).* SGLang's HTTP server closes idle keep-alive connections after 5 s
 (`SGLANG_TIMEOUT_KEEP_ALIVE`). Chat clients idle between turns, so a pooled connection can be reused just as the server
@@ -435,8 +436,9 @@ closes it, and the request fails at once with a disconnect before any byte is pr
 below 5 s and retry once on a disconnect that arrives before any response bytes (the request never ran). Raising the
 server's keep-alive is the alternative, at the cost of more idle sockets held open on the server.
 
-**Capacity edges (poisson, measured live sessions, E2E p90 <= 10 s):** **T30 ~64-66, T60 ~113-119 sessions per
-GPU.** Session capacity follows the turn rate: both edges sit near 2.3-2.4 turns/s per GPU, since nearly every turn
+**Capacity edges (poisson, measured live sessions, E2E p90 <= 10 s):** **T30 ~70 sessions per GPU** (both configs
+meet 10 s at 67 live sessions, p90 8.97-9.03 s, and miss at 73, 10.41-10.73 s), **T60 ~113-119.** At the T30 edge
+a GPU delivers ~430 output tok/s, about $0.45 per 1M output tokens at $0.70/GPU-h. Session capacity follows the turn rate: both edges sit near 2.3-2.4 turns/s per GPU, since nearly every turn
 re-prefills its ~5.8K-token history once think time exceeds what the cache can hold; so sessions per GPU grow
 roughly in proportion to think time. The slots runs above (phase-correlated, with the window-end bug) are the
 pessimistic bound.
