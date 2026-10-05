@@ -222,5 +222,78 @@
    "1.0"
   ],
   "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-cp2048": {
+  "description": "Exactness control for final-hc-cp2048: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-kvs16": {
+  "description": "Exactness control for final-hc-kvs16: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--triton-attention-num-kv-splits",
+   "16"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-lpm": {
+  "description": "Exactness control for final-hc-lpm: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--schedule-policy",
+   "lpm"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-cp2048-kvs16": {
+  "description": "Exactness control for final-hc-cp2048-kvs16: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--triton-attention-num-kv-splits",
+   "16"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-cp2048-lpm": {
+  "description": "Exactness control for final-hc-cp2048-lpm: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--schedule-policy",
+   "lpm"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-kvs16-lpm": {
+  "description": "Exactness control for final-hc-kvs16-lpm: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--triton-attention-num-kv-splits",
+   "16",
+   "--schedule-policy",
+   "lpm"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-cp2048-kvs16-lpm": {
+  "description": "Exactness control for final-hc-cp2048-kvs16-lpm: the same flags on final-mem-c1-c2a without HiCache (chunk size and kv splits change greedy outputs on their own).",
+  "extends": "final-mem-c1-c2a",
+  "server_args": [
+   "--chunked-prefill-size",
+   "2048",
+   "--triton-attention-num-kv-splits",
+   "16",
+   "--schedule-policy",
+   "lpm"
+  ],
+  "numerics_unchanged": true
  }
 }
