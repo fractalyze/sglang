@@ -393,6 +393,10 @@ arrivals). The T30 points have no mid-window bursts at 48 sessions. What T60 doe
 almost entirely (hit <= 0.07 with HiCache, <= 0.01 without), throughput follows the turn rate, and HiCache again
 gives no gain.
 
+> [!gap] Poisson session arrivals (`pthink30` at 48/64/80 sessions for both configs, `pthink60` at 96/120/144 for
+> final-mem-c1-c2a and 120 for final-hc) run 04:00-07:55; if the poisson capacity at T30 is materially higher than
+> the slots bound, it becomes the headline.
+
 ## 4. Code levers
 
 ### L5: release the slid-out part of the tree-locked SWA window (implemented, exact)
