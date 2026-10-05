@@ -61,5 +61,20 @@
    "0.276"
   ],
   "numerics_unchanged": true
+ },
+ "mem-stack1": {
+  "description": "Stack 1 of the flag levers: L9 (RoPE caches to 16384 positions) + L10 (max running 64) + L7 at the corrected safety margin (0.955) + ratio refit to the session mix (0.268).",
+  "extends": "mem-base",
+  "server_args": [
+   "--json-model-override-args",
+   "{\"max_position_embeddings\": 16384}",
+   "--max-running-requests",
+   "64",
+   "--mem-fraction-static",
+   "0.955",
+   "--swa-full-tokens-ratio",
+   "0.268"
+  ],
+  "numerics_unchanged": true
  }
 }
