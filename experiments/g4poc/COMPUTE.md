@@ -6,8 +6,9 @@ point, they agree within ~1%.
 
 **Headline.** At a 10 s p90 SLO with requests always in flight, one RTX 5090 serves Gemma-4-26B-A4B FP8 for
 multi-turn role-play at 971-988 output tok/s. That is **$0.197-0.200 per 1M output tokens at $0.70/GPU-hour,
--42% against the FP8 base ($0.343)**, quality unchanged. With real think time the cost per token rises,
-and host RAM per GPU decides by how much (section 5).
+-42% against the FP8 base ($0.343)**, quality unchanged. Chat sessions with 30-60 s of think time cost
+~$0.45 per 1M output tokens (≥ 64 sessions per GPU at 30 s, ≥ 118 at 60 s), and there the device prefix cache alone
+(`final-mem-c1-c2a`) does as well as HiCache with a 12 GB host pool (section 5).
 
 ## 1. Baseline capacity curve (base, bs2)
 
@@ -355,13 +356,25 @@ colocated sweep's point at the SLO for the workload (prompt, hit rate, output):
 idle session's history still has to live somewhere or be recomputed. The zero-think headline ($0.197-0.200 per
 1M output tokens at $0.70) is therefore a floor.
 
-**At 30 s of mean think time with the tested 12 GB host pool, a GPU serves ≥ 64 sessions under a 10 s p90 SLO
-(measured), ~73 by the calibrated model, at ~$0.44-0.48 per 1M output tokens: 2.2-2.4x the floor.** At 60 s it
-serves ≥ 113 (model ~127) at ~$0.46. Session traffic is recompute-bound there: ~2.3-2.4 turns/s per GPU at p90 ~9
-s, with or without HiCache. How much of the gap closes depends on host RAM per GPU (below).
+**At 30 s of mean think time a GPU serves ≥ 64 sessions under a 10 s p90 SLO (measured), at ~$0.45 per 1M output
+tokens: 2.3x the floor.** At 60 s it serves ≥ 118 at ~$0.45. Session traffic is recompute-bound there: ~2.3-2.4
+turns/s per GPU at p90 ~9 s. A 12 GB host pool does not help at these think times. How much of the gap more host RAM
+would close is a model result (below).
+
+**Which config for which traffic:**
+
+| traffic | config | measured at a 10 s p90 SLO |
+|---|---|---|
+| requests always in flight (no think time) | `final-hc-cp2048-lpm` (section 3) | C28 operating point, C32 edge; $0.197-0.200/1M at $0.70 |
+| chat with ≥ 30 s mean think, ~12 GB host RAM per GPU | `final-mem-c1-c2a`: device prefix cache only, default chunking | T30 ≥ 64 sessions ($0.454/1M); T60 ≥ 118 ($0.446/1M) |
+| chat at 30 s think, ≥ 48 GB host RAM per GPU | `final-hc` with a larger host pool | **model only** (retention model below): ~107 sessions/GPU at 48 GB, $0.30/1M |
+
+At these think times the HiCache configs are no better than device-only. final-hc ties device-only at T30 and runs
+slightly worse at T60 (p90 10.43 vs 9.37 s at 119 live). Chunk 2048 + lpm is worse again at T30 (below). The device
+pool alone is the simplest and costs the least.
 
 **Measured with poisson session arrivals** (loads `pthink30`/`pthink60`: independent sessions, no bursts, queue max
-≤ 4, 0 failures below the edge; the reference for think-time capacity). PC2 ran bs3; the final's sweep ran on bs2
+≤ 4, at most 1 failure per point; the reference for think-time capacity). PC2 ran bs3; the final's sweep ran on bs2
 (`runs/sweep-final-hc-cp2048-lpm-20261006-030116-build-server-2-654b74`). Rows with the same `C` replay the same
 arrival plan on both hosts:
 
@@ -375,7 +388,9 @@ arrival plan on both hosts:
 | final-mem-c1-c2a (no HiCache, bs3) | 30 s | 48 | 42 | 1.54 | 5.93 s | 0.05 |
 | final-mem-c1-c2a (bs3) | 30 s | 64 / 80 | 64 / 64 | 2.28 / 2.37 | 8.19 / 8.99 s | 0.005 / 0.003 |
 | final-mem-c1-c2a (bs3) | 60 s | 96 | 83 | 1.70 | 6.47 s | 0.002 |
-| final-mem-c1-c2a (bs3) | 60 s | 120 / 144 | **113** / 118 | 2.30 / 2.41 | **8.65** / 9.37 s | 0.002 |
+| final-mem-c1-c2a (bs3) | 60 s | 120 / 144 | 113 / **118** | 2.30 / 2.41 | 8.65 / **9.37 s** | 0.002 |
+| final-hc (bs3) | 60 s | 96 | 82 | 1.68 | 6.70 s | 0.04 |
+| final-hc (bs3) | 60 s | 120 / 144 | 113 / 119 | 2.31 / 2.43 | 9.73 / 10.43 s | 0.01 / 0.01 |
 
 **C sets the arrival rate, but the plan's random draw sets the offered load.** `gate sweep` seeds each C's plan
 separately (`sweep-<C>`). Replaying a plan's turn schedule with a constant E2E (`compute/plan_offer.py`) reproduces
@@ -408,13 +423,14 @@ same plans (C48, C64) on bs2 after PC4's queue, which separates the config from 
 gaps hold, the recommendation splits:** chunk 2048 + lpm for in-flight-heavy traffic (-3% $/1M at 32 in flight),
 default chunking (`final-hc`) for chat with long think times.
 
-**2,200 sessions at a 10 s p90 SLO** (measured lower bounds; the edges are C72/C76 above):
+**2,200 sessions at a 10 s p90 SLO** (zero think: the final; with think time: device-only `final-mem-c1-c2a`,
+measured lower bounds, the T30 edges are C72/C76 above):
 
 | mean think | sessions per GPU | GPUs for 2,200 | $/1M output @ $0.70 |
 |---|---|---|---|
 | 0 (2,200 requests in flight) | 36 (C36 meets 10 s; cheapest C32) | 62 at C36 (69 at C32) | 0.197-0.200 |
-| 30 s | ≥ 64 (model 73) | ≤ 35 (model 31) | ~0.44-0.48 |
-| 60 s | ≥ 113 (model 127) | ≤ 20 (model 18) | ~0.46 |
+| 30 s | ≥ 64 (model 73) | ≤ 35 (model 31) | 0.454 |
+| 60 s | ≥ 118 (model 127) | ≤ 19 (model 18) | 0.446 |
 
 **Measured, first pass** (PC2, bs3, load `think30`; 0 failures). These ran **before the slots window-cut fix**
 (PC2's dff92efc2b), which made every point pessimistic: each slot fired an uncached turn 0 in the window's last
