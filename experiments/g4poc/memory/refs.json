@@ -327,5 +327,14 @@
    "1024"
   ],
   "numerics_unchanged": true
+ },
+ "final-cpl-m128-qr": {
+  "description": "Role-play quality arm for the promotion candidate final-hc-cp2048-lpm-m128 (SWA prefill window margin 128) at a 0.85 static fraction, keeping its 2048-token chunks. 28G scope.",
+  "extends": "final-hc-cp2048-lpm-m128",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85"
+  ],
+  "numerics_unchanged": true
  }
 }
