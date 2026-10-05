@@ -29,10 +29,13 @@ python -m sglang.launch_server --model-path <gemma-4-26B-A4B-it FP8 text checkpo
 
 Host RAM: the server pins a 12 GB host pool and peaks at ~18 GB RSS. SGLang's start check
 (`mem_cache/pool_host/base.py`) also wants 10 GiB of cgroup headroom beyond each pool it pins, and counts the
-cgroup's whole usage at that moment (anonymous memory, file cache, compile workers), which varied from 4.7 to
-10 GB between identical launches. In a 28 GB cgroup (this study's host-safety ceiling) 2 of 7 final-config starts
-failed with "Not enough host memory available" and the passing ones cleared it by 0.3-3.6 GB. Give the server's
-cgroup >= 32 GB in deployment, or retry the start on that error (the study's queue did).
+cgroup's whole usage at that moment, including file cache charged to it. That usage varied from 4.7 to 10 GB
+between identical launches with the weights already cached, and reached ~24 GB when another job's memory pressure
+had evicted the weights, so the server re-read all ~25 GB of shards inside its own cgroup (headroom 4.0 GiB). In a
+28 GB cgroup (this study's host-safety ceiling) 3 of 9 final-config starts failed with "Not enough host memory
+available", and the passing ones cleared it by 0.3-3.6 GB. In deployment: read the weight files outside the
+server's cgroup just before launch (page cache stays charged to whoever read it first), give the cgroup >= 32 GB,
+and retry the start on that error (the study's queues do all three that the host allows).
 
 | | mem-base | mem-final (memory levers) | + compute levers (`final-mem-c1-c2a`) | + fixed HiCache (**`final-hc`**) |
 |---|---|---|---|---|
