@@ -25,7 +25,8 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
 - M128 (PC4's SWA margin on the final, ref final-hc-cp2048-lpm-m128, tree cbf56143b5): NOT promoted. bs2 4 pairs at
   C28: p90 gain 1.014, tok/s +1.3%, p99 +5.2%, retractions 2.95x; quality pass; 30-min C28 soaks retract 2.56% (bs2)
   / 2.67% (bs3) vs 1.39% limit. Vault g4poc-m128f parked (cdcfbcd). COMPUTE.md section 3 documents it as opt-in.
-- bs2 idle since 10-06 07:10 (nothing queued). The final's 6 s point came from PC2 on bs3 (C12, $0.300/1M, -28%).
+- psoak30 (device-only final-mem-c1-c2a, C72, 30 min) on bs2 07:12-07:48: 67.5 live, p90 8.96 s, 0 failed, 0 retracted
+  (bs3 PC2: p90 9.26 s). bs2 idle since 07:48 (nothing queued). The final's 6 s point came from PC2 on bs3 (C12, $0.300/1M, -28%).
 - HS2 dropped on bs2 (coordinator 04:10): answered by PC2's same-host bs3 point; vault g4poc-hs2 retired (29e3f8b).
 - Error-detail loadgen change deployed into harness-pb 10-06 03:53 (94 tests OK).
 - PC2's keep-alive fix (ffa983fd37, client keepalive 2 s) cherry-picked and deployed into harness-pb 10-06 ~04:45.
