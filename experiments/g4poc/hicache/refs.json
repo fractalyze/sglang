@@ -7,5 +7,25 @@
       "G4POC_DEBUG_SWA_ADMISSION": "1"
     },
     "numerics_unchanged": true
+  },
+  "mem-hc-fix": {
+    "description": "mem-hc with the SWA admission fix: SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW=1 also pins best_match_node during prefill admission, so device SWA a HiCache load-back will lock leaves the evictable budget before the check (the C28 crash of mem-hc). Run in a 28G scope.",
+    "extends": "mem-hc",
+    "commit": "9ce3db947163c84f090da8eb30bfe7bc3be79d0c",
+    "env": {
+      "SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "mem-hc-fix-smallpool": {
+    "description": "Exactness only: mem-hc-fix on a 16K-token device pool (full and SWA), so multi-turn sessions at concurrency 1 are evicted to the host pool between turns and every later turn is a HiCache load-back. Control: mem-final (device hits).",
+    "extends": "mem-hc-fix",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
   }
 }
