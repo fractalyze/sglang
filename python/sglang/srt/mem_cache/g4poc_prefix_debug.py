@@ -47,6 +47,13 @@ def ids_hash(ids):
 def log_admission(req, *, device_prefix, loaded):
     if not ENABLED:
         return
+    try:
+        _log_admission(req, device_prefix=device_prefix, loaded=loaded)
+    except Exception:  # a debug log must never take the scheduler down
+        logger.exception("PFXDBG log failed for rid=%s", getattr(req, "rid", None))
+
+
+def _log_admission(req, *, device_prefix, loaded):
     lb = getattr(req, "_g4poc_load_back", None) or {}
     logger.info(
         "PFXDBG rid=%s hash=%s fill=%d device_hit=%d host_hit=%d swa_host_hit=%d "
