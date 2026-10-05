@@ -360,20 +360,48 @@ idle session's history still has to live somewhere or be recomputed. The zero-th
 serves ≥ 113 (model ~127) at ~$0.46. Session traffic is recompute-bound there: ~2.3-2.4 turns/s per GPU at p90 ~9
 s, with or without HiCache. How much of the gap closes depends on host RAM per GPU (below).
 
-**Measured with poisson session arrivals** (PC2, bs3, loads `pthink30`/`pthink60`: independent sessions, no
-bursts, queue max ≤ 4, 0 failures; the reference for think-time capacity):
+**Measured with poisson session arrivals** (loads `pthink30`/`pthink60`: independent sessions, no bursts, queue max
+≤ 4, 0 failures below the edge; the reference for think-time capacity). PC2 ran bs3; the final's sweep ran on bs2
+(`runs/sweep-final-hc-cp2048-lpm-20261006-030116-build-server-2-654b74`). Rows with the same `C` replay the same
+arrival plan on both hosts:
 
-| config | mean think | live sessions | turns/s | E2E p90 | prefix hit |
-|---|---|---|---|---|---|
-| final-hc | 30 s | 41 | | 5.15 s | 0.46 |
-| final-hc | 30 s | 63 / 64 | | 8.05 / 9.02 s | 0.12 / 0.11 |
-| final-mem-c1-c2a (no HiCache) | 30 s | 42 | | 5.93 s | 0.05 |
-| final-mem-c1-c2a | 30 s | 64 / 64 | 2.37 | 8.19 / 8.99 s | |
-| final-mem-c1-c2a | 60 s | 83 | 1.70 | 6.47 s | |
-| final-mem-c1-c2a | 60 s | **113** | 2.30 | **8.65 s** | 0.002 |
+| config | mean think | C | live sessions | turns/s | E2E p90 | prefix hit |
+|---|---|---|---|---|---|---|
+| final-hc (bs3) | 30 s | 48 | 41 | 1.54 | 5.15 s | 0.46 |
+| final-hc (bs3) | 30 s | 64 / 80 | 63 / 64 | 2.28 / 2.37 | 8.05 / 9.02 s | 0.12 / 0.11 |
+| **final-hc-cp2048-lpm** (bs2) | 30 s | 48 | 42 | 1.54 | 5.59 s | 0.24 |
+| **final-hc-cp2048-lpm** (bs2) | 30 s | 64 / 80 | 65 / 66 | 2.28 / 2.37 | **9.31** / 10.46 s | 0.04 / 0.04 |
+| final-hc-cp2048-lpm (bs2) | 30 s | 96 | 114 | 2.98 | 21.5 s (overloaded) | 0.01 |
+| final-mem-c1-c2a (no HiCache, bs3) | 30 s | 48 | 42 | | 5.93 s | 0.05 |
+| final-mem-c1-c2a (bs3) | 30 s | 64 / 80 | 64 / 64 | 2.37 | 8.19 / 8.99 s | |
+| final-mem-c1-c2a (bs3) | 60 s | 96 | 83 | 1.70 | 6.47 s | |
+| final-mem-c1-c2a (bs3) | 60 s | 120 | **113** | 2.30 | **8.65 s** | 0.002 |
 
-**2,200 sessions at a 10 s p90 SLO** (measured lower bounds; the edges at T30 96/112 sessions run on bs3 10-06
-~04:30-05:25):
+**C sets the arrival rate, but the plan's random draw sets the offered load.** `gate sweep` seeds each C's plan
+separately (`sweep-<C>`). Replaying a plan's turn schedule with a constant E2E (`compute/plan_offer.py`) reproduces
+the measured points: pthink30 C80 offers only ~66 live sessions (2.37 turns/s), a second sample of C64's load, not
+an edge. C96 offers ~99 (3.25 turns/s) and C112 ~113 (3.98), both far past the ~2.4 turns/s a GPU sustains. The
+edges between them are C72 (~70-72 live, 2.45 turns/s) and C76 (~73-75 live, 2.50); for pthink60, C144 (~120 live,
+2.42).
+
+**Chunk 2048 costs think-time hit rate (HS2, the same-host check pending).** On identical plans the final runs
++14-16% E2E p90 over final-hc at the 10 s edge, and holds half its hit rate at 48 sessions (0.24 vs 0.46). Turn rates
+(1.538 vs 1.544/s) and device evictions (3.47M vs 3.51M tokens) match, so the loss is in host-tier hits. Read
+through the retention model below, the final writes ~0.34 GB of host pool per turn against ~0.22 for final-hc
+(retention ~23 s vs ~35 s at 12 GB).
+
+The proposed mechanism: chunk 2048 splits a ~4.3K-token uncached prefill into 3 chunks. Every chunk boundary leaves
+a sliding-window node of up to ~1K tokens (~0.1 GB), and write_through copies it to the SWA host pool. Fewer hits
+mean more uncached tokens and more chunks. In flight (no think time) the same boundaries raise the *device* hit
+(0.74 -> 0.79, C3), so the flag's sign flips with think time. lpm acts only on a waiting queue, which averaged 0.03
+requests here.
+
+The comparison above crosses hosts (bs2 vs bs3, which agree within ~1% in flight). HS2 (`compute/PREREG.md`, vault
+`g4poc-hs2`) runs final-hc at the same plans on bs2 after PC4's queue. **If it holds, the recommendation splits:**
+chunk 2048 + lpm for in-flight-heavy traffic (-3% $/1M at 32 in flight), default chunking (`final-hc`) for chat
+with long think times.
+
+**2,200 sessions at a 10 s p90 SLO** (measured lower bounds; the edges are C72/C76 above):
 
 | mean think | sessions per GPU | GPUs for 2,200 | $/1M output @ $0.70 |
 |---|---|---|---|
