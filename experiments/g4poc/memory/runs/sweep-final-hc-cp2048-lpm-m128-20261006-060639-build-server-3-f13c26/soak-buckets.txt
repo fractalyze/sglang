@@ -1,0 +1,10 @@
+summary: {'n_sent': 9694, 'n_ok': 9694, 'n_failed': 0, 'e2e_p50_s': 5.53, 'e2e_p90_s': 8.474, 'e2e_p99_s': 12.432, 'output_tok_s_per_gpu': 958.036, 'prefix_cache_hit_rate': 0.797, 'window_s': 1800.0} retractions 259
+bucket | decode lines | mean running | mean gen tok/s | server GPU MiB max | host MemAvailable min GB | tree RSS max GB
+06:05 6256 16.1 805 31250 38.684 17.759
+06:10 10899 26.0 1220 31250 39.105 17.556
+06:15 11014 26.1 1218 31250 39.115 17.56
+06:20 10992 26.3 1235 31250 39.121 17.56
+06:25 11154 26.2 1224 31250 39.108 17.56
+06:30 10853 26.1 1215 31250 39.032 17.56
+06:35 9483 26.1 1223 31250 34.603 17.56
+tracebacks: 0

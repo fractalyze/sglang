@@ -1,0 +1,13 @@
+[2026-10-06 06:00:08] Load weight begin. avail mem=30.71 GB
+[2026-10-06 06:00:12] Replaced the tied BF16 embedding/LM head [262144, 2816] with an FP8 E4M3 table (per-row scales).
+[2026-10-06 06:00:12] Load weight end. elapsed=3.38 s, type=Gemma4ForCausalLM, quant=compressed-tensors, avail mem=7.05 GB, mem usage=23.66 GB.
+[2026-10-06 06:00:14] Full KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 160395, K size: 0.76 GB, V size: 0.76 GB
+[2026-10-06 06:00:14] SWA KV Cache is allocated. dtype: torch.float8_e4m3fn, #tokens: 42985, K size: 2.05 GB, V size: 2.05 GB
+[2026-10-06 06:00:14] Memory pool end. avail mem=1.39 GB
+[2026-10-06 06:00:14] Capture target decode CUDA graph begin. backend=full, num_tokens_per_req=1, bs=[1, 2, 4, 8, 12, 16, 24, 32, 40, 48], avail mem=1.36 GB
+[2026-10-06 06:00:34] Capture target decode CUDA graph end. elapsed=20.33 s, mem usage=0.19 GB, avail mem=1.17 GB.
+[2026-10-06 06:00:34] max_total_num_tokens=160395, chunked_prefill_size=2048, max_prefill_tokens=16384, max_running_requests=64, context_len=16384, available_gpu_mem=1.17 GB
+[2026-10-06 06:00:34] HiCache memory headroom: host 50.3 GiB, cgroup 23.3 GiB
+[2026-10-06 06:00:34] Allocating full hierarchical KV host pool: 318445 tokens, 3.26 GB host memory.
+[2026-10-06 06:00:41] HiCache memory headroom: host 47.1 GiB, cgroup 20.2 GiB
+[2026-10-06 06:00:41] Allocating swa hierarchical KV host pool: 85344 tokens, 8.74 GB host memory.

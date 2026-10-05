@@ -488,6 +488,27 @@ output tok/s** (31,432 total), prefix-cache hit 0.768, **$0.204 per 1M output** 
 NLL +0.0003 nats/token (budget 0.02); language adherence 68 vs 68/80, paired one flip each way (out: `s000794/0`,
 the mixed-language detector item), net 0, inside the band. Pass.
 
+**Evaluated, not promoted: the SWA prefill window margin (`SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN=128`, PC4's bug-4
+fix, tree `cbf56143b5`, ref `final-hc-cp2048-lpm-m128`).** It is a validated correctness fix: multi-turn exactness at
+concurrency 1 is 12/12 token-identical with identical cached-token counts (device-only control
+`exactmt-final-mem-c1-c2a-cp2048-lpm-m128-20261006-055521` vs HiCache small pool
+`exactmt-final-hc-cp2048-lpm-m128-smallpool-20261006-055632`), role-play quality passes (NLL +0.0019, language net 1,
+inside the band; `rp-quality-final-cpl-m128-qr-20261006-055755`), and on `final-hc` it gave +7.1% output tok/s at C28
+(PB's ABBA on build-server-2). On top of chunk 2048 + LPM it buys little and costs tail stability. 30-minute C28 soak
+on this host (`sweep-final-hc-cp2048-lpm-m128-20261006-060639-build-server-3-f13c26`) against the final config's:
+
+| | final-hc-cp2048-lpm | + margin 128 |
+|---|---|---|
+| requests / failed | 9,656 / 0 | 9,694 / 0 |
+| E2E p50 / p90 / p99 s | 5.54 / 8.59 / 11.13 | 5.53 / 8.47 / 12.43 |
+| output tok/s | 952 | 958 |
+| prefix-cache hit | 0.768 | 0.797 |
+| retractions | 67 (0.69%) | **259 (2.7%)** |
+
+The preregistered soak criterion (retractions <= 2x the final's, i.e. <= 1.39%) fails; p99 passes (<= 14.5 s). PB's
+build-server-2 ABBA agrees (+1.3% tok/s, p99 +7.5%, retractions 2.4x). Use it opt-in on stacks without chunked
+prefill 2048, where it pays (+7.1% on final-hc), knowing it roughly triples retractions.
+
 Under chat think time the two flags are not a gain: at ~64 live sessions with 30 s think time the final config's
 hit rate is 0.034 against final-hc's 0.116 and its p90 9.40 vs 8.05 s (section 3c).
 
