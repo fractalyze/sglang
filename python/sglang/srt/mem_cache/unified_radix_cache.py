@@ -1580,6 +1580,12 @@ class UnifiedRadixCache(BasePrefixCache):
             if host_indices is None:
                 return 0
             self.tree_core.commit_backup(node_id, host_indices, comp_xfers)
+            from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
+
+            if _pfx.ENABLED:
+                _pfx.clear_written("full", host_indices)
+                for xfer in comp_xfers.get(ComponentType.SWA, ()):
+                    _pfx.clear_written("swa", xfer.host_indices)
             lock_params = None
             if not write_back:
                 lock_params = self.inc_lock_ref(node_id).to_dec_params()
@@ -1731,6 +1737,16 @@ class UnifiedRadixCache(BasePrefixCache):
         # Build the KV + per-component aux transfers.
         kv_xfer, comp_xfers = self.tree_core.build_load_back_spec(node_id, req=req)
         kv_tokens = len(kv_xfer.host_indices)
+        from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
+
+        if _pfx.ENABLED and req is not None:
+            swa_host = [x.host_indices for x in comp_xfers.get(ComponentType.SWA, ())]
+            req._g4poc_load_back = {
+                "full": kv_tokens,
+                "swa": sum(len(h) for h in swa_host if h is not None),
+                "stale_full": _pfx.count_stale("full", kv_xfer.host_indices),
+                "stale_swa": sum(_pfx.count_stale("swa", h) for h in swa_host),
+            }
         sidecar_xfers = self._build_sidecar_transfers(
             CacheTransferPhase.LOAD_BACK, kv_xfer, comp_xfers
         )

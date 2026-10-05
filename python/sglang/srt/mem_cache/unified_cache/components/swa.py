@@ -419,6 +419,11 @@ class SWAComponent(TreeComponent):
                 total_prefix_len + prefix_len,
             )
             old_full = full_cd.value
+            from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
+
+            _pfx.mark_stale("swa", node.component_data[self.component_type].host_value)
+            if full_cd.lock_ref == 0:
+                _pfx.mark_stale("full", full_cd.host_value)
             if full_cd.lock_ref > 0:
                 cache_actions.append(
                     RecoverSWAWithLockedFull(node.id, old_full, value_slice)
@@ -447,6 +452,11 @@ class SWAComponent(TreeComponent):
             if action is not None:
                 cache_actions.append(action)
             new_full = value_slice[start_idx:]
+            from sglang.srt.mem_cache import g4poc_prefix_debug as _pfx
+
+            _pfx.mark_stale("swa", node.component_data[self.component_type].host_value)
+            if not is_locked:
+                _pfx.mark_stale("full", node.component_data[BASE_COMPONENT_TYPE].host_value)
             if is_locked:
                 cache_actions.append(
                     RecoverSWAWithLockedFull(node.id, old_full, new_full)
