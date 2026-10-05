@@ -76,6 +76,64 @@ Fidelity and leg integrity pass. Why small: the default config is already near t
 MoE is ~21% of GPU time, so E2E moves by about a fifth of the kernel gain. Records: `compute/runs/`, vault
 `g4poc-c1` (kept).
 
+### C2-A sm120 FP8-KV Triton extend tiles — kept (+11.5% E2E p90 at 12 in flight)
+
+**Why this lever.** On SM120 with an FP8 KV cache, Triton is the only prefill backend that serves Gemma-4.
+flashinfer and fa3/fa4 are blocked by the Gemma-4 backend assert (fa4 has no head_dim 512 kernel on SM120).
+Two other options were rejected:
+- **trtllm_mha.** Its SM120 prefill takes BF16 KV only, which halves the pool (cliff ~16 -> ~8 in flight).
+- **XQA** (`--decode-attention-backend trtllm_mha`). It is decode-only: it cannot touch the prefill kernel,
+  runs through the experimental hybrid wrapper, and turns off Gemma-4's fused KV store.
+
+No existing flag or env reaches the extend kernel on SM120. Its tiles were sized for BF16 K/V: head_dim 512
+uses 32x32 tiles with 8 warps and 1 stage, and head_dim 256 uses 64x64 with 8 warps, which runs at 255
+registers per thread.
+
+**Change.** `SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES=1` (default off; SGLang a10694ad32, `extend_attention.py`
+`_SM120_FP8_KV_EXTEND_TILES`, unit test `compute/test_sm120_tiles.py`):
+- head_dim 512: (BLOCK_M 32, BLOCK_N 32, BLOCK_N_PREFIX 64, 8 warps, 1 stage).
+- head_dim 256: (32, 32, 32, 4 warps, 1 stage).
+Both were picked by `compute/extend_attn_bench.py` (270 configs on the C12 prefill shapes, `runs/c2/bench.json`).
+
+**Sizing (before the gate).** Base profile at C12 (`compute/profile_extend_share.py`, 10 s GPU window):
+
+| kernel | share of wall time |
+|---|---|
+| fused_moe | 33.3% |
+| CUTLASS FP8 GEMMs | 26.8% |
+| Triton extend attention (head_dim 512 / 256) | 14.9% (8.8% / 6.1%) |
+| Triton decode attention (stage 1 + 2) | 7.9% |
+
+The microbench mixes run 2.93x (512) and 2.02x (256) faster, which predicts 0.088 x (1 - 1/2.93) +
+0.061 x (1 - 1/2.02) = 8.8% less GPU time; with the slowest shape's speedups alone, 7.4%.
+
+**Numerics.** The FP8-prefix path casts q to FP8 and quantizes the softmax weights to FP8 against each KV tile's
+running max, so the tile width changes the rounding. Against fp32 attention, the new tiles' error equals the
+default's on every served shape (`runs/c2/accuracy.json`, ratio 1.00). Long role-play KL check
+(`compute/kl_check.py`, 8 first turns of ~5K tokens), teacher-forced, batched:
+
+| | KL mean / p99 | worst top-1 |
+|---|---|---|
+| fast tiles | 0.032 / 0.37 | 0.911 |
+| A/A (base batched vs serial) | 0.020 / 0.26 | 0.927 |
+| limits | 0.041 / 0.52 | 0.907 |
+
+- **Greedy, one prompt at a time.** The base repeats 8/8; the new tiles diverge on 7/8, mostly at near-ties.
+- **Bit-exact control.** A tile variant that keeps the default KV tile widths is bit-identical one prompt at
+  a time (8/8). Batched, it still shows one KL-14 position in the same zh reply where the fast tiles show three
+  of 4-6. A few positions there jump under any perturbation, which is consistent with MoE routing near-ties.
+
+**Gate** (`runs/c2-gate-20261005-154627-build-server-2-b1c285`, 4 ABBA pairs at inflight-C12, bar 1%):
+
+| | base (pooled) | C2-A (pooled) | gain |
+|---|---|---|---|
+| E2E p50 / p90 / p99 (s) | 4.08 / 6.50 / 7.38 | 3.85 / 5.83 / 6.41 | 1.06 / **1.115** / 1.15 |
+| output / total tok/s | 547 / 18,506 | 605 / 20,228 | 1.106 / 1.09 |
+
+- **p90.** Gain 1.115 (CI95 1.114-1.122), with pair gains 1.116-1.121. The prediction was -12% .. -5%.
+- **Fidelity.** Gate fidelity passes: forced KL 0.009, decode KL equal to the control's.
+- **Mechanism.** The p99 gains most because the slowest replies carry the largest prefills.
+
 ## 3. Harness fixes found on the way (2026-10-05)
 
 Both broke the gate's first use on this SGLang commit (91132098df) and are fixed before any gated number.
