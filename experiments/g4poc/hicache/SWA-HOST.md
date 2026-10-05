@@ -126,3 +126,59 @@ per-turn suffix ~0.04 of prompt tokens are never reusable).
 - At 40: hit 0.45-0.72.
 
 **Falsified if** the 32-session hit rate is below 0.55, or 40 sessions hits higher than 32.
+
+## 3. Results
+
+Classification by `swahost/miss_split.py` on each point's 480 s window. The clock starts at the gate's
+pre-point cache flush. Trimmed = the window's last 60 s cut, because harness fd08bf8fbf's slots
+generator starts spurious fresh sessions at each window's end (PC2; fixed in dff92efc2b, not deployed
+for these runs). Gap tables come from a per-turn gap split (time since the session's previous admission).
+
+### SW1: final-hc, log-only tree (run `sweep-swahost-dbg-20261005-235239-build-server-3-6358fe`)
+
+| sessions | hit | E2E p90 | out tok/s | first | hit turns | swa_gone | full_gone | declined |
+|---|---|---|---|---|---|---|---|---|
+| 48 | 0.284 | 7.35 s | 334 | 233 | 231 | 230 | 216 | 0 |
+| 72 | 0.075 | 11.44 s | 434 | 264 | 70 | 185 | 698 | 0 |
+
+PC2's final-hc on a0491db764 measured 0.286 / 7.07 s and 0.076 / 11.41 s, so the log-only tree
+replicates. 0 failures.
+
+- **Missed returning turns.** At 48: 52% swa_gone, 48% full_gone (trimmed 55 / 45). At 72: 21% /
+  79% (trimmed 23 / 77).
+- **Prompt tokens, trimmed window.** At 48: reused 0.33, first turns 0.18, per-turn suffix 0.04, SWA
+  window missing 0.24, Full missing 0.21. At 72: 0.08 / 0.16 / 0.03 / 0.15 / 0.57.
+- **No mechanism failures.** 0 failed write-through backups, 0 Full tokens evicted from device
+  without a host copy, 0 declined load-backs. Both host pools sit at 0.1-0.5% free all window.
+- **All-or-nothing misses.** When either class misses, the usable match is ~0% of the expected
+  prefix. No older window survives to fall back to.
+
+Returning turns by idle gap, as the share that hit, missed for SWA, and missed for Full:
+
+| gap since previous turn | 48: hit / SWA / Full | 72: hit / SWA / Full |
+|---|---|---|
+| 10-20 s | 0.70 / 0.30 / 0.00 | 0.28 / 0.62 / 0.10 |
+| 20-30 s | 0.57 / 0.38 / 0.05 | 0.07 / 0.33 / 0.60 |
+| 30-40 s | 0.16 / 0.58 / 0.26 | 0.00 / 0.01 / 0.99 |
+| 40-60 s | 0.00 / 0.28 / 0.72 | 0.00 / 0.00 / 1.00 |
+| > 60 s | 0.00 / 0.04 / 0.96 | 0.00 / 0.00 / 1.00 |
+
+**Reading.** Each host pool keeps an idle session for a fixed time, not a fixed count.
+- **SWA window:** ~25 s at 48 sessions, ~12 s at 72.
+- **Full prefix:** ~38 s at 48, ~23 s at 72.
+- Retention scales with pool bytes over the per-session write rate. SWA's is ~0.6 of Full's at both
+  loads, so the preregistered lean (Full binds first) is falsified at 48 and holds at 72.
+- The gap distribution (think x 1.676 lognormal, mean ~24 s per turn, plus E2E) straddles both
+  retentions. Short-gap misses are SWA's; long-gap misses are Full's.
+- Equalizing the two retentions would move ~1 GB from Full to SWA and raise the binding retention by
+  only ~12% (25 -> 28 s at 48). The split is not a meaningful lever.
+
+**Why SWA's write rate is high.** About a third of SWA host writes are dead on arrival:
+- Every turn's decode-output leaf is written. Gemma-4's template drops the empty thought channel from
+  past turns, so it never matches again.
+- Every chunked prefill leaves its chunk-boundary window in the tree. The window is needed only
+  while the next chunk prefills. The final non-chunked insert walks the chunk nodes and backs them
+  up (`unified_tree_core.py:1318`, `swa.py:107-128`): ~1K SWA tokens (~100 MB) per boundary.
+- A miss re-prefills the whole history and rewrites ~2K SWA tokens, so the thrash feeds itself.
+- `--chunked-prefill-size 2048` (c3b-hc) doubles the boundaries per ~5K prompt. Its effect under
+  think-time load with HiCache is unmeasured; expect a shorter SWA retention.
