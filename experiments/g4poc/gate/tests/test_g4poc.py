@@ -504,6 +504,14 @@ class RunnerTest(absltest.TestCase):
         self.assertEqual(runner.server_extra_args({"server_args": ["--enable-metrics"]}), [])
 
 
+class LoadsTest(absltest.TestCase):
+    def test_soak_is_the_inflight_layer_held_for_30_min(self):
+        soak, inflight = config.LOADS["soak"], config.LOADS["inflight"]
+        self.assertEqual(soak.window_s, 1800.0)
+        self.assertEqual((soak.arrival, soak.think_scale, soak.warmup_s),
+                         (inflight.arrival, inflight.think_scale, inflight.warmup_s))
+
+
 class MemoryCapTest(parameterized.TestCase):
     def setUp(self):
         super().setUp()
