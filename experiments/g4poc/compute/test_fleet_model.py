@@ -59,6 +59,14 @@ class FleetModelTest(absltest.TestCase):
         self.assertEqual(row["gpus"], 1)
         self.assertAlmostEqual(row["usd_per_mtok_output"]["1.00"], 1.0 / (400 * 3600) * 1e6)
 
+    def test_points_from_triples_follow_littles_law(self):
+        like = fm.points(CACHED)
+        pt = fm.points_from_triples("24:8.0:800", like)[0]
+        self.assertAlmostEqual(pt["turns_per_s"], 4.0)  # 800 tok/s / 200 tokens per turn
+        self.assertAlmostEqual(pt["e2e_mean_s"], 6.0)  # 24 in flight / 4 turns/s
+        pols = {p["name"]: p for p in fm.policies(CACHED, NOCACHE, None, (12,), hicache_points="24:8.0:800")}
+        self.assertIn("c_sticky_host_12gb", pols)
+
     def test_failed_or_empty_points_are_dropped(self):
         sweep = _sweep([(8, 2.0, 4.0, 5.0, 0.7)])
         sweep["points"].append({"summary": {"requests_per_s": 0.0, "n_failed": 5}})

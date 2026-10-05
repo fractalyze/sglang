@@ -53,6 +53,23 @@ def points(sweep: Dict) -> List[Dict]:
     return out
 
 
+def points_from_triples(spec: str, like: Sequence[Dict]) -> List[Dict]:
+    """Points from "C:p90:out_tok_s,..." (a sweep reported only as in-flight count, E2E p90 and output tok/s).
+
+    With C slots always in flight, Little's law gives turns/s = out tok/s / output tokens per turn and mean
+    E2E = C / turns/s; tokens per turn and the hit rate are taken from `like` (the same workload's points).
+    """
+    out_tokens = sum(p["output_tokens"] for p in like) / len(like)
+    prompt_tokens = sum(p["prompt_tokens"] for p in like) / len(like)
+    pts = []
+    for item in spec.split(","):
+        c, p90, tok_s = (float(x) for x in item.split(":"))
+        turns = tok_s / out_tokens
+        pts.append({"inflight": c, "turns_per_s": turns, "e2e_mean_s": c / turns, "e2e_p90_s": p90,
+                    "output_tokens": out_tokens, "prompt_tokens": prompt_tokens, "hit": None})
+    return pts
+
+
 def split_at_cliff(pts: Sequence[Dict]):
     top = max(p["hit"] for p in pts)
     below = [p for p in pts if p["hit"] >= BELOW_CLIFF_HIT_SHARE * top]
@@ -93,7 +110,7 @@ def policy_row(p: Optional[Dict], think_s: float, sessions: int, cap: Optional[f
 
 
 def policies(cached: Dict, nocache: Dict, hicache: Optional[Dict] = None,
-             host_gb: Sequence[float] = (12, 32, 64, 128)) -> List[Dict]:
+             host_gb: Sequence[float] = (12, 32, 64, 128), hicache_points: Optional[str] = None) -> List[Dict]:
     below, past = split_at_cliff(points(cached))
     per_session = tokens_per_session(below)
     n_cap = int(cached["server_info"]["max_total_num_tokens"]) / per_session
@@ -102,8 +119,8 @@ def policies(cached: Dict, nocache: Dict, hicache: Optional[Dict] = None,
         {"name": "b_drop_idle", "points": points(nocache), "cap": None},
         {"name": "b_lru_oversubscribed", "points": past, "cap": None},
     ]
-    if hicache is not None:
-        hc = points(hicache)
+    if hicache is not None or hicache_points:
+        hc = points(hicache) if hicache is not None else points_from_triples(hicache_points, below)
         hc_per_session = tokens_per_session(hc)
         for gb in host_gb:
             out.append({"name": f"c_sticky_host_{gb:g}gb", "points": hc,
@@ -148,6 +165,7 @@ def main() -> None:
     p.add_argument("--cached", required=True, help="sweep.json with the prefix cache on")
     p.add_argument("--nocache", required=True, help="sweep.json of the same stack with --disable-radix-cache")
     p.add_argument("--hicache", help="sweep.json of a HiCache stack")
+    p.add_argument("--hicache-points", help='instead of --hicache: "C:p90:out_tok_s,..." of a HiCache sweep')
     p.add_argument("--host-gb", default="12,32,64,128")
     p.add_argument("--sessions", type=int, default=2200)
     p.add_argument("--slo", default="6,10,15")
@@ -155,8 +173,9 @@ def main() -> None:
     args = p.parse_args()
     load = lambda path: json.load(open(path)) if path else None
     pols = policies(load(args.cached), load(args.nocache), load(args.hicache),
-                    [float(x) for x in args.host_gb.split(",")])
-    res = {"inputs": {"cached": args.cached, "nocache": args.nocache, "hicache": args.hicache},
+                    [float(x) for x in args.host_gb.split(",")], args.hicache_points)
+    res = {"inputs": {"cached": args.cached, "nocache": args.nocache, "hicache": args.hicache,
+                      "hicache_points": args.hicache_points},
            "by_slo": {s: model(pols, args.sessions, float(s)) for s in args.slo.split(",")}}
     if args.out:
         with open(args.out, "w") as f:
