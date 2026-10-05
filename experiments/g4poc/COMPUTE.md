@@ -145,6 +145,34 @@ Past the cliff every turn re-prefills most of its history, so faster prefill pay
 brings 16 in flight under the 10 s SLO. Vault: `g4poc-c2` (kept), claim
 `c-g4poc-sm120-triton-extend-tiles-fp8kv`.
 
+### C3 Scheduling flags across the cliff — both kept on the base
+
+Nested sweeps base, lpm, chunk 2048, chunk 2048, lpm, base (`compute/sweep_nested.sh`) at 8-20 in flight. The
+control reproduced the 10-04 base curve (C12 6.29 s / 569 tok/s), with control drift ≤ 0.9%. Gains are
+control/candidate for E2E p90 and candidate/control for output tok/s, geometric mean of the two pairs
+(`runs/c3-nested/`):
+
+| in flight | lpm: p90 gain, tok/s gain, hit | chunk 2048: p90 gain, tok/s gain, hit | base hit |
+|---|---|---|---|
+| 8 | 1.000, 0.999, 0.74 | 1.043, 1.037, 0.79 | 0.74 |
+| 12 | 1.001, 0.995, 0.70 | 1.042, 1.026, 0.72 | 0.70 |
+| 16 | **1.067**, 1.031, 0.25 | 1.027, 1.045, 0.24 | 0.18 |
+| 20 | 1.004 (pairs mixed), **1.073**, 0.10 | 1.011, 1.021, 0.00 | 0.00 |
+
+- **lpm (C3a).** It acts only where turns queue. On the base that is past the cliff: at 16 in flight it admits
+  queued turns whose history is still cached first, raising the hit rate from 0.18 to 0.25 and cutting p90 6.3%.
+  At 20 the hit rate rises from 0.00 to 0.10 and output tok/s by 7%. Below the cliff it changes nothing.
+  The prediction (-5% .. 0% at 16) undershot.
+- **Chunk 2048 (C3b).** Every point gains 1-4%. Below the cliff the hit rate rises too (0.74 -> 0.79 at 8 in
+  flight), so the gain is mostly less re-prefill, not smoother decode. A plausible mechanism is finer
+  sliding-window eviction at chunk boundaries; it is not verified. The prediction (-1% .. +3% p90) was wrong in
+  sign. PC measured 2 fewer burst sessions with chunk 2048 on mem-final (27 vs 29).
+- **The final stack.** Neither flag joins the final on the base result. Both run overnight against final-hc at
+  24 and 32 in flight (vault `g4poc-c3a-hc`, `g4poc-c3b-hc`). A combination joins only if the confirming
+  A-B-B-A, the KL check and PC3's HiCache load-back exactness (12/12) all hold.
+
+Vault: `g4poc-c3a`, `g4poc-c3b` (kept on the base, predictions falsified on magnitude).
+
 ## 3. Harness fixes found on the way (2026-10-05)
 
 Both broke the gate's first use on this SGLang commit (91132098df) and are fixed before any gated number.
@@ -160,3 +188,13 @@ Both broke the gate's first use on this SGLang commit (91132098df) and are fixed
   checksums sit under `ranks`; the gate still read gemma4nv's older list form and raised after calibrate's fidelity
   passes, and would have ended every `gate run` leg (weights checked at load and at the end). The parser now reads
   the current body and reports `ok: false` without a digest, so two missing digests no longer compare equal.
+- **P/D decode rates lost their prefix cache.** `gate pd-measure` timed its decode points by wall clock over a
+  second pass that assumed the first pass's prefixes stayed cached. On Gemma-4's hybrid sliding-window pool they
+  did not (hit ~0 from batch 16), so every point's rate included re-prefill and `pd-model` refused to run. The
+  rate now comes from the server's per-step decode log, at the largest running count the pool sustained for 50
+  steps. On the base, batch 8 runs 626 tok/s (p90 TPOT 13.1 ms), and the pool holds 17 requests of 5,120
+  tokens: 1,070 tok/s at 16.4 ms. `compute/pd_steps_from_log.py` re-derived the base run from its log.
+- **HiCache starts can fail transiently.** SGLang's HiCache host-memory check fails 2 of 7 final-hc starts on
+  bs3 in a 28G scope ("Not enough host memory available"), on transient charges in the scope. `Server.__enter__`
+  retries exactly that failure, up to 3 tries, and keeps each failed log (`server.log.start-tryN`).
+
