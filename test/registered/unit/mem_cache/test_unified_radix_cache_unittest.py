@@ -10065,6 +10065,84 @@ class TestSWAWindowUnderBigramKey(CustomTestCase):
         cache.sanity_check()
 
 
+class TestSWAPrefillWindowMargin(CustomTestCase):
+    """A chat template that re-renders the previous assistant turn without the
+    generation prompt's tail (Gemma-4 drops the empty thought channel) ends the
+    next turn's shared prefix a few tokens short of the prompt the tree holds.
+    An insert that keeps exactly one window of live SWA behind its end leaves
+    less than a window behind that match point, so the validator refuses the
+    whole prefix and every second turn of a chat re-prefills its history.
+    SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN keeps the extra SWA that covers it.
+    """
+
+    cfg = CacheConfig(
+        page_size=1,
+        components=(ComponentType.FULL, ComponentType.SWA),
+        sliding_window_size=7,
+        kv_size=256,
+        max_context_len=64,
+    )
+    prompt_len = 24
+    # Generation-prompt tokens the next turn renders differently.
+    template_cut = 3
+
+    def _next_turn_match_len(self, margin: int) -> int:
+        cache, allocator, req_to_token_pool = build_fixture(self.cfg)
+        req = Req(
+            rid=0,
+            origin_input_text="",
+            origin_input_ids=array("q"),
+            sampling_params=SamplingParams(temperature=0, max_new_tokens=1),
+        )
+        req_to_token_pool.alloc([req])
+        tokens = list(range(1, self.prompt_len + 1))
+        req.origin_input_ids = tokens
+        req.output_ids = []
+        req.full_untruncated_fill_ids = array("q", tokens)
+        req.set_extend_range(0, self.prompt_len)
+        full_indices = allocator.full_attn_allocator.alloc(self.prompt_len)
+        swa_indices = allocator.swa_attn_allocator.alloc(self.prompt_len)
+        allocator.full_to_swa_index_mapping[full_indices] = swa_indices
+        req_to_token_pool.write(
+            (req.kv.req_pool_idx, slice(0, self.prompt_len)), full_indices
+        )
+        req.kv.kv_committed_len = self.prompt_len
+        req.last_node = cache.root_node_handle()
+        req.kv.cache_protected_len = 0
+        req.lock_receipt = DecLockRefParams()
+        req.extra_key = None
+
+        with (
+            envs.SGLANG_OPT_UNIFIED_CACHE_FREE_OUT_OF_WINDOW_SLOTS.override(True),
+            envs.SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN.override(margin),
+        ):
+            cache.cache_unfinished_req(req)
+            # The prompt itself stays fully matchable either way.
+            self.assertEqual(req.kv.cache_protected_len, self.prompt_len)
+            cache.dec_lock_ref(req.last_node, req.lock_receipt)
+            next_turn = tokens[: self.prompt_len - self.template_cut] + [
+                1000,
+                1001,
+                1002,
+            ]
+            match = cache.match_prefix(
+                MatchPrefixParams(key=RadixKey(array("q", next_turn)))
+            )
+        cache.sanity_check()
+        return len(match.device_indices)
+
+    def test_margin_keeps_the_next_turn_prefix(self):
+        self.assertEqual(
+            self._next_turn_match_len(margin=self.template_cut + 1),
+            self.prompt_len - self.template_cut,
+        )
+
+    def test_without_margin_the_next_turn_prefix_is_refused(self):
+        # The default (margin 0) keeps exactly one window: 8 live SWA tokens
+        # behind the prompt end leave 5 behind the match point, short of 7.
+        self.assertEqual(self._next_turn_match_len(margin=0), 0)
+
+
 class TestUnifiedRadixCacheStorageAttachBackfill(CustomTestCase):
     """Enabling a storage backend must hash nodes that predate it.
 
