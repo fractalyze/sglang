@@ -139,5 +139,14 @@
       "1.0"
     ],
     "numerics_unchanged": true
+  },
+  "final-hc-qr-pfx": {
+    "description": "PC2's final-hc role-play arm (final-hc-qr: 0.85 static fraction, 1024-token prefill chunks) on a debug tree (a0491db764 + a log-only per-request prefix split: device hit, HiCache host hit and load-back size for full/SWA, and loaded host slots made stale by SWA tombstone recovery). Numerics unchanged. 28G scope.",
+    "extends": "final-hc-qr",
+    "commit": "53614116f379ab27a36d9bb55094e143c09644de",
+    "env": {
+      "G4POC_DEBUG_PREFIX_SPLIT": "1"
+    },
+    "numerics_unchanged": true
   }
 }
