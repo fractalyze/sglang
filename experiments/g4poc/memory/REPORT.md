@@ -167,7 +167,29 @@ dequantizes; the head runs the tuned Triton FP8 vocab-head kernel (`triton_small
 | L6 | full-layer V from K (`attention_k_eq_v`) | -5,120 B/token full = -27 MB/session (-14%) | changes (FP8 rounding of V) | not an alias: K = RoPE(k_norm(x) * w_k), V = v_norm(x) without scale, from the same projection. Storing K only needs the Triton decode and extend kernels to rebuild V by un-rotating each key by its position (128 rotated dims) and dividing by w_k |
 | L11 | FP4 KV (`--kv-cache-dtype fp4_mx_block16`) | -44% KV bytes | changes (long-context risk) | accepted with Triton as "plain" access, but the pool then dequantizes the whole layer buffer to BF16 on every attention call (`_get_key_buffer`): ~0.8 GiB transient and many GB of traffic per decode step. A usable L11 needs an FP4-reading Triton kernel |
 
-## 5. Reproduce
+## 5. HiCache (host-RAM prefix cache) feasibility
+
+Code reading of this tree (paths under `python/sglang/srt/`):
+- `--enable-hierarchical-cache` builds two pinned host pools for a hybrid-SWA model, full and SWA
+  (`mem_cache/hybrid_pool_assembler.py`); `--hicache-size` (GB) is split between them by device bytes,
+  `--hicache-ratio` (default 2.0) sizes each as a multiple of its device pool. The pool is mmap'd with
+  MAP_POPULATE and `cudaHostRegister`-pinned at start, and counts against the server's memory scope.
+- No validation rejects HiCache with hybrid SWA, Triton attention, FP8 KV or page size 1; the transfer
+  kernels need 128 B-aligned per-token rows (1,024 B full, 2,048 B SWA here). Use `--hicache-io-backend
+  kernel --hicache-mem-layout page_first` (the `direct` paths copy token by token at page 1) and
+  `write_through` (with `write_back` every eviction blocks on copies and internal-node SWA is never saved).
+- Write-through copies a node to host when it is inserted; a device-evicted node with a host copy still
+  matches, and admission loads back the full KV plus the last SWA window, overlapped layer by layer with the
+  prefill forward.
+- **Conflict with L5:** an SWA host pool sets `has_swa_host_pool`, and L5 is off by design then (its split
+  would hit nodes with an in-flight host write; `release_window_lock_below` asserts on that). Combining the
+  two is a small but delicate change (skip nodes with a pending write, then re-verify exactness).
+- Host RAM at 3x stack3's device pool would be ~18 GB pinned (5.5 GB full + 12.5 GB SWA), above the 24G
+  scope together with the server's ~7 GB RSS; the step-2 run uses `--hicache-size 12`.
+
+> [!gap] Step 2 (in-flight C24/C28/C32 with and without HiCache, L5 off in both) is queued (queue 8).
+
+## 6. Reproduce
 
 ```bash
 # bs1 -> bs3; the harness is copied with the commit stamp
