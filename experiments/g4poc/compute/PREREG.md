@@ -150,3 +150,22 @@ at the bound), E2E p90 <= 7 s, output 200-290 tok/s (36 / (24 s + ~2.5 s) x ~181
 Prediction, 6 GB arm (36 > 25): thrashes like the stack without HiCache: prefix hit <= 0.15, E2E p90 +10% .. +150%
 over the 12 GB arm.
 Falsified if the 6 GB arm's hit rate is within 0.10 of the 12 GB arm's, or the 12 GB arm's hit rate is under 0.29.
+
+## HS2: chunk 2048 + lpm under think time, same-host A/B (registered 2026-10-06 ~03:45 KST)
+
+The final config's poisson think30 sweep on bs2 (`final-hc-cp2048-lpm`, `runs/sweep-final-hc-cp2048-lpm-20261006-030116-
+build-server-2-654b74`) ran before this registration. At 48 sessions (41.6 live) it held a prefix hit of **0.236**
+(p90 5.59 s); PC2's `final-hc` on bs3 at the same load and the same session plan (digest 99c2b3e877e4, 41.3 live)
+held **0.462** (p90 5.15 s). At 64: 0.038 / p90 9.31 s against 0.116 / 8.05 s. Device evictions (3.47M vs 3.51M
+tokens) and turn rates (1.538 vs 1.544/s) match, so the gap is in host-tier hits. Read through the retention model,
+the final writes ~0.34 GB of host pool per turn against ~0.22 for final-hc (retention ~23 s vs ~35 s at 12 GB).
+Mechanism proposed: chunk 2048 splits a ~4.3K-token uncached prefill into 3 chunks, and every chunk boundary leaves
+a sliding-window node (~1K tokens x 102 KB) that write_through copies to the SWA host pool; fewer hits mean more
+uncached tokens and more chunks. lpm only reorders the waiting queue, which averaged 0.03 requests (max 2) here.
+
+Arm: `final-hc` (chunk 4096, fcfs), `gate sweep --load pthink30 --concurrency 48,64` (48 alone if 64 does not fit by
+07:55), 28G scope, build-server-2, after PC4's bs2 queue. The other arm is the final's sweep above.
+
+Prediction (cp2048 costs think-time hit rate): final-hc on bs2 at 48 sessions holds a prefix hit of 0.38 .. 0.55 and
+E2E p90 <= 5.4 s; at 64, hit 0.07 .. 0.18 and p90 <= 8.8 s. Falsified if final-hc's hit at 48 on bs2 is <= 0.30 (the
+gap is the host or the run, not chunking).
