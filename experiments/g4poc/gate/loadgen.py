@@ -202,15 +202,22 @@ async def _sample_metrics(url: str, run: _Run, out: List[Dict], period_s: float 
         await asyncio.sleep(period_s)
 
 
+def slot_first_sends(load: config.SessionLoad, seed: str, t_end: float) -> List[float]:
+    """Each slot's first send time. With think time the slots stand for live chat sessions, so their first sends
+    spread over one think time (as the poisson layer's do) instead of landing as one burst."""
+    rng = random.Random(f"slots/{seed}/{load.name}")
+    spread = max(SLOT_STAGGER_S, INITIAL_SPREAD_S * load.think_scale)
+    stagger = min(spread, 0.1 * t_end)
+    return [rng.uniform(0.0, stagger) for _ in range(load.concurrency)]
+
+
 def _tasks(run: _Run, http: aiohttp.ClientSession, seed: str) -> Tuple[List, str]:
     load, sessions = run.load, run.sessions
     if load.arrival == "poisson":
         plan = plan_open(sessions, load, seed)
         return [asyncio.create_task(run.session(http, st)) for st in plan], plan_digest(plan)
     if load.arrival == "slots":
-        rng = random.Random(f"slots/{seed}/{load.name}")
-        stagger = min(SLOT_STAGGER_S, 0.1 * run.t_end)
-        firsts = [rng.uniform(0.0, stagger) for _ in range(load.concurrency)]
+        firsts = slot_first_sends(load, seed, run.t_end)
         digest = hashlib.sha256(f"slots/{seed}/{msgspec.json.encode(load).decode()}".encode()).hexdigest()[:16]
         return [asyncio.create_task(run.slot(http, slot_sessions(sessions, load, seed, i), firsts[i]))
                 for i in range(load.concurrency)], digest

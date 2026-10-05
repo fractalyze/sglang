@@ -297,5 +297,14 @@
    "lpm"
   ],
   "numerics_unchanged": true
+ },
+ "final-hc-hc6": {
+  "description": "HS1' (host-RAM sizing slope, compute/PREREG.md): final-hc with a 6 GB host pool instead of 12 (--hicache-size 6), i.e. a storage bound of ~54 histories per GPU instead of ~77. Run in a 28G scope.",
+  "extends": "final-hc",
+  "server_args": [
+   "--hicache-size",
+   "6"
+  ],
+  "numerics_unchanged": true
  }
 }

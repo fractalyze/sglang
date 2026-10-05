@@ -127,7 +127,15 @@ INFLIGHT = SessionLoad(name="inflight", arrival="slots", concurrency=16, warmup_
 # rate; from 16 up the full-attention pool can no longer hold every history and the hit
 # rate collapses, so a gate there would mostly measure cache thrash.
 INFLIGHT_C12 = msgspec.structs.replace(INFLIGHT, name="inflight-C12", concurrency=12)
-LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, INFLIGHT_C12)}
+# Chat sessions with think time (PC2's loads, jumanzii/g4poc-c fd08bf8fbf): each slot is one live session (its turns
+# sent think_s x think_scale after the previous reply, the next session starting when one ends), so --concurrency is
+# the number of concurrent sessions. The session file's mean think time is 17.9 s (WORKLOAD.md); the scales give means
+# of ~30 s and ~60 s.
+THINK30 = SessionLoad(name="think30", arrival="slots", concurrency=120, warmup_s=240.0, window_s=480.0,
+                      expected_session_s=0.0, think_scale=30.0 / 17.9)
+THINK60 = SessionLoad(name="think60", arrival="slots", concurrency=220, warmup_s=240.0, window_s=480.0,
+                      expected_session_s=0.0, think_scale=60.0 / 17.9)
+LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, INFLIGHT_C12, THINK30, THINK60)}
 GATED_LOAD = INFLIGHT_C12
 
 MIN_PAIRS = 4

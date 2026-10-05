@@ -318,6 +318,18 @@ class LoadgenTest(absltest.TestCase):
         rep2, _ = asyncio.run(_replay(sessions, load))
         self.assertEqual(rep["plan_digest"], rep2["plan_digest"])
 
+    def test_slot_first_sends_spread_over_one_think_time(self):
+        burst = config.SessionLoad(name="x", arrival="slots", concurrency=200, warmup_s=240.0, window_s=480.0,
+                                   expected_session_s=0.0, think_scale=0.0)
+        think = msgspec.structs.replace(burst, think_scale=2.0)
+        self.assertLessEqual(max(loadgen.slot_first_sends(burst, "s", 720.0)), loadgen.SLOT_STAGGER_S)
+        firsts = loadgen.slot_first_sends(think, "s", 720.0)
+        self.assertLessEqual(max(firsts), loadgen.INITIAL_SPREAD_S * 2.0)
+        self.assertGreater(max(firsts), 0.8 * loadgen.INITIAL_SPREAD_S * 2.0)
+        # Capped at a tenth of the run, so a short run still reaches steady state.
+        self.assertLessEqual(max(loadgen.slot_first_sends(think, "s", 100.0)), 10.0)
+        self.assertEqual(firsts, loadgen.slot_first_sends(think, "s", 720.0))
+
     def test_closed_mode_appends_model_reply(self):
         sessions = [_session(f"s{i}", n_turns=2) for i in range(4)]
         load = msgspec.structs.replace(_FAST, mode="closed")

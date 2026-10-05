@@ -112,3 +112,25 @@ either point gains more than 5% or loses more than 1%.
 Prediction C3b on the final (chunk 2048): E2E p90 delta -4% .. +1% at both points. On the base it gained 1-4%
 at every point with a higher hit rate below the cliff; on mem-final it cost 2 burst sessions (PC, 27 vs 29),
 which HiCache's host tier should absorb. Falsified if either point gains more than 4% or loses more than 1%.
+
+## HS1': host-RAM sizing slope inside the 28G scope (registered 2026-10-05 ~22:20 KST)
+
+Arms: `final-hc` (12 GB host pool) and `final-hc-hc6` (the same with `--hicache-size 6`), each one `gate sweep
+--load think30 --concurrency 64` (64 concurrent sessions, think time x1.676 = 30 s mean, 240 s warm-up + 480 s
+window; a closed population whose sessions' turn 0 has no think time, so ~24 s mean think per turn), 28G scope,
+build-server-2, after the overnight queue.
+
+Model (`compute/fleet_model.py`): the storage bound is (device full pool 159,724 + 26,537 host tokens per GB) /
+~5,900 tokens per history = **54 sessions at 6 GB and 77 at 12 GB**; the compute bound at ~24 s think is ~150, so
+storage binds in both arms. 64 sessions sit between the two bounds.
+
+Prediction, 12 GB arm: the live histories fit, so it holds: prefix hit 0.50-0.80, output 380-480 tok/s (64
+sessions / (24 s + ~3 s E2E) x ~181 tokens), E2E p90 <= 6 s.
+
+Prediction, 6 GB arm: past its storage bound, so histories are evicted before most sessions return (partial
+thrash; with lognormal think times some return within the cache's residence time): prefix hit 0.05-0.40, E2E p90
++30% .. +300% over the 12 GB arm, output tok/s -20% .. 0% (the turn rate is set mostly by think time; the GPU
+absorbs the re-prefill at this load).
+
+Falsified if the 6 GB arm's hit rate is within 0.15 of the 12 GB arm's, or the 12 GB arm's hit rate is under 0.40.
+With PC2's queue24 bracket (12 GB at 48/72/96 sessions, bs3) this gives two points on the storage-bound line.
