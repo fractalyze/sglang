@@ -17,7 +17,7 @@ Fixes 1 and 2 are default-off switches on branches `jumanzii/g4poc-c-hicache` an
 | 1. SWA admission under-reserves on load-back (scheduler crash) | `SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW` | 9ce3db9471 | `test/registered/unit/managers/test_prefill_adder.py::TestHiCacheLoadBackSWAWindowPin` |
 | 2. Write-through copies KV still being written (inexact load-back) | `SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH` | 19e850a228 | `test/registered/unit/mem_cache/test_hicache_write_fence.py` |
 | 3. Retraction backup has the same race (PD decode only) | `SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH` | 7d0ba713da (branch `jumanzii/hicache-retraction-fence`) | same file, retraction cases |
-| 4. A chat's second turn misses its whole prefix: one SWA window kept, the next turn matches 4 tokens short (any hybrid-SWA radix cache, HiCache or not) | `SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN` (int, 0 = off) | d93fea83df (branch `jumanzii/g4poc-swa-margin`) | `test/registered/unit/mem_cache/test_unified_radix_cache_unittest.py::TestSWAPrefillWindowMargin` |
+| 4. A chat's second turn misses its whole prefix: one SWA window kept, the next turn matches 4 tokens short (any hybrid-SWA radix cache, HiCache or not) | `SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN` (int, 0 = off) | d93fea83df + 7d296525fc (+ test fix cbf56143b5; branch `jumanzii/g4poc-swa-margin`) | `test/registered/unit/mem_cache/test_unified_radix_cache_unittest.py::TestSWAPrefillWindowMargin` |
 
 ## 1. Prefill admission under-reserves sliding-window slots on a HiCache load-back
 
@@ -173,8 +173,21 @@ is ~10% of a 1,200-token SWA footprint per idle session).
   - make the validator accept a match end within a small distance of a longer valid window;
   - free out-of-window SWA only up to a page-aligned point that tolerates a short re-match.
 
-**Validation.** GPU unit tests, C1 multi-turn exactness (standard and with the next turn cut 4 tokens
-short) and think-time sessions at 32/48 are in `SWA-HOST.md` section 5.
+**Second part (7d296525fc).** A prefill insert stops at `swa_branching_seqlen` when the admission
+match ran past the last valid SWA window. On a nonce-prefixed chat workload, a 1-2 token collision
+with another session's tombstoned path is enough. The rest of the prompt stays request-owned until
+the finish insert, and decode-time eviction, which knows only the window, frees the margin first. With
+the margin set, `UnifiedRadixCache.swa_retain_floor` also returns `prompt_len - window - margin`.
+Test `test_margin_survives_decode_after_a_branch_insert` fails on the first part alone.
+
+**Validation** (`SWA-HOST.md` sections 5-7):
+- GPU unit tests: 1308 passed vs base 1305 + 3 new.
+- C1 multi-turn exactness 12/12 with identical `cached_tokens`, both standard and with the next turn
+  cut 4 tokens short. Every second turn hits at prompt - 4.
+- Think-time chat at 48 sessions vs the same-host margin-off arm: second turns after unchunked
+  first prompts hit 0% -> 82%; hit rate 0.276 -> 0.320; E2E p90 -2.3%.
+- Without the fix, second turns miss at zero think time too: 97% after unchunked first prompts,
+  7.5% of prompt tokens at in-flight C24.
 
 ## Open item: host copy kept when a node adopts a later request's FULL slots
 

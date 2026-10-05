@@ -407,3 +407,58 @@ margin).
 
 **Falsified (cost found) if** tok/s is < -2% or p90 is > +3%. Then the recommendation keeps the switch
 off for in-flight traffic.
+
+## 7. Results: bug-4 fix on bs2 (runs 2026-10-06 03:51-05:40)
+
+**Unit tests** (GPU; bs2's venv lacks pytest, so it came from `/home/jooman/gemma4nv/pytest-site`).
+- v1 `d93fea83df`: files 1307 passed, base a0491db764 1305 passed (+2 new), 0 failed.
+- v2 `7d296525fc` + test fix `cbf56143b5`:
+  - `TestSWAPrefillWindowMargin` 3/3; files 1308 passed (+3), 0 failed.
+  - The branch case fails on v1 code as intended: `26 not less than or equal to 13: decode freed SWA inside the prompt's window + margin`.
+  - My first version of that test used list token ids, so the finish insert's radix key type mismatched. Its retried failure leaked global counters into `TestSWASlidWindowRelease`, which passes alone on v2 and on base.
+
+**C1 multi-turn exactness** (control final-mem-c1-c2a vs candidate final-hc-smallpool, margin 128 in both):
+
+| tree | standard | template-cut 4 |
+|---|---|---|
+| v1 d93fea83df | 12/12, same cached 12/12 | 11/12, same cached 12/12: one second turn matched only a 235-token shared persona prefix in both arms (branch insert), and its re-prefill differed by host-copy rounding (PC3's open item) |
+| v2 7d296525fc | 12/12, same cached 12/12 | **12/12, same cached 12/12**; every second turn hits at prompt - 4 |
+
+**SW4 (margin v1, `swamargin-dbg`, bs2).** Compared cross-host with SW3/SW1 on bs3, no margin.
+
+| sessions | hit (no margin) | E2E p90 | out tok/s | failed |
+|---|---|---|---|---|
+| 32 | 0.594 (0.547) | 4.37 s (4.75) | 232 (233) | 0 |
+| 48 | 0.290 (0.284) | 7.42 s (7.35) | 336 (334) | 0 |
+
+- Second turns hit 86% after chunked first prompts (no margin: 4-42%), but only 29% after unchunked ones.
+- Falsified as registered: the 32-session hit is 0.594 < 0.60, and the mechanism check is 29%.
+- **v1 gap:** after unchunked first prompts whose admission match ran 2 tokens past the SWA-valid hit,
+  0 of 47 second turns hit. That 2-token overrun is a nonce-prefix collision with another session's
+  tombstoned path. `swa_branching_seqlen` then truncates the single prefill insert, and decode-time
+  eviction frees the margin before the finish insert.
+
+**SW5 (in-flight C24, margin off, `swamargin-dbg-off`).** Second turns also miss at zero think time.
+- After unchunked first prompts they hit 3% (97% swa_gone); after chunked ones 23-33%.
+- swa_gone costs 7.5% of prompt tokens in flight (hit 0.744, 919 tok/s, p90 7.83 s).
+- The code read holds. My ~0.66 in-flight ceiling estimate was wrong, because in-flight second turns
+  are a smaller token share and some chunked ones hit.
+
+**SW6 (margin v2, `swamargin2-dbg`, think30 x 48, bs2) vs the same-host margin-off arm**
+(`swamargin-dbg-off`; with the margin unset this is the same code path).
+
+| | margin off | v2, margin 128 |
+|---|---|---|
+| hit | 0.276 | **0.320** |
+| E2E p90 | 6.77 s | **6.61 s** (-2.3%) |
+| out tok/s | 335 | 334 |
+| failed | 0 | 0 |
+| 2nd turn after a <= 4096-token first prompt | 0% | **82%** |
+| 2nd turn after 4097-5119 | 27% | 80% |
+| 2nd turn after >= 5120 | 7% | 80% |
+
+- All registered criteria pass.
+- The remaining second-turn misses are capacity misses at long gaps. At 48 sessions both host pools
+  still bind (section 3), which caps the overall gain at +0.044 hit.
+- The second-turn fix matters most where capacity does not bind: lower session counts, bigger host
+  pools, and in flight.
