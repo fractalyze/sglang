@@ -107,7 +107,10 @@ L8_SMOKE = SessionLoad(name="L8-smoke", concurrency=8, warmup_s=20.0, window_s=6
 # In-flight layer: N requests always outstanding (sweeps pass the concurrency).
 INFLIGHT = SessionLoad(name="inflight", arrival="slots", concurrency=16, warmup_s=60.0, window_s=240.0,
                        expected_session_s=0.0, think_scale=0.0)
-LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT)}
+# Stability soak: the in-flight layer held for 30 min (pass the concurrency with --concurrency).
+SOAK = SessionLoad(name="soak", arrival="slots", concurrency=32, warmup_s=60.0, window_s=1800.0,
+                   expected_session_s=0.0, think_scale=0.0)
+LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, SOAK)}
 GATED_LOAD = L64
 
 MIN_PAIRS = 4

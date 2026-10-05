@@ -9,6 +9,64 @@ Scope: memory levers L4-L11 from `BASELINE-FP8.md` section 6, applied to the FP8
 Unit note: SGLang logs "GB" for bytes / 2^30; this file writes GiB for those. MiB figures are
 nvidia-smi's.
 
+## 0. Summary
+
+**Final config: `final-hc`** (one RTX 5090, FP8 checkpoint; SGLang tree `a0491db764`, branch
+`jumanzii/g4poc-final-hicache` = `53752c62aa` + PB's C2-A tile commits + PC3's two HiCache fixes):
+
+```
+SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+SGLANG_MOE_CONFIG_DIR=<C1 tuned fused-MoE config dir> SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES=1 \
+SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW=1 SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH=1 \
+python -m sglang.launch_server --model-path <gemma-4-26B-A4B-it FP8 text checkpoint> \
+  --kv-cache-dtype fp8_e4m3 --context-length 16384 --disable-prefill-cuda-graph \
+  --json-model-override-args '{"max_position_embeddings": 16384}' \
+  --max-running-requests 64 --mem-fraction-static 0.955 --swa-full-tokens-ratio 0.268 \
+  --cuda-graph-max-bs-decode 48 \
+  --enable-hierarchical-cache --hicache-size 12 --hicache-write-policy write_through \
+  --hicache-io-backend kernel --hicache-mem-layout page_first
+```
+
+Host RAM: the server pins a 12 GB host pool and peaks at ~18 GB RSS; SGLang's start check also wants 10 GiB of
+headroom beyond the pool, so give its memory cgroup 28 GB. That check counts page cache charged to the cgroup as
+used: reading the ~25 GB weight files can charge several GB of file cache to the server's cgroup (cgroup headroom
+at the same start step was 17.9 GiB on one launch and 23.3 GiB on the next, and the first failed with "Not enough
+host memory available"). Size the cgroup for that cache too, or pre-warm the weight files outside the cgroup (or
+drop caches) before launch.
+
+| | mem-base | mem-final (memory levers) | + compute levers (`final-mem-c1-c2a`) | + fixed HiCache (**`final-hc`**) |
+|---|---|---|---|---|
+| burst capacity (5K in / 300 out, no shared prefix) | 17 | 29 | - | - |
+| multi-turn in-flight capacity at E2E p90 <= 10 s | 12 | 20 | 24 | **32** |
+| output tok/s at that point | 558 | 677 | 833 | **942** |
+| $ per 1M output tokens at $0.70/GPU-h | 0.348 | 0.287 (-18%) | 0.234 (-33%) | **0.206 (-41%)** |
+| multi-turn exactness at concurrency 1 (12 later turns) | - | - | 12/12 control | 12/12 identical to control |
+| quality vs mem-base (GSM8K 1319, tool-JSON, role-play NLL + language) | 96.21 | 95.91, pass | 96.44, pass | see section 5 |
+
+All on build-server-3; capacity points replicated on the same host. final-hc's numbers are PC3's runs
+(`hicache/PREREG.md` HC4); its quality anchor and a 30-minute soak at C32 are in section 5. Server GPU memory
+stays under the 31,642 MiB rule (512 MiB below what CUDA can use) in every config; on a GPU shared with another
+job, use `--mem-fraction-static 0.94` (section 3).
+
+What each part does:
+- **Memory levers (mem-final):** L9 sizes the RoPE tables to the served context, L10 shrinks the request table, the
+  freed memory and the activation slack go to the KV pool (0.955), the pool split is refit (0.268), L8 stores the
+  tied embedding / LM head once in FP8, expandable segments keep the allocator inside the memory rule.
+- **Compute levers (PB, `COMPUTE.md`):** C1 tuned fused-MoE config, C2-A sm120 FP8-KV extend-attention tiles;
+  they shorten every turn, so one more step of concurrency fits under the SLO.
+- **HiCache with two SGLang fixes (PC3, `hicache/UPSTREAM.md`):** a 12 GB host-RAM copy of evicted prefixes keeps
+  the hit rate at ~0.71 past the device pool's cliff. Stock HiCache crashed the scheduler at C28 (admission
+  under-reserves sliding-window slots on a load-back) and loaded back stale KV (write-through raced the overlap
+  scheduler's forward); both are fixed behind default-off switches, with regression tests.
+
+Not kept: L5 (sliding-window release; it frees the very window the next turn resumes from, for chat clients too),
+chunked prefill 2048 (-2 sessions), a running-request cap (no effect on the cache cliff). L6 and L11 were
+analysed, not built.
+
+The cliff past the capacity point is the prefix cache: once more sessions' histories compete for the pool than it
+holds, every turn re-prefills ~5K tokens and goodput falls. Size the fleet by sessions whose history must stay
+cached per GPU (section 3, fleet rule); with final-hc the host pool raises that number.
+
 ## 1. Result in one table
 
 Control `mem-base` = PA's r03 (`--mem-fraction-static 0.93 --swa-full-tokens-ratio 0.3
@@ -42,7 +100,8 @@ smaller chunk lowers the GPU peak by ~240 MiB (31,310-31,318 vs 31,552-31,560); 
 
 stack1 holds **25 sessions vs 17 (+47%)** with server flags only and unchanged numerics (pool sizes
 and a RoPE table length). Two code levers behind default-off switches add L5 (+4, numerics exact) and
-L8 (+4, numerics change within the quality guard): **stack3 holds 33 sessions, +94% over mem-base.**
+L8 (+4, numerics change within the quality guard): **stack3 holds 33 sessions, +94% over mem-base.** L5 did not
+survive the multi-turn workload (section 4), so the deployable stack is mem-final (stack1 + L8): 29 sessions.
 
 ## 2. What each lever does (mechanism, measured)
 
@@ -224,6 +283,47 @@ With the canary on top, the card reached 32,079 MiB, 75 MiB under the CUDA-visib
 failed. On a host that shares the GPU with another job, leave that job's headroom: the fallback is
 `mem-final-f094` (`--mem-fraction-static 0.94`, ~470 MiB less pool, not measured).
 
+## 3b. The combined final on this host: memory + compute levers (`final-mem-c1-c2a`)
+
+PB's combined final = mem-final + C1 (tuned Triton fused-MoE config for this checkpoint,
+`SGLANG_MOE_CONFIG_DIR`) + C2-A (sm120 FP8-KV extend-attention tiles,
+`SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES=1`), SGLang tree `1425761173` (= `53752c62aa` + the tile commits);
+ref in `gate/refs.json`. Run on build-server-3 as the cross-host replicate of PB's build-server-2 numbers
+(`sweep-final-mem-c1-c2a-20261005-165852-build-server-3-bea80b`; MoE config sha256 b3bcce12..., Triton 3.7.1 on
+both hosts):
+
+| in flight | E2E p50 s | E2E p90 s | output tok/s | total tok/s | prefix-cache hit | retractions | GPU MiB |
+|---|---|---|---|---|---|---|---|
+| 4 | 1.82 | 3.62 | 318 | 11,899 | 0.773 | 0 | 31,494 |
+| 8 | 2.91 | 4.57 | 516 | 17,109 | 0.747 | 0 | 31,496 |
+| 12 | 3.40 | 5.51 | 645 | 20,337 | 0.715 | 0 | 31,518 |
+| 16 | 4.16 | 6.33 | 744 | 24,134 | 0.703 | 0 | 31,518 |
+| 20 | 4.96 | 7.59 | 778 | 25,794 | 0.649 | 0 | 31,520 |
+| 24 | 5.57 | **8.59** | **833** | 28,911 | 0.624 | 0 | 31,522 |
+| 28 | 7.89 | 13.82 | 616 | 21,085 | 0.148 | 2 | 31,524 |
+| 32 | 10.96 | 15.15 | 600 | 18,860 | 0.002 | 1 | 31,526 |
+
+| SLO (E2E p90) | mem-base: capacity, output tok/s | mem-final | final-mem-c1-c2a | $/1M output at $0.4 / 0.7 / 1.0 / 1.5 per GPU-h |
+|---|---|---|---|---|
+| 6 s | C8, 465 tok/s | C8, 479 | **C12, 645** | 0.172 / 0.301 / 0.431 / 0.646 |
+| 10 s | C12, 558 | C20, 677 | **C24, 833** | 0.133 / **0.234** / 0.334 / 0.500 |
+| 15 s | C20 by p90; max goodput C12, 558 | C24, 681 | C28 by p90; max goodput C24, 833 | as 10 s |
+
+At the 10 s SLO: +49% output tok/s and -33% $/1M output over mem-base (C12, $0.348 at $0.70), +23% and -18.5%
+over mem-final. The compute levers shorten every turn (p90 at C20 8.77 -> 7.59 s), so C24 now fits under 10 s; the
+cache cliff stays at C28, a memory property (hit rate at C24 0.624 vs mem-final 0.608). Server memory 31,494-31,526
+MiB (rule <= 31,642); no failed request; prompts to 10,243 tokens; host MemAvailable >= 48.9 GB.
+
+Quality anchor vs mem-base (same arms as section 3: 0.85 fraction; role-play with 1,024-token chunks):
+GSM8K 1319 **96.44** vs 96.21 (paired 7 items right only here, 4 only in base, McNemar p = 0.55); tool-JSON 40/40;
+role-play reference NLL +0.0030 nats/token (budget 0.02); language adherence 67 vs 68 of 80, one
+adherent-to-non-adherent flip, inside the 1/80 band (`s001101/0`: a Russian user asks for an English level test;
+both arms frame an English quiz in Russian, and this arm's longer quiz is tagged `en`). Passes.
+
+Same-host replicate (`sweep-final-mem-c1-c2a-20261005-175047-build-server-3-f72a00`, run 75 min later):
+C16/C20/C24 at E2E p90 6.32 / 7.52 / 8.58 s (first 6.33 / 7.59 / 8.59) and 743 / 789 / 832 output tok/s
+(744 / 778 / 833); 10 s capacity C24 in both, $0.234 per 1M output at $0.70. Spread <= 1.4% on tok/s.
+
 ## 4. Code levers
 
 ### L5: release the slid-out part of the tree-locked SWA window (implemented, exact)
@@ -294,7 +394,7 @@ dequantizes; the head runs the tuned Triton FP8 vocab-head kernel (`triton_small
 | L6 | full-layer V from K (`attention_k_eq_v`) | -5,120 B/token full = -27 MB/session (-14%) | changes (FP8 rounding of V) | not an alias: K = RoPE(k_norm(x) * w_k), V = v_norm(x) without scale, from the same projection. Storing K only needs the Triton decode and extend kernels to rebuild V by un-rotating each key by its position (128 rotated dims) and dividing by w_k |
 | L11 | FP4 KV (`--kv-cache-dtype fp4_mx_block16`) | -44% KV bytes | changes (long-context risk) | accepted with Triton as "plain" access, but the pool then dequantizes the whole layer buffer to BF16 on every attention call (`_get_key_buffer`): ~0.8 GiB transient and many GB of traffic per decode step. A usable L11 needs an FP4-reading Triton kernel |
 
-## 5. HiCache (host-RAM prefix cache) feasibility
+## 5. HiCache (host-RAM prefix cache): stock HiCache fails, fixed HiCache is the final config
 
 Code reading of this tree (paths under `python/sglang/srt/`):
 - `--enable-hierarchical-cache` builds two pinned host pools for a hybrid-SWA model, full and SWA
@@ -314,15 +414,16 @@ Code reading of this tree (paths under `python/sglang/srt/`):
 - Host RAM at 3x stack3's device pool would be ~18 GB pinned (5.5 GB full + 12.5 GB SWA), above the 24G
   scope together with the server's ~7 GB RSS; the step-2 run uses `--hicache-size 12`.
 
-**Step 2 result: not kept; a large gain at C24, then a scheduler crash at C28, and load-back is not exact.**
+**Step 2, stock HiCache (`mem-hc`): a large gain at C24, then a scheduler crash at C28, and load-back is not exact.**
 
-> [!warning] Every HiCache throughput number in this section (mem-hc C24, the running-cap probe, the $ per 1M
-> output derived from them) is **numerics unverified: load-back is inexact at concurrency 1.** In a greedy
+> [!warning] The stock-HiCache numbers in this step (mem-hc C24, the running-cap probe, the $ per 1M output
+> derived from them) are **numerics unverified: load-back is inexact at concurrency 1.** The fixed config
+> (final-hc, below) is exact. In a greedy
 > multi-turn check (4 sessions x 3 turns, later turns loading their prefix back from host, PC3), 7 of 8 later
 > turns diverged within 0-15 tokens with identical cached-token counts, and the drift is semantic (a German
 > character answers in English, steps out of character); first-turn fresh prefills are identical. Degraded
 > continuations can change output lengths, so the goodput below may not be comparable to the device-only arm.
-> Attribution (admission fix vs plain HiCache, io backend / layout, this tree vs upstream) is open.
+> Attribution: the write-through race below (bug 2), also present on the base commit with none of the study's flags.
 `mem-hc` = mem-final + `--enable-hierarchical-cache --hicache-size 12 --hicache-write-policy write_through
 --hicache-io-backend kernel --hicache-mem-layout page_first` (`sweep-mem-hc-20261005-145932-build-server-3-803de2`).
 Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x each device pool.
@@ -379,6 +480,39 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   used a 28G scope (`G4POC_SERVER_MEMORY_MAX=28G`, the protocol's ceiling); measured peak scope RSS 17.7 GB,
   host MemAvailable >= 38.6 GB, no swap growth.
 
+**Step 3, fixed HiCache (PC3; preregistration `hicache/PREREG.md` HC2-HC4, upstream draft `hicache/UPSTREAM.md`).**
+
+| bug | symptom | cause | fix (default-off switch) |
+|---|---|---|---|
+| 1 | scheduler crash at C28: SWA allocation fails | prefill admission pins only the device match (`last_node`) during the budget check; after `init_load_back` the request's sliding-window lock anchors at `best_match_node` and also locks device SWA the check had counted as evictable (350 tokens in the trace) | pin `best_match_node` during the check too (`SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW`; test `TestHiCacheLoadBackSWAWindowPin`) |
+| 2 | loaded-back turns diverge at concurrency 1 (7 of 8) | under the overlap scheduler the write-through D2H copy waits only on the scheduler stream, while the forward writing the finished request's last token is still queued on the forward stream: one half-written token per turn, inside the next turn's sliding window | `device_to_host_stream.wait_stream(forward_stream)` before each write (`SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH`; test `test_hicache_write_fence.py`) |
+
+Bug 2 reproduces on the base commit with none of the study's flags (5/12 identical); the device-only A/A and
+HiCache without load-backs are 12/12.
+
+`final-hc` = final-mem-c1-c2a + HiCache (12 GB, write-through, kernel io, page_first) + both fixes, tree
+`a0491db764`, 28G scope (`sweep-final-hc-20261005-174836-build-server-3-583abd`, cliff
+`sweep-final-hc-20261005-183217-build-server-3-c4d30a`):
+
+| in flight | E2E p50 s | E2E p90 s | output tok/s | total tok/s | prefix-cache hit | retractions | final-mem-c1-c2a: p90 / tok/s / hit |
+|---|---|---|---|---|---|---|---|
+| 20 | 4.86 | 7.37 | 805 | 26,514 | 0.712 | 0 | 7.59 / 778 / 0.649 |
+| 24 | 5.27 | 7.98 | 905 | 31,098 | 0.742 | 0 | 8.59 / 833 / 0.624 |
+| 28 | 5.87 | 8.91 | 919 | 30,936 | 0.710 | 3 | 13.82 / 616 / 0.148 |
+| 32 | 6.87 | **9.55** | **942** | 29,995 | 0.720 | 6 | 15.15 / 600 / 0.002 |
+| 40 | 7.73 | 11.63 | 890 | 30,841 | 0.702 | 3 | - |
+
+- 10 s capacity C32 (final-mem-c1-c2a C24), 942 output tok/s, $0.206 per 1M output at $0.70/GPU-h. The hit rate
+  holds at ~0.71 to C40, where the device-only arm collapses at C28. No failed request; the retractions (3-6 per
+  point) are requeued, not failures. Server GPU memory <= 31,542 MiB.
+- Multi-turn exactness (4 role-play sessions x 3 turns, greedy, concurrency 1, a 16K-token device pool so every
+  later turn is a host load-back) vs final-mem-c1-c2a with device hits: **12/12 token-identical**, identical
+  cached-token counts (`exactmt-final-hc-smallpool-20261005-183035-build-server-3-7c864b` vs
+  `exactmt-final-mem-c1-c2a-20261005-181244-build-server-3-35c7a9`).
+
+> [!gap] final-hc quality anchor vs mem-base (GSM8K 1319, tool-JSON, role-play with the paired language rule),
+> the 30-minute soak at C32, and PC3's same-host replicate (C24/C32) are running on build-server-3.
+
 ## 6. Open items and harness caveats
 
 - **Where a turn's prefix match ends.** The gate's scripted mode puts the session's scripted reply into the
@@ -397,10 +531,10 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   scheduling-dependent in-flight sweeps. Any config change, including numerics-neutral ones (pool sizes), re-rolls
   batched outputs (3-4/80 identical). So exactness is checked at concurrency 1, and batched quality is compared
   per item against a numerics-neutral config-change band, not against an A/A.
-- **HiCache with a fixed SWA admission charge and exact load-back** would be the largest remaining cost lever
-  measured here (+18% output tok/s at C24, 10 s capacity 20 -> 24, numerics unverified). It first needs load-back
-  to reproduce the device-resident continuation token for token at concurrency 1. It needs the prefill admission to reserve the sliding slots a host
-  load-back or chunked continuation takes, a regression test at the C28 overload, and the C24-C32 points re-run.
+- **HiCache upstream.** The two fixes are default-off switches on this fork; `hicache/UPSTREAM.md` is a draft
+  issue/PR, not posted. One open item remains there: a node that adopts a later request's FULL slots on SWA
+  tombstone recovery keeps its old FULL host copy (numerics-level, two computations of the same prefix), which
+  matters only for bitwise reproducibility if that node is evicted and loaded back.
 - **L5 variant.** Releasing only windows that slide out during decode past the prompt's end (keeping the
   prompt's last window, the next turn's resume point) might keep L5's burst gain without the hit-rate loss.
   Not implemented.
@@ -413,8 +547,16 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
 # bs1 -> bs3; the harness is copied with the commit stamp
 experiments/g4poc/gate/deploy.sh build-server-3 /data/jooman/g4poc/harness-pc
 # on bs3 (cap.sh sources gate/env.sh and points G4POC_MODEL_DIR at the FP8 text checkpoint)
-/data/jooman/g4poc/memlogs/cap.sh mem-stack1 22,24,25,26,27,28,30 --long 10000x6
-/data/jooman/g4poc/memlogs/sweep.sh mem-stack1 8,12,16,20,24,28,32
+/data/jooman/g4poc/memlogs/cap.sh mem-final 26,27,28,29,30,31,32 --long 10000x6
+/data/jooman/g4poc/memlogs/sweep.sh mem-final 8,12,16,20,24,28,32
+/data/jooman/g4poc/memlogs/quality.sh quality mem-qa-base --gsm8k-n all --set-baseline
+/data/jooman/g4poc/memlogs/quality.sh quality mem-qa-final --gsm8k-n all
+/data/jooman/g4poc/memlogs/quality.sh rp-quality mem-qr-base --set-baseline
+/data/jooman/g4poc/memlogs/quality.sh rp-quality mem-qr-final
+# HiCache needs a 28G scope (SGLang keeps 10 GiB of headroom beyond the pinned host pool)
+G4POC_SERVER_MEMORY_MAX=28G /data/jooman/g4poc/memlogs/sweep.sh mem-hc 24,28,32
+# GPU memory: 2 s samples, total and per process (the per-process file separates a co-tenant)
+while true; do echo "$(date +%T),$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)"; sleep 2; done
 ```
 
 Every launch holds the host lock and runs in the gate's memory-capped scope (`gate/server.py`).

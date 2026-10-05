@@ -282,5 +282,32 @@
    "1024"
   ],
   "numerics_unchanged": true
+ },
+ "final-hc-qa": {
+  "description": "Full quality anchor, final-hc arm: GSM8K/tool-JSON at a 0.85 static fraction, against mem-qa-base. Run in a 28G scope (HiCache host pool).",
+  "extends": "final-hc",
+  "server_args": [
+   "--mem-fraction-static",
+   "0.85"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-hc-qr": {
+  "description": "Role-play anchor, final-hc arm: 0.85 with 1024-token prefill chunks (same as mem-qr-base). 28G scope.",
+  "extends": "final-hc-qa",
+  "server_args": [
+   "--chunked-prefill-size",
+   "1024"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-c1c2a-qr-r025": {
+  "description": "Third numerics-neutral config change for the role-play band: final-c1c2a-qr with --swa-full-tokens-ratio 0.25 (same memory, different pool sizes).",
+  "extends": "final-c1c2a-qr",
+  "server_args": [
+   "--swa-full-tokens-ratio",
+   "0.25"
+  ],
+  "numerics_unchanged": true
  }
 }
