@@ -117,7 +117,14 @@ THINK30 = SessionLoad(name="think30", arrival="slots", concurrency=120, warmup_s
                       expected_session_s=0.0, think_scale=30.0 / 17.9)
 THINK60 = SessionLoad(name="think60", arrival="slots", concurrency=220, warmup_s=240.0, window_s=480.0,
                       expected_session_s=0.0, think_scale=60.0 / 17.9)
-LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, SOAK, THINK30, THINK60)}
+# The same think times with open (poisson) session arrivals, so sessions are independent (the slots loads keep the
+# sessions that started together phase-correlated). Mean session length = (turns - 1) x think + turns x E2E with
+# 5.15 turns and E2E ~5-6 s; arrivals at concurrency / expected_session_s keep ~concurrency sessions live.
+PTHINK30 = SessionLoad(name="pthink30", concurrency=48, warmup_s=240.0, window_s=480.0, expected_session_s=150.0,
+                       think_scale=30.0 / 17.9)
+PTHINK60 = SessionLoad(name="pthink60", concurrency=96, warmup_s=300.0, window_s=480.0, expected_session_s=280.0,
+                       think_scale=60.0 / 17.9)
+LOADS = {w.name: w for w in (L64, L8_SMOKE, INFLIGHT, SOAK, THINK30, THINK60, PTHINK30, PTHINK60)}
 GATED_LOAD = L64
 
 MIN_PAIRS = 4

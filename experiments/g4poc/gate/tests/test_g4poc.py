@@ -524,6 +524,22 @@ class LoadsTest(absltest.TestCase):
                          (inflight.arrival, inflight.think_scale, inflight.warmup_s))
 
 
+class ThinkLoadsTest(absltest.TestCase):
+    def test_poisson_think_loads_match_their_slots_twins(self):
+        for slots, poisson in (("think30", "pthink30"), ("think60", "pthink60")):
+            a, b = config.LOADS[slots], config.LOADS[poisson]
+            self.assertEqual((a.think_scale, a.arrival, b.arrival), (b.think_scale, "slots", "poisson"))
+            self.assertGreater(b.expected_session_s, 0.0)
+
+    def test_poisson_plan_keeps_target_sessions_arriving(self):
+        load = msgspec.structs.replace(config.LOADS["pthink30"], concurrency=48)
+        sessions = [_session(f"s{i}", n_turns=5) for i in range(50)]
+        plan = loadgen.plan_open(sessions, load, "seed")
+        arrivals = [st for st in plan[load.concurrency:]]
+        rate = len(arrivals) / (load.warmup_s + load.window_s)
+        self.assertAlmostEqual(rate, load.concurrency / load.expected_session_s, delta=0.25 * rate)
+
+
 class MemoryCapTest(parameterized.TestCase):
     def setUp(self):
         super().setUp()
