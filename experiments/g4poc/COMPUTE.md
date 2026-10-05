@@ -259,11 +259,13 @@ GPU-hour are illustrative):
 | **final (cp2048-lpm), rep 1** | 10 s | 36 | 32 | 971 / 30,708 | 8.62 s | 0.78 | 0.114 / **0.200** / 0.286 / 0.429 | 0.0036 / 0.0063 / 0.0090 / 0.0136 |
 | **final (cp2048-lpm), rep 2** | 10 s | 40 | 32 | 988 / 30,653 | 8.41 s | 0.79 | 0.113 / **0.197** / 0.281 / 0.422 | 0.0036 / 0.0063 / 0.0091 / 0.0136 |
 | final, rep 1 / rep 2 | 15 s | 40 / 40 | 32 / 32 | as at 10 s | | | | |
+| **final (cp2048-lpm), bs3** | 6 s | 12 | 12 | 647 / 20,524 | 5.47 s | 0.77 | 0.172 / **0.300** / 0.429 / 0.644 | 0.0054 / 0.0095 / 0.0135 / 0.0203 |
 
 - **final-hc.** At a 10 s p90 SLO it serves 32 requests in flight at 952 output tok/s: $0.204 per 1M output
   tokens at $0.70/GPU-hour (-40.5% vs base; bs3 -41%). At 6 s it is -27% ($0.301 vs $0.415).
-- **The final config's 6 s point** is measured last (8 and 12 in flight, `compute/final_6s.sh`, after PC4's bs2
-  queue); its replicates start at 16, whose p90 is 6.17 s.
+- **The final config's 6 s point** (PC2, bs3, `sweep-final-hc-cp2048-lpm-20261006-064035-build-server-3-f18b9e`;
+  0 failed, 0 retracted): 12 in flight at p90 5.47 s (p99 6.04 s), 647 output tok/s: **$0.300 per 1M output at
+  $0.70, -28% vs the base's $0.415** (8 in flight: p90 4.56 s, 517 tok/s). 16 in flight misses 6 s (p90 6.17 s).
 
 **Memory, deployable rule** (`compute/mem_check.py`, 100 ms samples over the whole sweep). Peak and plateau are
 31,514 MiB against bs2's limit of 31,599 MiB (torch capacity 32,111 MiB - 512). The 85 MiB margin is enough, so
