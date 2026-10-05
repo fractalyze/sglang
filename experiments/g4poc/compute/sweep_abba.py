@@ -38,6 +38,7 @@ def compare(a1: Dict, b1: Dict, b2: Dict, a2: Dict) -> List[Dict]:
         rows.append({
             "concurrency": c,
             "e2e_p90_gain": gain("e2e_p90_s", True),
+            "e2e_p99_gain": gain("e2e_p99_s", True),
             "output_tput_gain": gain("output_tok_s_per_gpu", False),
             # The control against itself, first sweep over last (above 1 = the later control was faster):
             # the drift a sweep pair carries on top of the candidate's effect.
@@ -48,6 +49,11 @@ def compare(a1: Dict, b1: Dict, b2: Dict, a2: Dict) -> List[Dict]:
             "control_out_tok_s": both(0, "output_tok_s_per_gpu"),
             "candidate_out_tok_s": both(1, "output_tok_s_per_gpu"),
             "control_hit": both(0, "prefix_cache_hit_rate"), "candidate_hit": both(1, "prefix_cache_hit_rate"),
+            "control_e2e_p99_s": both(0, "e2e_p99_s"), "candidate_e2e_p99_s": both(1, "e2e_p99_s"),
+            # Requests the scheduler retracted (KV pool out of room mid-decode) and failed requests, per sweep.
+            "control_retracted": [pair[0][c]["retractions"]["requests"] for pair in pairs],
+            "candidate_retracted": [pair[1][c]["retractions"]["requests"] for pair in pairs],
+            "control_failed": both(0, "n_failed"), "candidate_failed": both(1, "n_failed"),
         })
     return rows
 

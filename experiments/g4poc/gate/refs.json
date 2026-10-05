@@ -306,5 +306,32 @@
    "6"
   ],
   "numerics_unchanged": true
+ },
+ "final-hc-cp2048-lpm-m128": {
+  "description": "Promotion candidate: final-hc-cp2048-lpm + PC4's bug-4 fix, SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN=128. Gemma-4's template renders a past assistant turn without the generation prompt's tail, so the next turn matches a few tokens short of the inserted prompt; with no margin the sliding window behind that point is incomplete and the whole prefix is refused. Tree cbf56143b5 = a0491db764 (final-hc's tree) + d93fea83df (keep an SWA margin below the window at tree inserts, SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN, default 0) + 7d296525fc (hold the window + margin through decode for a branch-inserted prompt) + a unit-test fix (branch jumanzii/g4poc-swa-margin). Run in a 28G scope.",
+  "extends": "final-hc-cp2048-lpm",
+  "commit": "cbf56143b5e177c9a981aa2fdf6c03f4697e54ec",
+  "env": {
+   "SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN": "128"
+  }
+ },
+ "final-hc-cp2048-lpm-m128-smallpool": {
+  "description": "Exactness only (PC3's hicache/exactness_mt.py, as final-hc-cp2048-lpm-smallpool): final-hc-cp2048-lpm-m128 on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: final-mem-c1-c2a-cp2048-lpm-m128.",
+  "extends": "final-hc-cp2048-lpm-m128",
+  "server_args": [
+   "--max-total-tokens",
+   "16384",
+   "--swa-full-tokens-ratio",
+   "1.0"
+  ],
+  "numerics_unchanged": true
+ },
+ "final-mem-c1-c2a-cp2048-lpm-m128": {
+  "description": "Exactness control for final-hc-cp2048-lpm-m128: final-mem-c1-c2a-cp2048-lpm (no HiCache) with the same margin on the same tree. Tree cbf56143b5 = a0491db764 (final-hc's tree) + d93fea83df (keep an SWA margin below the window at tree inserts, SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN, default 0) + 7d296525fc (hold the window + margin through decode for a branch-inserted prompt) + a unit-test fix (branch jumanzii/g4poc-swa-margin).",
+  "extends": "final-mem-c1-c2a-cp2048-lpm",
+  "commit": "cbf56143b5e177c9a981aa2fdf6c03f4697e54ec",
+  "env": {
+   "SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN": "128"
+  }
  }
 }

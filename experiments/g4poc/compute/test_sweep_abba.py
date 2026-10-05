@@ -7,10 +7,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sweep_abba  # noqa: E402
 
 
-def _sweep(ref, p90s, tput=100.0):
+def _sweep(ref, p90s, tput=100.0, p99=None, retracted=0, failed=0):
     return {"ref": ref, "points": [
         {"load": {"name": f"inflight-C{c}", "concurrency": c},
-         "summary": {"e2e_p90_s": p90, "output_tok_s_per_gpu": tput, "prefix_cache_hit_rate": 0.5}}
+         "summary": {"e2e_p90_s": p90, "e2e_p99_s": p99 or 1.5 * p90, "output_tok_s_per_gpu": tput,
+                     "prefix_cache_hit_rate": 0.5, "n_failed": failed},
+         "retractions": {"requests": retracted}}
         for c, p90 in p90s.items()]}
 
 
@@ -30,6 +32,16 @@ class CompareTest(absltest.TestCase):
         row = sweep_abba.compare(a1, b, b, a2)[0]
         self.assertAlmostEqual(row["control_drift_e2e_p90"], 1.2)
         self.assertAlmostEqual(row["control_drift_tput"], 1.1)
+
+    def test_p99_and_retractions_per_sweep(self):
+        a1, a2 = _sweep("base", {28: 8.0}, p99=10.0, retracted=2), _sweep("base", {28: 8.0}, p99=10.0, retracted=3)
+        b1 = _sweep("m", {28: 7.5}, p99=12.5, retracted=7, failed=1)
+        b2 = _sweep("m", {28: 7.5}, p99=12.5, retracted=8)
+        row = sweep_abba.compare(a1, b1, b2, a2)[0]
+        self.assertAlmostEqual(row["e2e_p99_gain"], 0.8)  # the candidate's tail is 25% longer
+        self.assertEqual(row["control_retracted"], [2, 3])  # pair order: sweep 1 vs 2, sweep 4 vs 3
+        self.assertEqual(row["candidate_retracted"], [7, 8])
+        self.assertEqual(row["candidate_failed"], [1, 0])
 
     def test_only_points_every_sweep_reached(self):
         full, short = _sweep("base", {8: 4.0, 16: 9.0}), _sweep("c", {8: 4.0})
