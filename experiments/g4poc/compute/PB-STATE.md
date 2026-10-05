@@ -19,14 +19,16 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
   a0491db764; 28G). Promoted 10-05 ~23:55 (confirm A-B-B-A C24/C32 gain 1.036/1.103, KL pass, PX exactness 12/12).
   Headline bs2: C32 981 tok/s p90 8.57 s $0.198/1M @0.70 vs base $0.343 (-42%).
 - Merged g4poc-c + g4poc-c-hicache into g4poc-b (8b70c7a928), deployed 10-06 ~00:25.
-- bs2 chain (each waits for the previous "=== ... done" line):
-  logs/pb-post-c4.log (nocache sweep done; mem-final 16-24) -> logs/pb-hs1.log (compute/hs1.sh: HS1'' think30 x36
-  12 vs 6 GB, HS1' x64, then final replicate 16-40) -> logs/pb-morning.log (compute/morning.sh final-hc-cp2048-lpm:
-  replicate 16-40 + mem check, quality vs base anchor, soak C32 30 min) -> logs/pb-pthink.log (compute/pthink.sh:
-  final pthink30 48-96, no-HiCache 64/80; ends by 07:55).
-- Vault: c1 kept, c2 kept, c3a/c3b kept (base), c3a-hc/c3b-hc kept (final), c4 retired; hs1 / hs1b registered (open).
+- bs2 chain done through logs/pb-pthink.log (final pthink30 48-96 on bs2, 03:01-03:51,
+  runs/sweep-final-hc-cp2048-lpm-20261006-030116-build-server-2-654b74). The no-HiCache pair was dropped (PC2's bs3
+  covers it). PC4's queue (pid 1603659, harness-pc4/queue-pc4b.sh, ends ~07:25) owns bs2 now; coordinator: PC4 first.
+- Waiting on bs2: /home/jooman/g4poc/pb2-pthink-ab.v2.sh (= compute/pthink_ab.sh, c73d764af0), pid 1609838, log
+  logs/pb-pthink-ab.log. Waits for pid 1603659, then HS2 = final-hc pthink30 48,64 (48 alone if short), then the
+  final at inflight C8/C12 (6 s SLO point), each only if it ends by 07:55.
+- Error-detail loadgen change deployed into harness-pb 10-06 03:53 (94 tests OK).
+- Vault: c1 kept, c2 kept, c3a/c3b kept (base), c3a-hc/c3b-hc kept (final), c4 retired; hs1 / hs1b retired; hs2 registered (open, PREREG 6b8177f4e3).
 - 11:00-13:30: COMPUTE.md final numbers (two replicates, pthink calibration of fleet v3, PC2 poisson), wm-record
-  hs1/hs1b, push. Timebox 14:00.
+  hs2, push. Timebox 14:00.
 
 ## Queue (GPU, in order)
 1. gate calibrate --ref base (fidelity reference + thresholds)
