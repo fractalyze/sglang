@@ -79,6 +79,18 @@ class FleetModelTest(absltest.TestCase):
         self.assertAlmostEqual(v["think_eff_s"], 24.0)  # turn 0 of each 5-turn session has no think time
         self.assertTrue(v["past_storage_bound"])  # 120 > (60,000 + 318,445) / 6,000 = 63
 
+    def test_measured_capacity_conservative_and_interpolated(self):
+        specs = ["final-hc:30:5.15:48:334:7.07:0.286", "final-hc:30:5.15:72:434:11.41:0.076",
+                 "final-hc:30:5.15:96:536:16.55:0.013"]
+        row = fm.measured_capacity(specs, slo_s=10.0, sessions=2200)[0]
+        self.assertEqual(row["conservative"]["sessions_per_gpu"], 48)
+        f = (10.0 - 7.07) / (11.41 - 7.07)
+        self.assertAlmostEqual(row["interpolated"]["sessions_per_gpu"], 48 + f * 24)
+        self.assertAlmostEqual(row["interpolated"]["out_tok_s_per_gpu"], 334 + f * 100)
+        self.assertEqual(row["conservative"]["gpus_for_sessions"], 46)  # ceil(2200 / 48)
+        self.assertAlmostEqual(row["conservative"]["usd_per_mtok_output"]["0.70"], 0.70 / (334 * 3600) * 1e6)
+        self.assertAlmostEqual(row["think_eff_s"], 30 * (1 - 1 / 5.15))
+
     def test_failed_or_empty_points_are_dropped(self):
         sweep = _sweep([(8, 2.0, 4.0, 5.0, 0.7)])
         sweep["points"].append({"summary": {"requests_per_s": 0.0, "n_failed": 5}})

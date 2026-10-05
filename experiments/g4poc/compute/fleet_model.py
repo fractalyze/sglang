@@ -20,7 +20,14 @@ held:
     final-hc, hit rate 0.002, p90 24 s), so the storage bound is a hard cap at any SLO under ~20 s.
 
 Sessions per GPU = min(compute bound, storage bound). `host_gb_needed` gives, per think time, the host pool per
-GPU at which storage stops binding (the sizing rule).
+GPU at which storage stops binding (the sizing rule). CAVEAT (10-05 ~22:30): measured think-time loads on bs3
+(PC2) contradict the storage bound -- final-hc's hit rate is 0.29 at 48 sessions with 30 s think, where the bound
+says ~77 histories fit. The leading hypothesis is that the host pool's sliding-window share (~85K tokens of the 12
+GB) binds at ~15 sessions when write-through keeps whole prefixes' SWA KV (PC4 checks it). Until that is fixed the
+sizing rule is a model of a fixed HiCache, not of the measured one.
+
+Measured session loads (`--session-point`) give the capacity that holds today: per config and think time, the most
+sessions per GPU that meet the SLO (the largest measured point, and the interpolated point where p90 = SLO).
 
 GPUs = ceil(S / n); $/1M output tokens = price x GPUs / (S x O / (T + e) x 3600) x 1e6 (O: output tokens
 per turn). A capped policy stops growing with T while (b) keeps growing, so (b) wins past a crossover T*.
@@ -207,6 +214,45 @@ def validate(measured: Sequence[str], pols: List[Dict], slo_s: float) -> List[Di
     return rows
 
 
+def measured_capacity(specs: Sequence[str], slo_s: float, sessions: int) -> List[Dict]:
+    """Sessions per GPU meeting the SLO from measured think-time loads, per (config, think time).
+
+    Each spec is "config:mean_think_s:turns_per_session:sessions:out_tok_s:p90_s:hit". Conservative: the largest
+    measured point meeting the SLO. Interpolated: where p90 crosses the SLO between that point and the next one
+    (linear in sessions, tok/s interpolated the same way). The effective think per turn is mean_think x
+    (1 - 1/turns_per_session) (a closed population; turn 0 has no think time).
+    """
+    groups: Dict[tuple, List[Dict]] = {}
+    for spec in specs:
+        cfg, think, turns, n, tok_s, p90, hit = spec.split(":")
+        groups.setdefault((cfg, float(think), float(turns)), []).append(
+            {"sessions": float(n), "out_tok_s": float(tok_s), "p90_s": float(p90), "hit": float(hit)})
+    out = []
+    for (cfg, think, turns), pts in groups.items():
+        pts.sort(key=lambda q: q["sessions"])
+        ok = [q for q in pts if q["p90_s"] <= slo_s]
+        row = {"config": cfg, "think_s": think, "think_eff_s": think * (1 - 1 / turns), "slo_s": slo_s,
+               "points": pts}
+        if ok:
+            cons = ok[-1]
+            nxt = next((q for q in pts if q["sessions"] > cons["sessions"]), None)
+            if nxt is not None and nxt["p90_s"] > slo_s:
+                f = (slo_s - cons["p90_s"]) / (nxt["p90_s"] - cons["p90_s"])
+                interp = {"sessions": cons["sessions"] + f * (nxt["sessions"] - cons["sessions"]),
+                          "out_tok_s": cons["out_tok_s"] + f * (nxt["out_tok_s"] - cons["out_tok_s"])}
+            else:
+                interp = {"sessions": cons["sessions"], "out_tok_s": cons["out_tok_s"]}
+            for name, q in (("conservative", cons), ("interpolated", interp)):
+                gpus = math.ceil(sessions / q["sessions"])
+                # $/1M from the per-GPU output rate at that load (each GPU runs the measured point).
+                row[name] = {"sessions_per_gpu": q["sessions"], "out_tok_s_per_gpu": q["out_tok_s"],
+                             "gpus_for_sessions": gpus,
+                             "usd_per_mtok_output": {f"{c:.2f}": c / (q["out_tok_s"] * 3600) * 1e6
+                                                     for c in PRICES_USD_PER_HR}}
+        out.append(row)
+    return out
+
+
 def _fmt(r: Optional[Dict]) -> str:
     if r is None:
         return "        n/a        "
@@ -224,6 +270,8 @@ def main() -> None:
     p.add_argument("--measured", action="append", default=[],
                    help="label:sessions:mean_think_s:turns_per_session:out_tok_s:p90_s:hit[:host_gb] (repeatable)")
     p.add_argument("--host-gb", default=",".join(f"{g:g}" for g in HOST_GB), help="host pool per GPU (--hicache-size)")
+    p.add_argument("--session-point", action="append", default=[],
+                   help="config:mean_think_s:turns_per_session:sessions:out_tok_s:p90_s:hit (repeatable)")
     p.add_argument("--out")
     args = p.parse_args()
     load = lambda path: json.load(open(path)) if path else None
@@ -233,6 +281,8 @@ def main() -> None:
                       "hicache_points": args.hicache_points},
            "by_slo": {s: model(pols, args.sessions, float(s)) for s in args.slo.split(",")}}
     res["validation"] = {s: validate(args.measured, pols, float(s)) for s in args.slo.split(",")}
+    res["measured_capacity"] = {s: measured_capacity(args.session_point, float(s), args.sessions)
+                                for s in args.slo.split(",")}
     if args.out:
         with open(args.out, "w") as f:
             json.dump(res, f, indent=1)
@@ -248,6 +298,13 @@ def main() -> None:
         for z in m["host_sizing"]:
             print(f"  {z['think_s']:5g} s: {z['compute_bound_sessions_per_gpu']:6.1f} sessions/GPU, "
                   f"{z['host_gb_needed']:5.1f} GB host, {z['gpus_for_sessions']} GPUs")
+        for mc in res["measured_capacity"][s]:
+            for name in ("conservative", "interpolated"):
+                if name in mc:
+                    q = mc[name]
+                    print(f"  measured {mc['config']} T{mc['think_s']:g} (eff {mc['think_eff_s']:.1f} s) {name}: "
+                          f"{q['sessions_per_gpu']:.1f} sessions/GPU, {q['out_tok_s_per_gpu']:.0f} tok/s, "
+                          f"{q['gpus_for_sessions']} GPUs, ${q['usd_per_mtok_output']['0.70']:.3f}/1M out @0.70")
         for v in res["validation"][s]:
             print("  measured:", json.dumps({k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.items()}))
 
