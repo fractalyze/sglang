@@ -454,7 +454,16 @@ server's keep-alive is the alternative, at the cost of more idle sockets held op
 
 **Capacity edges (poisson, measured live sessions, E2E p90 <= 10 s):** **T30 ~70 sessions per GPU** (both configs
 meet 10 s at 67 live sessions, p90 8.97-9.03 s, and miss at 73, 10.41-10.73 s), **T60 ~113-119.** At the T30 edge
-a GPU delivers ~430 output tok/s, about $0.45 per 1M output tokens at $0.70/GPU-h. Session capacity follows the turn rate: both edges sit near 2.3-2.4 turns/s per GPU, since nearly every turn
+a GPU delivers ~430 output tok/s, about $0.45 per 1M output tokens at $0.70/GPU-h.
+
+**The T30 edge holds over time and replicates** (device-only `final-mem-c1-c2a`, the chat recommendation):
+- 30-minute chat soak at target C72 (`psoak30`, `sweep-final-mem-c1-c2a-20261006-065616-build-server-3-e7cc9b`):
+  **67.8 live sessions, E2E p50 / p90 / p99 4.92 / 9.26 / 12.90 s**, 2.32 turns/s, 410 output tok/s ($0.474 per 1M
+  output at $0.70/GPU-h); 4,179 requests, 0 failed, 1 retraction; no burst episode (queue max 7); GPU memory flat
+  at 31,488-31,490 MiB (peak 31,514), server RSS flat at 6.34 GB, host MemAvailable >= 44.2 GB.
+- Replicate of the edge points (`sweep-final-mem-c1-c2a-20261006-073155-build-server-3-915199`): C72 67.3 live,
+  p90 9.21 s (first run 8.97), p99 12.26 s; C76 73.0 live, p90 10.59 s (first run 10.41), p99 13.54 s; no failed
+  request with the 2 s client keep-alive. Session capacity follows the turn rate: both edges sit near 2.3-2.4 turns/s per GPU, since nearly every turn
 re-prefills its ~5.8K-token history once think time exceeds what the cache can hold; so sessions per GPU grow
 roughly in proportion to think time. The slots runs above (phase-correlated, with the window-end bug) are the
 pessimistic bound.
