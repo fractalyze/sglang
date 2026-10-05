@@ -209,8 +209,76 @@ Pools: device 196,752 Full + 39,350 SWA tokens; host 390,623 Full (4.00 GB) + 78
 - So the failure was client-side (most likely a transport or body error) and left no server trace. The harness does not persist the error text.
 - 15 other think-time points tonight, with up to 3 retractions each, had 0 failures. Not an upstream candidate.
 
+### SW3: final-hc knee, think30 x 32, 40 (run `sweep-swahost-dbg-20261006-004733-build-server-3-a28750`)
+
+| sessions | hit | E2E p90 | out tok/s | hit turns | swa_gone | full_gone | failed |
+|---|---|---|---|---|---|---|---|
+| 32 | 0.547 | 4.75 s | 233 | 332 | 106 | 35 | 0 |
+| 40 | 0.438 | 5.83 s | 303 | 318 | 176 | 103 | 0 |
+| 48 (SW1) | 0.284 | 7.35 s | 334 | 231 | 230 | 216 | 0 |
+| 72 (SW1) | 0.075 | 11.44 s | 434 | 70 | 185 | 698 | 0 |
+
+**Falsified by a hair.** The 32-session hit is 0.547 against the registered 0.55 floor. 40 sessions
+came in at 0.438 against 0.45-0.72. The E2E p90 interval held (-35% vs SW1's 48-session point).
+- The hit rate falls smoothly from 32 sessions; there is no flat region at 12 GB.
+- At 32 sessions, returning turns hit 81-88% at gaps up to 40 s and 64% at 40-60 s. Retention is
+  ~50-60 s for SWA and ~70-90 s for Full.
+- The model's per-session cost was ~10-20% optimistic. Most of that gap is the second-turn miss below.
+
+### Every session's second turn misses its prefix (think-time mode)
+
+A short-gap returning turn (< 30 s) hits ~100% after a hit or an swa_gone re-prefill at 32-40 sessions.
+After a first turn it mostly misses its SWA window:
+
+| previous turn | SW3-32: hit / swa_gone | SW3-40: hit / swa_gone | SW1-48: hit / swa_gone |
+|---|---|---|---|
+| hit | 1.00 / 0.00 | 1.00 / 0.00 | 0.89 / 0.11 |
+| swa_gone | 1.00 / 0.00 | 1.00 / 0.00 | 0.95 / 0.00 |
+| full_gone | 0.50 / 0.50 | 0.58 / 0.42 | 0.38 / 0.59 |
+| first | 0.27 / 0.73 | 0.12 / 0.88 | 0.14 / 0.84 |
+
+The outcome after a first turn depends on that first prompt's length (all gaps < 30 s):
+
+| first prompt | SW3: hit | SW1: hit | SW2: hit |
+|---|---|---|---|
+| <= 4096 tokens (one prefill chunk) | 0 / 67 | 0 / 93 | 0 / 92 |
+| 4097-5119 | 0.42 | 0.18 | 0.16 |
+| >= 5120 | 0.09 | 0.05 | 0.04 |
+
+In all 122 cases after a <= 4096-token first prompt in SW3 (gaps 9-95 s), `full_kv` equals the
+expected prefix and the usable match is 13-15 tokens.
+
+**Mechanism.** Page size 1; Gemma-4's `sliding_window_size` is `sliding_window - 1` = 1023
+(`models/gemma4_causal.py:85`).
+- After a fresh prefill, `cache_unfinished_req` calls `free_out_of_window_slots(req, pe - 1)`. That
+  keeps SWA for exactly [pe-1024, pe), pe being the prompt end (`mem_cache/common.py:54-107`).
+- The next turn's prefix ends 4 tokens earlier, at `<|turn>model\n`. The chat template drops the
+  4-token empty thought channel from a past model turn (`full_kv` = prev_fill - 4 in every case).
+- The match validator needs >= 1023 contiguous SWA tokens behind the match end (`swa.py:330-340`).
+  Here it gets 1024 - 4 = 1020, and the match collapses to the shared 13-token root.
+- After a hit turn the window is not rebuilt from scratch: the previous window plus the ~300-token
+  extension leaves ~1,300 contiguous tokens, so later turns are fine.
+- A first prompt of 4097-5119 tokens is partly rescued: the chunk-boundary window at 4096 keeps SWA
+  live from 3072. A full_gone re-prefill rebuilds the window from scratch, so its next turn misses
+  too.
+- **Cost.** Second turns are 14% of prompt tokens (first turns 17%, per-turn suffix 3.5%). The
+  think-mode hit ceiling is ~0.66 instead of ~0.80. This does not depend on HiCache: device-only
+  stacks take the same path.
+- **Open question.** In-flight final-hc sweeps hit 0.71-0.74 at C20-C32, above the 0.66 ceiling,
+  so second turns probably hit at a ~0 s gap. The code read finds no time-dependent path. A 10-minute
+  in-flight point on the log-only tree (`swahost-dbg --load inflight`) would settle it; bs3 was taken
+  by PC2's queue when this was found.
+- **Fix (not implemented, pending the coordinator).**
+  - At the prefill-insert free, keep M extra SWA tokens below the window, e.g. M = 128 =
+    `SGLANG_SWA_EVICTION_INTERVAL`, the slack decode already keeps.
+  - Put it behind a default-off `SGLANG_OPT_` switch. Freeing less is always safe.
+  - Cost: ~128 more SWA tokens per idle session (~+10%).
+  - Validation: CPU regression, C1 multi-turn exactness 12/12, and think30 x 32/48 vs SW3/SW1.
+
 ## 4. Open items (code; none implemented tonight)
 
+0. **Second-turn window margin** (see above): ~10 lines, the largest single hit-rate lever found
+   (~+0.13 ceiling in think-time mode).
 1. **Exclusive host tiering for hybrid SWA (upstream-relevant).**
    - write_through mirrors the device, so distinct capacity is the host pool.
    - write_back is exclusive (+50% distinct here: 478K Full + 128K SWA tokens), but tombstoning an
