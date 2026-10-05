@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from sglang.srt.mem_cache.allocator import BaseTokenToKVPoolAllocator
     from sglang.srt.mem_cache.pool_host import HostKVCache
 
+from sglang.srt.environ import envs
 from sglang.srt.layers.dp_attention import (
     is_dp_attention_enabled,
 )
@@ -359,7 +360,8 @@ class HiCacheController:
         self.write_queue: List[CacheOperation] = []
         self.ack_load_queue: List[HiCacheAck] = []
         # Set by the scheduler to the forward stream; gates load-back H2D
-        # behind in-flight forwards (see start_loading).
+        # behind in-flight forwards (see start_loading), and write-through D2H
+        # too under SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH (see start_writing).
         self.load_fence_stream = None
         self.ack_write_queue: List[HiCacheAck] = []
 
@@ -815,6 +817,19 @@ class HiCacheController:
         op = CacheOperation.merge_ops(self.write_queue)
         host_indices, device_indices, pool_transfers = self._move_write_operation(op)
         self.write_queue.clear()
+
+        if (
+            envs.SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH.get()
+            and self.load_fence_stream is not None
+        ):
+            # Under the overlap scheduler a node is inserted (a finished
+            # request's last token, a chunk stashed for its next pass) while
+            # the forward writing its KV is still queued on the forward stream.
+            # wait_stream orders the copy after the work enqueued so far only,
+            # so later forwards still overlap with it.
+            self.l2_transfer_engine.device_to_host_stream.wait_stream(
+                self.load_fence_stream
+            )
 
         completion = self.l2_transfer_engine.submit_device_to_host(
             self._l2_transfers(host_indices, device_indices, pool_transfers)
