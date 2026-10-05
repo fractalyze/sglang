@@ -171,6 +171,36 @@ C24 misses 10 s by 0.94-0.95 s in both, so the capacity verdict does not depend 
 **Deployable: `mem-final` at 0.955.** The server's own GPU memory stayed flat at 31,556-31,570 MiB over the
 whole sweep (2 s samples), under the rule's 31,642 MiB. Burst capacity 29 sessions (mem-base 17).
 
+**Quality anchor, mem-final vs mem-base** (both arms at a 0.85 static fraction; role-play arms with 1,024-token
+prefill chunks so the input-logprob requests fit; pool size does not change the arithmetic):
+
+| guard | mem-base | mem-final | verdict |
+|---|---|---|---|
+| GSM8K, all 1,319 | 96.21 | 95.91 | pass: tolerance 1.0 pt; paired, 8 items right only in base and 4 only in final, exact McNemar p = 0.39 |
+| tool-JSON | 40/40 | 40/40 | pass |
+| role-play reference NLL | 0.18784 | 0.18985 nats/token (+0.0020) | pass: budget 0.02 |
+| role-play language adherence | 68/80 | 67/80 | pass under the paired rule below (1 flip, inside the band) |
+
+Runs: `quality-mem-qa-{base-20261005-144330,final-20261005-144912}`, `rp-quality-mem-qr-{base-20261005-145406,
+final-20261005-145702}` (all `-build-server-3-*`, records in `runs/`).
+
+*Language-adherence rule (changed for this study, 2026-10-05).* The guard used to fail on any drop in the count of
+replies in the prompt's language. A paired per-item check replaces it: the candidate fails if more items flip from
+adherent to non-adherent than a numerics-neutral config change flips. The reason: at a fixed config the role-play
+run is token-identical run to run, but any config change re-rolls the batched outputs, numerics-neutral or not, so
+the count moves with the config, not the arithmetic. Measured:
+
+| pair | outputs token-identical | adherence flips |
+|---|---|---|
+| A/A, same config, run twice (mem-qr-base; mem-qr-final) | 80/80; 80/80 | 0; 0 |
+| numerics-neutral change: mem-base vs mem-q-ctl (pool sizes, RoPE table length, L5 on, L8 off) | 4/80 | 1 |
+| numerics-neutral change: mem-base at swa ratio 0.3 vs 0.25 (`mem-qr-base-r025`) | 3/80 | 1 |
+| mem-final vs mem-base | 4/80 | 1 |
+
+All three non-A/A pairs flip the same item, `s000794/0`, a request to translate a Japanese line into Chinese. Every
+arm answers in Chinese; replies that quote the Japanese words in a gloss are tagged `ja` (adherent), plain Chinese
+translations `zh`. The band is 1/80, and mem-final sits inside it.
+
 *Memory under the real workload, and a co-tenant on the GPU.* Single 2 s samples ~515 MiB above the plateau
 (stack1 sweep 32,113 MiB at 12:33:09, mem-final step-0 32,087 at 14:03:10, mem-final sweep 32,079 at 14:23:09)
 are not SGLang. build-server-3 also runs zorch-playground, whose watchdog submits a canary job to its GPU
@@ -206,9 +236,11 @@ Python unified tree core only (no SWA host pool, no EAGLE).
   prompts (`exact-mem-stack2-poison-*` vs `exact-mem-stack1b-*`).
 - Tests: `TestSWASlidWindowRelease` in `test/registered/unit/mem_cache/test_unified_radix_cache_unittest.py`
   (split and release accounting, a window shared by two holders, frontier before the segment start).
-- Batched: at concurrency 16 on 16 role-play prompts, 7/16 outputs match stack1 token for token, against an
-  A/A (stack1 vs stack1) of 6/16 with mismatches from token 1 on; all 16 poisoned outputs are normal text.
-  This engine is not batch-invariant, so exactness is checkable only at concurrency 1.
+- Batched: at concurrency 16 on 16 role-play prompts, 7/16 outputs match stack1 token for token, against
+  6/16 for two runs of stack1 itself (`exact-mem-stack1b-rp-*`), with mismatches from token 1 on; all 16 poisoned
+  outputs are normal text. In this tool the batch composition varied between the two runs, so exactness is
+  checkable only at concurrency 1 (the role-play quality run, by contrast, reproduced token for token at a
+  fixed config; see the language-adherence rule in section 3).
 - **Real workload: not kept.**
   `sweep-mem-stack2-20261005-132151-build-server-3-cbfe29`:
 
@@ -294,6 +326,23 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   with `swa_host_hit_length`, then `init_load_back`) under-reserves sliding slots when a host load-back or a
   chunked continuation is in the batch. That is an SGLang bug, not a configuration limit; HiCache is not
   deployable until it is fixed (open items).
+- **With the running batch capped at 24** (`mem-hc-c24` = mem-hc + `--max-running-requests 24`,
+  `sweep-mem-hc-c24-20261005-154401-build-server-3-dd6e45`) the scheduler did not crash and the overload collapse
+  is gone; the excess requests wait in the queue:
+
+  | in flight | E2E p50 s | E2E p90 s | output tok/s | prefix-cache hit | queue mean | retractions |
+  |---|---|---|---|---|---|---|
+  | 24 | 5.94 | 9.15 | 796 | 0.741 | 0.1 | 1 |
+  | 28 | 6.42 | 10.16 | 782 | 0.714 | 4.0 | 0 |
+  | 32 | 8.01 | 10.87 | 804 | 0.714 | 8.0 | 0 |
+
+  Goodput stays at ~800 tok/s from C24 to C32 (mem-final: 468-476 at C28/C32 with p90 18-19 s). The cap does not
+  remove the admission bug; it kept the scheduler under it for 3 x 5 min of overload, so it is a flag-only
+  fallback, not a fix.
+
+> [!gap] Attribution pending: `mem-final-c24` (mem-final + `--max-running-requests 24`, no HiCache) at C20-C32
+> splits the overload hold between the admission cap and the host cache.
+
 - Host memory: SGLang keeps 10 GiB of the cgroup headroom free beyond a pinned host pool
   (`HICACHE_HOST_MEMORY_RESERVE_BYTES` in `mem_cache/pool_host/base.py`), so the 8.74 GB SWA host pool failed
   its check in the 24G scope (16.2 GiB headroom - 10 GiB < 8.74 GB) although the server needed less. The run
@@ -307,8 +356,12 @@ Host pools: full 318,445 tokens (3.26 GB) + SWA 85,344 tokens (8.74 GB), ~2x eac
   reply. Real chat clients end at the same point: the generation prompt's empty thought channel after
   `<|turn>model\n` never appears in a past turn (section 4). The measured hit rates therefore hold for chat
   clients; only token-level clients that resend the exact generated tokens would match further.
-- **Batched outputs are not reproducible on this engine** (A/A 6/16 identical at concurrency 16): exactness
-  checks must run at concurrency 1, and batched numerics need logprob/KL against an A/A bar.
+- **When batched outputs reproduce.** At a fixed config the role-play quality run (80 prompts, up to 32 in
+  flight) was token-identical across runs (80/80, twice). Two runs of the exactness tool at concurrency 16 on
+  the same config matched 6/16: there the batch composition varied between runs, and so does it in the
+  scheduling-dependent in-flight sweeps. Any config change, including numerics-neutral ones (pool sizes), re-rolls
+  batched outputs (3-4/80 identical). So exactness is checked at concurrency 1, and batched quality is compared
+  per item against a numerics-neutral config-change band, not against an A/A.
 - **HiCache with a fixed SWA admission charge** is the largest remaining cost lever measured here (+18% output
   tok/s at C24, 10 s capacity 20 -> 24). It needs the prefill admission to reserve the sliding slots a host
   load-back or chunked continuation takes, a regression test at the C28 overload, and the C24-C32 points re-run.
