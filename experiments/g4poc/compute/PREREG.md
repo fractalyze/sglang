@@ -193,3 +193,7 @@ Falsified (for promotion) if the p90 gain is < 1.0, or p99 rises > 20%, or the s
 Soak reference, fixed before the run (the final itself has no C28 soak): PC2's bs3 30-min soaks of final-hc gave
 p99 9.9 s with 19 retractions of 9,353 requests at C28 and 11.0 s / 31 at C32; the final's bs2 C32 soak gave
 p99 37.1 s / 115 of 9,569. (c) passes if -m128 at C28 fails no request, retracts <= 3% and keeps p99 <= 1.3 x 37.1 s.
+Amendment (10-06 ~05:45, coordinator; before (c) starts): the C32 soak is the wrong reference for a C28 soak. The
+reference is the final's own 30-min C28 soak, PC2 on bs3 (same config, cross-host), finishing ~05:56, before any
+M128 run starts. (c) passes if -m128 fails no request, its retraction rate is <= 2x that soak's and its p99 is
+<= 1.3x that soak's p99. (a)'s A-B-B-A gives the same-host C28 pairs.
