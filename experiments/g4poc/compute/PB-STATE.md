@@ -20,6 +20,10 @@ Never launch a server outside the gate / serve.sh (MemoryMax scope + host.lock).
   /data/jooman/g4poc/moe-configs/c1/configs/triton_3_7_1/E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,per_channel_quant=True.json
   (The first full 1,920-config run was stopped at 11:43: ~14 min per token count, 4 h total.)
   Watcher: session-local background loop on driver2.log (lost on restart: just re-check the file).
+- C1 chain: bs2 harness-pb/compute/c1_chain.sh -> /home/jooman/g4poc/logs/pb-c1-chain.log, started 11:46 KST.
+  Steps (=== markers): wait tune -> merge -> kernel bench (moe-tune/c1/bench-tuned.log) -> calibrate ->
+  A/A aa-c12 + set-noise -> C1 gate (runs/c1-moe-tuned-*). Expected done ~15:00 KST. Ends with "=== ... done".
+  DO NOT gate/deploy.sh to harness-pb while the chain runs (bash reads the script as it goes).
 - C1 prediction frozen: vault trial g4poc-c1 (b21c0d8), compute/PREREG.md (477d5ab0bc): E2E p90 -6..-1%.
 - C2 survey: Explore subagent reading SGLang attention backends for SM120 + Gemma-4 (session-local).
 
