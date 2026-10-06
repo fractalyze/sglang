@@ -1,0 +1,34 @@
+{
+ "sweep-final-hc-cp2048-lpm-glue-k2-20261006-143459-build-server-3-1d499d": {
+  "n_busy": 635,
+  "clocks_sm_mean": 2813.436220472441,
+  "clocks_mem_mean": 13801.0,
+  "power_w_mean": 399.2069606299213,
+  "temp_c_mean": 60.34015748031496,
+  "clocks_sm_p10": 2775.0
+ },
+ "sweep-final-hc-cp2048-lpm-glue-c1-20261006-144637-build-server-3-dae74e": {
+  "n_busy": 623,
+  "clocks_sm_mean": 2803.704654895666,
+  "clocks_mem_mean": 13801.0,
+  "power_w_mean": 449.77601926163726,
+  "temp_c_mean": 62.701444622792934,
+  "clocks_sm_p10": 2767.0
+ },
+ "sweep-final-hc-cp2048-lpm-glue-c1-20261006-145813-build-server-3-97cdec": {
+  "n_busy": 625,
+  "clocks_sm_mean": 2804.168,
+  "clocks_mem_mean": 13801.0,
+  "power_w_mean": 449.32084800000007,
+  "temp_c_mean": 62.6576,
+  "clocks_sm_p10": 2767.0
+ },
+ "sweep-final-hc-cp2048-lpm-glue-k2-20261006-150948-build-server-3-b42385": {
+  "n_busy": 631,
+  "clocks_sm_mean": 2812.2393026941363,
+  "clocks_mem_mean": 13801.0,
+  "power_w_mean": 402.8241521394612,
+  "temp_c_mean": 61.29793977812995,
+  "clocks_sm_p10": 2775.0
+ }
+}
