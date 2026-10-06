@@ -16,6 +16,7 @@ register_cpu_ci(est_time=2, suite="base-a-test-cpu")
 _OFF_BY_DEFAULT = {
     "SGLANG_OPT_GEMMA4_FUSED_GLUE": Gemma4FusedGlue.OFF,
     "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE": False,
+    "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": False,
 }
 
 

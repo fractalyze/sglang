@@ -149,6 +149,35 @@ def _get_block_sizes_for_extend_attention(Lq: int, Lv: int):
     return BLOCK_DMODEL, BLOCK_DPE, BLOCK_DV, BLOCK_M, BLOCK_N, num_warps
 
 
+# sm120 (RTX 5090 / RTX Pro 6000, ~100 KB shared memory) extend tiles for an FP8
+# KV cache, opt-in via SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES. The default
+# sm120 tiles are sized for BF16 K/V. Swept on an RTX 5090 over Gemma-4-26B-A4B
+# prefill shapes (experiments/g4poc/compute/extend_attn_bench.py on fractalyze's
+# jumanzii/g4poc branch; 16 q heads, 2 or 8 kv heads, 347 new tokens over a
+# 3,769-token prefix and 4,096-token chunks):
+# head_dim 512 with a 64-wide prefix tile is 2.3-3.8x faster than the default
+# (32, 32), head_dim 256 with 32x32 tiles and 4 warps 1.7-2.3x faster than the
+# default (64, 64) with 8 warps, which runs at 255 registers per thread.
+# head_dim -> (BLOCK_M, BLOCK_N, BLOCK_N_PREFIX, num_warps, num_stages)
+_SM120_FP8_KV_EXTEND_TILES = {
+    256: (32, 32, 32, 4, 1),
+    512: (32, 32, 64, 8, 1),
+}
+
+
+def _sm120_fp8_kv_extend_tiles(Lq: int, Lv: int, k_buffer: torch.Tensor):
+    """The re-tuned sm120 tiles for this shape, or None to keep the defaults."""
+    if not (
+        _is_cuda
+        and CUDA_CAPABILITY[0] == 12
+        and envs.SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES.get()
+        and k_buffer.dtype == torch.float8_e4m3fn
+        and Lq == Lv
+    ):
+        return None
+    return _SM120_FP8_KV_EXTEND_TILES.get(Lq)
+
+
 def _get_num_stages_for_extend_attention(
     Lq: int, Lv: int, block_n: int | None = None
 ) -> int:
@@ -974,6 +1003,11 @@ def extend_attention_fwd(
     FP8_BLOCK_N = 128 if BLOCK_N_ARCH < 128 and Lq <= 192 else BLOCK_N_ARCH
     BLOCK_N = FP8_BLOCK_N if USE_FP8_EXTEND else BLOCK_N_ARCH
     BLOCK_N_PREFIX = FP8_BLOCK_N if USE_FP8_PREFIX else BLOCK_N_ARCH
+    sm120_tiles = (
+        None if kimi_k3_shape else _sm120_fp8_kv_extend_tiles(Lq, Lv, k_buffer)
+    )
+    if sm120_tiles is not None:
+        BLOCK_M, BLOCK_N, BLOCK_N_PREFIX, num_warps, _ = sm120_tiles
     USE_EXP2 = (
         _is_gfx95
         and kimi_k3_shape
@@ -1005,9 +1039,12 @@ def extend_attention_fwd(
         grid = (compact_q_tiles, head_num)
     else:
         grid = (batch_size, head_num, triton.cdiv(max_len_extend, BLOCK_M))
-    num_stages = (
-        _get_num_stages_for_extend_attention(Lq, Lv, BLOCK_N) if kimi_k3_shape else 1
-    )
+    if sm120_tiles is not None:
+        num_stages = sm120_tiles[4]
+    elif kimi_k3_shape:
+        num_stages = _get_num_stages_for_extend_attention(Lq, Lv, BLOCK_N)
+    else:
+        num_stages = 1
 
     extra_kargs = {}
     if _is_hip:
