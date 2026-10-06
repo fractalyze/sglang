@@ -701,7 +701,10 @@ number. The others were found later; none changes a reported in-flight number.
   kept their error, so its cause is not recorded. A client that sends turns after more than 5 s idle needs the
   same setting.
 
-## 7. Round 2: K1, gemma4nv T4's decode-glue fusion on the finals (2026-10-06, bs2)
+## 7. Round 2: K1, gemma4nv T4's decode-glue fusion on the finals (2026-10-06, bs2 and bs3)
+
+Run directories are on the host that ran them: bs2 `/home/jooman/g4poc/runs`, bs3 `/data/jooman/g4poc/runs`.
+Each table names its host.
 
 **Change.** `SGLANG_OPT_GEMMA4_FUSED_GLUE=2`, gemma4nv T4 (commit 1d859709ef, default off). Per layer:
 - one Triton kernel does the q/k/v RMSNorm, RoPE and the FP8 E4M3 KV store;
