@@ -2,6 +2,8 @@
 
 Each switch below selects a code path that the tree does not take when the
 switch is off, so with none of them set the tree serves on upstream's path.
+The one deliberate exception is upstream's tuned channelwise FP8 GEMM route,
+which is on by default and for which this work adds RTX 5090 config files.
 """
 
 import unittest
@@ -30,6 +32,13 @@ class TestOptInSwitchDefaults(CustomTestCase):
                 self.assertEqual(field.default, off)
                 if not field.is_set():
                     self.assertEqual(field.get(), off)
+
+    def test_tuned_fp8_gemm_route_is_on_unless_killed(self):
+        # The RTX 5090 dense FP8 tiles apply through this route by default;
+        # SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE=0 is their kill switch.
+        self.assertIs(envs.SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE.default, True)
+        with envs.SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE.override(False):
+            self.assertIs(envs.SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE.get(), False)
 
 
 if __name__ == "__main__":
