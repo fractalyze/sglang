@@ -1,0 +1,8 @@
+{
+  "final-mem-c1-c2a-cp2048-lpm-glue-c1-route": {
+    "description": "Round 2 K3 routing capture only: the in-flight ship stack's numerics without HiCache (final-mem-c1-c2a-cp2048-lpm-glue-c1: glue + K2-c1 tiles, chunk 2048, lpm) with SGLang's expert-distribution recorder in per_pass mode, so every forward pass's per-layer expert token counts are dumped. The recorder copies each pass to the host, so timings from this ref are not comparable. 24G scope.",
+    "extends": "final-mem-c1-c2a-cp2048-lpm-glue-c1",
+    "server_args": ["--expert-distribution-recorder-mode", "per_pass"],
+    "numerics_unchanged": true
+  }
+}
