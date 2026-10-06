@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 import os
 import random
 from collections import Counter
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from enum import Enum, auto
 from functools import lru_cache
@@ -1091,6 +1091,26 @@ class PrefillAdder:
             else:
                 self.tree_cache.dec_lock_ref(last_node)
 
+    @contextmanager
+    def _pin_admission_prefix(self, req: Req):
+        """Pin every node the request locks if admitted, for the admission check.
+
+        A HiCache load-back moves the request's lock from the device-matched
+        `last_node` to `best_match_node`. That node's sliding window can cover
+        device-resident SWA past `last_node`: pinned at `last_node` alone, the
+        check counts it as evictable and the load-back then locks it uncharged.
+        """
+        with ExitStack() as pins:
+            pins.enter_context(self._lock_node(req.last_node))
+            if (
+                envs.SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW.get()
+                and req.needs_host_load_back()
+                and req.best_match_node is not None
+                and req.best_match_node != req.last_node
+            ):
+                pins.enter_context(self._lock_node(req.best_match_node))
+            yield
+
     def add_one_req_ignore_eos(self, req: Req):
         cand_extend_input_len = len(req.full_untruncated_fill_ids) - len(
             req.prefix_indices
@@ -1258,7 +1278,7 @@ class PrefillAdder:
 
         # The temporary pin excludes this prefix from the evictable budget.
         # Selection itself neither allocates slots nor materializes host hits.
-        with self._lock_node(req.last_node):
+        with self._pin_admission_prefix(req):
             admission = self._select_prefill_admission(
                 req,
                 total_tokens=total_tokens,
