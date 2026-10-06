@@ -1,0 +1,72 @@
+{
+ "refs": [
+  "final-hc-cp2048-lpm-glue-c1",
+  "ship-inflight",
+  "ship-inflight",
+  "final-hc-cp2048-lpm-glue-c1"
+ ],
+ "sweeps": [
+  "/data/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-glue-c1-20261006-183749-build-server-3-182202",
+  "/data/jooman/g4poc/runs/sweep-ship-inflight-20261006-184421-build-server-3-aae602",
+  "/data/jooman/g4poc/runs/sweep-ship-inflight-20261006-190015-build-server-3-f794f8",
+  "/data/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-glue-c1-20261006-190654-build-server-3-dc86e4"
+ ],
+ "points": [
+  {
+   "concurrency": 28,
+   "e2e_p90_gain": 0.9915458644962444,
+   "e2e_p99_gain": 1.022894566211369,
+   "output_tput_gain": 0.9924375159208106,
+   "control_drift_e2e_p90": 1.0008798400217487,
+   "control_drift_tput": 0.9953942967205041,
+   "control_e2e_p90_s": [
+    7.336398518178612,
+    7.32994933539594
+   ],
+   "candidate_e2e_p90_s": [
+    7.432091906399001,
+    7.35948120719986
+   ],
+   "control_out_tok_s": [
+    1133.5583333333334,
+    1128.3375
+   ],
+   "candidate_out_tok_s": [
+    1125.2708333333333,
+    1119.5208333333333
+   ],
+   "control_hit": [
+    0.7751145740965273,
+    0.7726195259780122
+   ],
+   "candidate_hit": [
+    0.7750438181324083,
+    0.7725809826128401
+   ],
+   "control_e2e_p99_s": [
+    9.180131941638537,
+    9.544512440921691
+   ],
+   "candidate_e2e_p99_s": [
+    9.190150427159388,
+    9.1120964553929
+   ],
+   "control_retracted": [
+    11,
+    12
+   ],
+   "candidate_retracted": [
+    5,
+    8
+   ],
+   "control_failed": [
+    0,
+    0
+   ],
+   "candidate_failed": [
+    0,
+    0
+   ]
+  }
+ ]
+}
