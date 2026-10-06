@@ -768,3 +768,23 @@ KL notes:
 Both language flips are mixed-language detector items, and the two arms give the same kind of reply on each:
 - s000686 (ja card): a Portuguese explanation of a Japanese sentence, tagged ja for the control and es for the glue;
 - s001101 (ru card): Russian with an English quiz, tagged ru and en.
+
+### Performance, in flight: A-B-B-A at 12 and 28 (bs3, 11:54-12:43)
+
+Run with `glue/k1_unit.sh abba-inflight`, compared by `runs/k1/abba-c12-c28-build-server-3.json` on bs3. The four
+sweeps, in order:
+- A1 `sweep-final-hc-cp2048-lpm-20261006-115439-build-server-3-be7c43`
+- B1 `sweep-final-hc-cp2048-lpm-glue-20261006-120819-*-4a4beb`
+- B2 `sweep-final-hc-cp2048-lpm-glue-20261006-121956-*-a7048f`
+- A2 `sweep-final-hc-cp2048-lpm-20261006-123132-*-d83134`
+
+| in flight | E2E p90, final -> glue (s) | gain | output tok/s, final -> glue | $/1M output at $0.70 | p99 gain | retracted | control drift (p90 / tok/s) |
+|---|---|---|---|---|---|---|---|
+| 28 | 8.69, 8.68 -> 8.34, 8.26 | **1.046** | 946, 935 -> 979, 977 (**+3.9%**) | 0.207 -> **0.199** | 1.017 | 4 + 10 -> 11 + 10 | 0.1% / 1.2% |
+| 12 | 5.45, 5.48 -> 5.30, 5.39 | **1.022** | 650, 643 -> 669, 656 (**+2.5%**) | 0.301 -> **0.293** | 1.027 | 0 -> 0 | 0.4% / 1.1% |
+
+0 failed requests, and the prefix hit is unchanged (0.767-0.771). C28 beat the predicted interval (p90 -1.5..-3.5%,
+tok/s +1.5..+3.5%); C12 landed inside its interval (-2.0..-4.5%, +2.0..+4.5%). In the traced profiles the decode step
+shrank 0.40 ms at bs 12 and 0.6-0.9 ms at bs 24/32: 1.5 us and 2.2-3.4 us per removed launch, against the gemma4nv
+rule's 1.6-2.3 us. Why the saving grows with the batch was not measured. Retractions
+at 28 rose 1.5x (14 -> 21), inside the 2x guard; the soak tests the tail.
