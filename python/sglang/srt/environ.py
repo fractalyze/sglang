@@ -681,6 +681,13 @@ class Envs:
     # (auto-enabled for GLM-5.2-style DSA); set True to A/B synchronous swap-in.
     SGLANG_DISABLE_HISPARSE_PREFETCH = EnvBool(False)
     SGLANG_OPT_UNIFIED_CACHE_FREE_OUT_OF_WINDOW_SLOTS = EnvBool(True)
+    # Extra SWA tokens a tree insert keeps live below the sliding window
+    # (0: exactly one window). A chat template that renders past assistant
+    # turns without the generation prompt's tail (Gemma-4 drops the empty
+    # thought channel) makes the next turn match a few tokens short of the
+    # inserted prompt; with no margin the window behind that match point is
+    # incomplete and the whole prefix is refused.
+    SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN = EnvInt(0)
     # Decode batches between SWA out-of-window evictions.
     SGLANG_SWA_EVICTION_INTERVAL = EnvInt(128)
     # Deprecated: the unified radix tree is the default tree cache now, so the
