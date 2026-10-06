@@ -120,18 +120,22 @@ def main() -> None:
             return graph_time_us(call, N_COPIES)
 
         row = {"layer": name, "bs": bs, "kv_mb": kv_bytes / 1e6, "floor_us": floor, "served_us": timed(SERVED)}
-        best = None
+        best, grid, failed = None, [], 0
         for cfg in GRID:
             try:
                 us = timed(cfg)
             except Exception:  # a tile past SM120 shared memory or registers
+                failed += 1
                 continue
+            grid.append({**cfg, "us": us})
             if best is None or us < best[0]:
                 best = (us, cfg)
-        row["best_us"], row["best_config"] = best
+        row["best_us"], row["best_config"], row["n_failed_configs"], row["grid"] = best, best[1], failed, grid
+        row["best_config"] = best[1]
         override.consts = {}
         rows.append(row)
-        print(json.dumps({k: (round(v, 2) if isinstance(v, float) else v) for k, v in row.items()}), flush=True)
+        print(json.dumps({k: (round(v, 2) if isinstance(v, float) else v) for k, v in row.items() if k != "grid"}),
+              flush=True)
         del kbuf, vbuf
         torch.cuda.empty_cache()
     with open(args.out, "w") as f:
