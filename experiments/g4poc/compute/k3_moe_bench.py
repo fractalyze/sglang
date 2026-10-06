@@ -82,6 +82,12 @@ def main() -> None:
 
     # The MoE config lookup reads the runtime context (as SGLang's own MoE benchmarks set it up).
     set_global_server_args_for_scheduler(ServerArgs(model_path=os.environ["G4POC_MODEL_DIR"]))
+    from sglang.srt.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
+
+    # The kernel sequence reads the TP group (a single rank here), as in SGLang's MoE benchmark.
+    init_distributed_environment(world_size=1, rank=0, distributed_init_method="tcp://127.0.0.1:23457",
+                                 local_rank=0, backend="nccl")
+    initialize_model_parallel(tensor_model_parallel_size=1, expert_model_parallel_size=1)
 
     p = argparse.ArgumentParser()
     p.add_argument("--out", required=True)
