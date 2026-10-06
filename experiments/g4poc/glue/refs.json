@@ -1,0 +1,23 @@
+{
+  "final-hc-cp2048-lpm-glue": {
+    "description": "Round 2 K1 candidate: the in-flight final final-hc-cp2048-lpm with gemma4nv T4's per-layer decode-glue fusion at level 2 (SGLANG_OPT_GEMMA4_FUSED_GLUE=2: q/k/v RMSNorm + RoPE + FP8 KV store in one Triton kernel, post-attention RMSNorm + FusedAddRMSNorm in one, router + pre-FF-2 RMSNorm as one two-output kernel, the next layer's input norm folded into the dual-norm epilogue; 270 of 1,056 kernels per decode step removed). Same tree a0491db764 as the final: T4 (1d859709ef) is already in it, default off. Run in a 28G scope.",
+    "extends": "final-hc-cp2048-lpm",
+    "env": {"SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"}
+  },
+  "final-hc-cp2048-lpm-glue-smallpool": {
+    "description": "Exactness only (PC3's hicache/exactness_mt.py): final-hc-cp2048-lpm-glue on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back of KV that the fused kernel wrote. Control: final-mem-c1-c2a-cp2048-lpm-glue (same flags and glue, no HiCache).",
+    "extends": "final-hc-cp2048-lpm-glue",
+    "server_args": ["--max-total-tokens", "16384", "--swa-full-tokens-ratio", "1.0"],
+    "numerics_unchanged": true
+  },
+  "final-mem-c1-c2a-cp2048-lpm-glue": {
+    "description": "Exactness control for final-hc-cp2048-lpm-glue-smallpool: final-mem-c1-c2a-cp2048-lpm (no HiCache) with the same decode-glue fusion (SGLANG_OPT_GEMMA4_FUSED_GLUE=2). Tree 1425761173 (final-mem-c1-c2a's), which already holds T4.",
+    "extends": "final-mem-c1-c2a-cp2048-lpm",
+    "env": {"SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"}
+  },
+  "final-mem-c1-c2a-glue": {
+    "description": "Round 2 K1 candidate for chat with think time: the device-only chat final final-mem-c1-c2a with the decode-glue fusion at level 2 (SGLANG_OPT_GEMMA4_FUSED_GLUE=2). Tree 1425761173, which already holds T4. Run in a 24G scope.",
+    "extends": "final-mem-c1-c2a",
+    "env": {"SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"}
+  }
+}
