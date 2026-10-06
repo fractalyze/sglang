@@ -847,3 +847,107 @@ the 575 W cap.
   to translate a text into English that the base anchor also answers in English. Inside the paired band: pass.
 - Multi-turn exactness at concurrency 1 (`exactmt-final-mem-c1-c2a-cp2048-lpm-k2c1-*` vs
   `exactmt-final-hc-cp2048-lpm-k2c1-smallpool-*`): 12/12 token-identical, cached tokens identical 12/12.
+
+**On the ship stack: final + K1's glue fusion + c1** (K1's glue, `SGLANG_OPT_GEMMA4_FUSED_GLUE=2`, was adopted for both
+finals in round 2; refs in `k2/refs.json`). Same-host A-B-B-A, final + glue vs final + glue + c1 (bs3,
+`runs/k2/c1-stack/abba-c12-c28.json`, control drift <= 0.6%, 0 failed):
+
+| in flight | E2E p90 | output tok/s | $/1M output @ $0.70 | E2E p99 | retracted (2 windows) |
+|---|---|---|---|---|---|
+| 12 | 5.29 -> **4.35 s** (gain 1.216, -17.8%) | 670 -> **824** (+23.0%) | 0.290 -> **0.236** | 5.94 -> 4.95 s | 0 -> 0 |
+| 28 | 8.29 -> **7.36 s** (gain 1.127, -11.2%) | 983 -> **1,122** (+14.1%) | 0.198 -> **0.173** | 10.49 -> 9.45 s | 21 -> 23 |
+
+c1 adds as much on the glue stack as on the final (C28 +14.1% vs +14.3% tok/s). SM clock 2,812 -> 2,804 MHz, power
+401 -> 450 W. Multi-turn exactness on the stack (`final-mem-c1-c2a-cp2048-lpm-glue-c1` vs
+`final-hc-cp2048-lpm-glue-c1-smallpool`, the glue writes the KV): 12/12, cached tokens identical.
+
+**30-min soak at 28 in flight, final + glue + c1** (bs3, `sweep-final-hc-cp2048-lpm-glue-c1-20261006-165610-build-server-3-e9df6b`,
+`runs/k2/c1-stack/soak-c28.json`), judged against round 1's limits (0 failed, <= 1.39% retracted, p99 <= 14.47 s):
+
+| 30 min at 28 in flight (bs3) | requests | failed | p50 / p90 / p99 | out tok/s | $/1M @ $0.70 | hit | retracted |
+|---|---|---|---|---|---|---|---|
+| round 1 final | 9,656 | 0 | 5.54 / 8.59 / 11.13 s | 952 | 0.204 | 0.768 | 67 (0.69%) |
+| final + glue (K1) | | 0 | - / 8.27 / 10.59 s | 986 | 0.197 | | 0.64% |
+| **final + glue + c1** | **11,423** | **0** | **4.75 / 7.33 / 8.95 s** | **1,127** | **0.173** | 0.767 | **99 (0.87%)** |
+
+Pass. GPU memory plateau 31,354 MiB, inside bs3's 31,642 MiB rule; the 31,885 MiB peaks fall only at hh:m3:10, the
+co-tenant canary (`runs/k2/c1-stack/soak-mem.json`). Against round 1: **-15% $/1M output, p90 -15%, p99 -20%**.
+
+**6 s SLO point** (sweep of the stack at 16, 20, 24; `sweep-final-hc-cp2048-lpm-glue-c1-20261006-163930-build-server-3-af5c98`;
+12 from the A-B-B-A): 12 in flight p90 4.35 s / 824 tok/s; **16: 5.05 s / 941 tok/s, $0.207 per 1M** (round 1's 6 s point
+was 12 in flight at $0.300: -31%); 20: 6.00 s (on the edge) / 996 tok/s / $0.195; 24: 6.43 s.
+
+**Chat with 30 s think** (device-only final-mem-c1-c2a + glue, without and with c1; poisson pthink30, the gate's seeded
+plans, so both arms replay the same arrivals; bs3, `runs/k2/sweeps-summary-bs3.jsonl`; 0 failed):
+
+| plan | arm | live sessions | turns/s | E2E p50 / p90 / p99 | out tok/s |
+|---|---|---|---|---|---|
+| C72 | glue | 66.4 | 2.450 | 4.62 / 8.25 / 11.08 s | 430 |
+| C72 | glue + c1 | 63.3 | 2.467 | 3.16 / **6.06** / 9.14 s | 432 |
+| C76 | glue | 71.9 | 2.515 | 5.03 / **10.05** / 12.83 s (misses 10 s) | 445 |
+| C76 | glue + c1 | 68.1 | 2.500 | 3.46 / **7.07** / 9.92 s | 444 |
+| C84 | glue + c1 | 78.4 | 2.875 | 3.97 / 8.25 / 10.85 s | 508 |
+| C92 | glue + c1 | **84.4** | 3.023 | 4.20 / **8.77** / 11.63 s (meets 10 s) | 537 |
+| C96 | glue + c1 | 97.7 | 3.231 | 5.68 / **11.02** / 13.96 s (misses) | 575 |
+
+At the same plans p90 falls 27-30%, more than the ~13% less work per turn, because these plans sit near saturation.
+The 10 s edge moves from ~72-74 live sessions (glue alone; K1's bs2 probe 73.7) to between 84.4 (meets) and 97.7
+(misses), ~91 by interpolation; quoted as **~88 sessions per GPU** for the curve's convexity: **2,200 sessions at 30 s
+think -> ~25 GPUs** (glue alone ~30, round 1 ~32), **~$0.35-0.36 per 1M output** at $0.70 (glue alone ~$0.44, round 1
+$0.45-0.47). The preregistered +12% .. +17% sessions undershot the measured ~+20%.
+
+**Verdict: c1 kept** (coordinator, 10-06 ~17:45), on both finals. The round-2 ship stack is final + glue + c1:
+`final-hc-cp2048-lpm-glue-c1` in flight, `final-mem-c1-c2a-glue-c1` for chat. Vault `g4poc-k2c1` (kept).
+
+### K2-c2: no host sync in the Triton SWA decode replay (parked)
+
+**Change.** `SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC` (default off; tree fae2c5cdca, in cfc12c0bac): in the CUDA-graph decode
+replay, `update_sliding_window_buffer` maps the window ids of a static SWA pool to SWA ids over the host bound
+`bs * sliding_window_size` with a device-side mask, instead of slicing by the GPU scalar `window_kv_indptr[-1]` (two
+host syncs per replay). Unit test `test/registered/unit/layers/attention/test_triton_swa_window_no_host_sync.py` (same
+ids as the synced path, stale tail untouched, no tensor read on the host; 3/3 on CPU). Prediction: `compute/PREREG.md`
+"Round 2, K2-c2" (amended to the stack before the run), vault `g4poc-k2c2`.
+
+**Same-host A-B-B-A on the stack, final + glue + c1 vs + c2** (bs2, `runs/k2/c2-stack/abba-c12-c28.json`; pair 2 rerun
+whole after its A2 start waited out the gate's swap preflight; control drift <= 0.8%, 0 failed):
+
+| in flight | E2E p90 | output tok/s | E2E p99 | retracted (2 windows) |
+|---|---|---|---|---|
+| 12 | 4.30 -> 4.28 s (gain 1.006) | 828 -> 834 (+0.6%) | 4.87 -> 4.89 s | 0 -> 0 |
+| 28 | 7.28 -> 7.19 s (gain 1.012; pairs 1.000, 1.024) | 1,136 -> 1,141 (+0.4%) | 10.25 -> 9.67 s | 15 -> 28 |
+
+**Mechanism** (same-host one-window profiles of both arms at 12 and 28, `runs/k2/c2-stack/profile-*.json`): the pre-graph
+gap falls from 0.47 to 0.06 ms per decode step at 12 and from 0.54 to 0.11 ms at 28, and no `cudaStreamSynchronize`
+stays inside a decode forward. But the untraced decode step (server log) falls only 0.18-0.29 ms (12 running: 10.57 ->
+10.39 ms; 27: 15.22 -> 14.93 ms). **Why the prediction missed:** it was sized from the traced gap. Under the torch
+profiler `cudaGraphLaunch` of the ~800-1,060-node decode graph costs ~0.43 ms of CPU (CUPTI instruments every node), and
+that launch is most of the gap the sync exposes; untraced the gap is ~0.2-0.3 ms.
+
+**Exactness.** One prompt at a time, greedy: 8/8 identical to the control. Multi-turn exactness 12/12, cached tokens
+identical. KL check: batched 0.056 vs A/A 0.034, inside the 0.067 limit (the forced pass is prefill, which c2 does not
+touch; it differs only by batch composition).
+
+**Verdict: parked** (coordinator). Exact and the mechanism confirmed, but the gain is about a third of the prediction
+(C28 -1.2% vs -1.8 .. -2.9%; C12 -0.6% vs -2.9 .. -4.5%) and at or under the gate's 1% bar. The switch stays opt-in;
+`hicache/UPSTREAM-PERF.md` lists it as an upstream improvement candidate.
+
+### The megakernel, re-decided on the post-c1/c2 profile (NO-GO for round 2)
+
+The decode step after glue + c1 (+ c2), bs2, 12 running: ~10.4 ms untraced, 791 graph nodes; gaps between nodes 0.065 ms
+(0.6%); 602 kernels under 5 us, 1.03 ms (9%); fused_moe 6.07 ms (**55%**), decode attention 1.82 ms (17%), dense GEMMs
+(Triton W8A8 + FP8 lm_head + router) 1.7 ms (16%). Launch removal alone is capped at the measured 0.77-0.80 us per graph
+node, ~0.63 ms per step; with partial overlap of the small ops the persistent kernel's headroom stays 1-4% of E2E at 28
+in flight and 2-6% at 12, straddling the 3% bar, for weeks of SM120 work (99 KB shared memory against the ~220 KB the
+published megakernels assume). **NO-GO for this round** (coordinator, 10-06 ~17:50). The cheaper probes, if this comes
+back, are PDL on the remaining graph kernels and an L2 prefetch of the next layer's dense weights on a parallel graph
+branch. The largest decode item is now fused_moe itself (K3).
+
+### Open items from K2
+
+- **HiCache write-through stalls the scheduler thread** (0.8-2.4% of wall at C8-C28): `hicache/UPSTREAM.md` item 5,
+  candidate, call site not traced.
+- **The gate's swap preflight counts the waiting gate itself.** A gate waiting in `wait_preflight` (swap > 2 GB) gets
+  its own pages swapped out (717 MB on bs3), which keeps swap above the limit. A harness improvement for later: exclude
+  the gate's own process tree from the swap check, or swap it back in before checking.
+- **Profile-derived host gaps overstate untraced ones** when the CPU work in the gap is a large graph launch (c2 above).
+- **c1's T30 edge** is bracketed (84.4 meets, 97.7 misses), not pinned.
