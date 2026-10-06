@@ -146,6 +146,16 @@ def bench_shape(name: str, n: int, k: int, ms: List[int]) -> List[Dict]:
     return rows
 
 
+def node_cost_us() -> Dict:
+    """Per-node time of near-zero-work kernels in a CUDA graph: the fixed cost a launch carries."""
+    x = torch.zeros(8, 2816, device="cuda", dtype=torch.bfloat16)
+    y = torch.zeros(1, device="cuda", dtype=torch.float32)
+    return {
+        "add_8x2816_bf16": graph_time_us(lambda i: x.add_(1.0), 500),
+        "add_1_fp32": graph_time_us(lambda i: y.add_(1.0), 500),
+    }
+
+
 def per_step(rows: List[Dict]) -> Dict:
     """Per decode step at each M: summed time of the 120 dense GEMMs, served vs weight-only."""
     out = {}
@@ -169,7 +179,9 @@ def main() -> None:
     for name in args.shapes.split(","):
         n, k = SHAPES[name]
         rows += bench_shape(name, n, k, ms)
-    res = {"device": torch.cuda.get_device_name(), "rows": rows, "per_step_us": per_step(rows)}
+    res = {"device": torch.cuda.get_device_name(), "node_cost_us": node_cost_us(), "rows": rows,
+           "per_step_us": per_step(rows)}
+    print(json.dumps(res["node_cost_us"]), flush=True)
     with open(args.out, "w") as f:
         json.dump(res, f, indent=1)
     print(json.dumps(res["per_step_us"], indent=1))
