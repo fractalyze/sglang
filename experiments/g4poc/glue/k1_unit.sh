@@ -5,8 +5,10 @@
 #   abba-t30:      final-mem-c1-c2a vs -glue under pthink30 at 72 (24G)
 #   soak:          final-hc-cp2048-lpm-glue at 28 in flight for 30 min (28G)
 # The unit holds $G4POC/unit.lock throughout, so units of different workers on one host never interleave their sweeps
-# (the gate's host.lock is per server); WAIT_PID first waits out a running queue that predates that lock.
-#   [WAIT_PID=<pid>] glue/k1_unit.sh <unit> > <log> 2>&1
+# (the gate's host.lock is per server); WAIT_PID first waits out a running queue that predates that lock. flock is not
+# FIFO, so a unit the coordinator orders behind another worker's waits for WAIT_FILE (that worker touches it when done)
+# for at most WAIT_TIMEOUT_S before taking the lock.
+#   [WAIT_PID=<pid>] [WAIT_FILE=<path> [WAIT_TIMEOUT_S=5400]] glue/k1_unit.sh <unit> > <log> 2>&1
 set -uo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 source "$here/gate/env.sh"
@@ -17,6 +19,12 @@ host=$(hostname)
 if [ -n "${WAIT_PID:-}" ]; then
   echo "=== $(date -Is) unit $1 waits for pid $WAIT_PID to exit"
   while kill -0 "$WAIT_PID" 2>/dev/null; do sleep 30; done
+fi
+if [ -n "${WAIT_FILE:-}" ]; then
+  deadline=$(( $(date +%s) + ${WAIT_TIMEOUT_S:-5400} ))
+  echo "=== $(date -Is) unit $1 waits for $WAIT_FILE (until $(date -d @$deadline +%T))"
+  while [ ! -e "$WAIT_FILE" ] && [ "$(date +%s)" -lt "$deadline" ]; do sleep 30; done
+  [ -e "$WAIT_FILE" ] && echo "=== $(date -Is) $WAIT_FILE present" || echo "=== $(date -Is) $WAIT_FILE timed out"
 fi
 exec 8>"$G4POC/unit.lock"
 echo "=== $(date -Is) unit $1 waits for $G4POC/unit.lock"
