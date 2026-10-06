@@ -1,5 +1,5 @@
 #!/bin/bash
-# K2 queue 5 (bs3), after queue 4: K2-c1's follow-ups if kept, then K2-c2's gates on top of c1. Each unit holds the
+# K2 queue 5 (bs3), run by queue 6 after the c1 units: K2-c1's follow-ups if kept, then K2-c2's gates on top of c1. Each unit holds the
 # outer lock /data/jooman/g4poc/unit.lock (shared with K1); the gate takes host.lock per server inside it.
 #   c1: sweep at 16, 20 and 24 in flight (the new 6 s SLO point); 30-min soak at 28 with GPU memory sampled.
 #   c2 (compute/PREREG.md "Round 2, K2-c2"): A-B-B-A at 12 and 28 (final+c1 vs final+c1+c2); the KL check
@@ -12,7 +12,6 @@ U=/data/jooman/g4poc/unit.lock
 cd $H && source gate/env.sh
 step() { echo "=== $(date +%T) $*"; }
 preread() { cat /data/jooman/g4poc/models/gemma-4-26B-A4B-it-fp8ch/shards/text-*.safetensors > /dev/null; }
-while pgrep -f "compute/k2/queue[4].sh" > /dev/null; do sleep 60; done
 export G4POC_SERVER_MEMORY_MAX=28G
 C1=final-hc-cp2048-lpm-k2c1
 C2=final-hc-cp2048-lpm-k2c1c2
