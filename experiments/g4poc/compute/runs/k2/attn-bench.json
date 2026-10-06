@@ -1,0 +1,2424 @@
+{
+ "device": "NVIDIA GeForce RTX 5090",
+ "read_gbps": 1685.3663765003473,
+ "rows": [
+  {
+   "layer": "sliding",
+   "bs": 8,
+   "kv_mb": 33.554432,
+   "floor_us": 19.90928053855896,
+   "served_us": 29.2167991399765,
+   "best_us": [
+    26.108399033546448,
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8
+    }
+   ],
+   "best_config": {
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 1,
+    "splits": 8
+   },
+   "n_failed_configs": 27,
+   "grid": [
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 26.237601041793823
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 28.1792014837265
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 30.126801133155823
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 31.27959966659546
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 31.100401282310486
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 32.255199551582336
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 27.340400218963623
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 28.2507985830307
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 31.58000111579895
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 26.108399033546448
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 27.681198716163635
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 30.667200684547424
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 29.052799940109253
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 29.332000017166138
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 31.226399540901184
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 26.983198523521423
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 28.163999319076538
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 31.12640082836151
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 28.06679904460907
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 29.163599014282227
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 33.07439982891083
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 30.407598614692688
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 29.038798809051514
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 31.619200110435486
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 28.33479940891266
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 29.36759889125824
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 32.73079991340637
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 27.551600337028503
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 29.333201050758362
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 33.02280008792877
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 28.37119996547699
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 31.23840093612671
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 37.074801325798035
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 28.593599796295166
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 31.446000933647156
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 36.89639866352081
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 27.136799693107605
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 27.426400780677795
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 31.283199787139893
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 31.69560134410858
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 30.73360025882721
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 36.45319938659668
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 26.848798990249634
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 28.717198967933655
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 34.89199876785278
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 26.129600405693054
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 27.86479890346527
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 34.08240079879761
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 29.251599311828613
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 29.372400045394897
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 35.8379989862442
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 26.795199513435364
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 28.129199147224426
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 34.845998883247375
+    }
+   ]
+  },
+  {
+   "layer": "sliding",
+   "bs": 12,
+   "kv_mb": 50.331648,
+   "floor_us": 29.863920807838443,
+   "served_us": 41.84800088405609,
+   "best_us": [
+    37.27720081806183,
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8
+    }
+   ],
+   "best_config": {
+    "BLOCK_N": 64,
+    "num_warps": 4,
+    "num_stages": 1,
+    "splits": 8
+   },
+   "n_failed_configs": 27,
+   "grid": [
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 39.97359871864319
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 38.89720141887665
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 41.09320044517517
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 49.094799160957336
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 43.245598673820496
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 43.032801151275635
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 39.63319957256317
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 38.724398612976074
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 41.93199872970581
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 38.916000723838806
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 38.34199905395508
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 40.908798575401306
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 41.850000619888306
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 39.808401465415955
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 41.52480065822601
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 38.91479969024658
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 38.42360079288483
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 41.318801045417786
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 39.94799852371216
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 39.87880051136017
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 43.82480084896088
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 38.711199164390564
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 39.32600021362305
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 41.69920086860657
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 39.702001214027405
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 39.96959924697876
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 43.487998843193054
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 39.29080069065094
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 38.9384001493454
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 43.03399920463562
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 39.55279886722565
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 41.345998644828796
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 48.28599989414215
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 39.42520022392273
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 41.56759977340698
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 49.07520115375519
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 37.27720081806183
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 38.419198989868164
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 42.49880015850067
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 44.13880109786987
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 42.00960099697113
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 48.378801345825195
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 37.85719871520996
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 39.834800362586975
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 46.61880135536194
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 37.94040083885193
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 39.0828013420105
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 46.05279862880707
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 41.51960015296936
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 40.44319987297058
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 47.48319983482361
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 38.214001059532166
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 39.14160132408142
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 46.5939998626709
+    }
+   ]
+  },
+  {
+   "layer": "sliding",
+   "bs": 28,
+   "kv_mb": 117.440512,
+   "floor_us": 69.68248188495636,
+   "served_us": 81.69479966163635,
+   "best_us": [
+    78.77359986305237,
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8
+    }
+   ],
+   "best_config": {
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 1,
+    "splits": 8
+   },
+   "n_failed_configs": 27,
+   "grid": [
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 79.36599850654602
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 82.37760066986084
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 86.17200255393982
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 86.52240037918091
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 87.01519966125488
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 88.3903980255127
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 79.92759943008423
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 82.02199935913086
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 86.47639751434326
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 78.77359986305237
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 81.5064013004303
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 85.53119897842407
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 81.54039978981018
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 83.09280276298523
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 85.73359847068787
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 79.46320176124573
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 81.56399726867676
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 85.3007972240448
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 83.53080153465271
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 85.77839732170105
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 93.49520206451416
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 81.89719915390015
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 83.3840012550354
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 87.64879703521729
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 83.01360011100769
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 84.81119871139526
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 93.34359765052795
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 80.10960221290588
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 82.32679963111877
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 88.27000260353088
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 81.71039819717407
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 84.55479741096497
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 100.02199411392212
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 81.45359754562378
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 84.66280102729797
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 101.58480405807495
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 79.4323980808258
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 81.59120082855225
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 88.26479911804199
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 86.32879853248596
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 84.88320112228394
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 99.78359937667847
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 80.3820013999939
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 83.30960273742676
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 98.37480187416077
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 80.61720132827759
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 82.84040093421936
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 97.57040143013
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 84.01520252227783
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 84.32360291481018
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 99.39799904823303
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 80.63520193099976
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 82.48199820518494
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 99.40279722213745
+    }
+   ]
+  },
+  {
+   "layer": "full",
+   "bs": 8,
+   "kv_mb": 111.353856,
+   "floor_us": 66.07100838882616,
+   "served_us": 134.47320461273193,
+   "best_us": [
+    83.56760144233704,
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16
+    }
+   ],
+   "best_config": {
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "splits": 16
+   },
+   "n_failed_configs": 27,
+   "grid": [
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 122.45880365371704
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 91.24280214309692
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 85.9059989452362
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 197.89040088653564
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 120.08119821548462
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 117.92559623718262
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 183.19480419158936
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 117.03640222549438
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 113.62919807434082
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 102.13119983673096
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 85.91920137405396
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 87.83720135688782
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 134.470796585083
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 98.38240146636963
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 98.47800135612488
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 90.00120162963867
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 83.56760144233704
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 85.95960140228271
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 105.45159578323364
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 87.43559718132019
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 89.11799788475037
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 135.16440391540527
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 98.28600287437439
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 97.76800274848938
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 92.94760227203369
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 90.98079800605774
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 89.54640030860901
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 149.98799562454224
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 105.65040111541748
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 112.21359968185425
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 172.71840572357178
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 154.09079790115356
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 144.58760023117065
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 175.8188009262085
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 157.74199962615967
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 148.38520288467407
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 95.14840245246887
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 85.80160140991211
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 89.05919790267944
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 129.28279638290405
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 118.7324047088623
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 110.74199676513672
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 100.98839998245239
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 91.50519967079163
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 91.01439714431763
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 87.82920241355896
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 87.10920214653015
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 89.10840153694153
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 128.87680530548096
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 115.01480340957642
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 107.15160369873047
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 101.62160396575928
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 91.47120118141174
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 90.85440039634705
+    }
+   ]
+  },
+  {
+   "layer": "full",
+   "bs": 12,
+   "kv_mb": 144.687104,
+   "floor_us": 85.84905099414755,
+   "served_us": 149.13519620895386,
+   "best_us": [
+    108.86080265045166,
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8
+    }
+   ],
+   "best_config": {
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "splits": 8
+   },
+   "n_failed_configs": 27,
+   "grid": [
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 131.06240034103394
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 110.51199436187744
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 114.52679634094238
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 207.72159099578857
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 169.17719841003418
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 142.73159503936768
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 183.17760229110718
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 156.7952036857605
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 138.03880214691162
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 116.62039756774902
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 114.98559713363647
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 111.52039766311646
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 149.19159412384033
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 135.98519563674927
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 122.8376030921936
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 108.86080265045166
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 112.1399998664856
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 109.05959606170654
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 118.91599893569946
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 116.90640449523926
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 112.32800483703613
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 142.20240116119385
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 131.40599727630615
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 120.8448052406311
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 124.34959411621094
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 113.21239471435547
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 113.63040208816528
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 151.11080408096313
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 144.36240196228027
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 133.09600353240967
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 216.53239727020264
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 185.3916049003601
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 173.73239994049072
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 224.31559562683105
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 190.82759618759155
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 178.15760374069214
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 110.78039407730103
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 114.65359926223755
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 111.87959909439087
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 168.61079931259155
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 146.88800573349
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 140.51920175552368
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 124.61320161819458
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 113.77840042114258
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 114.3183946609497
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 116.79480075836182
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 110.45199632644653
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 111.80319786071777
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 158.2144021987915
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 137.69760131835938
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 132.52559900283813
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 123.99560213088989
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 113.82240056991577
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 114.24720287322998
+    }
+   ]
+  },
+  {
+   "layer": "full",
+   "bs": 28,
+   "kv_mb": 355.682304,
+   "floor_us": 211.0415331404511,
+   "served_us": 287.85240650177,
+   "best_us": [
+    243.9203977584839,
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16
+    }
+   ],
+   "best_config": {
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "splits": 16
+   },
+   "n_failed_configs": 27,
+   "grid": [
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 251.77559852600098
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 253.75239849090576
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 257.0859909057617
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 370.58119773864746
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 309.14320945739746
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 298.4895944595337
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 343.4823989868164
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 295.8631992340088
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 287.8603935241699
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 261.64400577545166
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 248.36881160736084
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 254.98840808868408
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 287.96000480651855
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 268.10240745544434
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 265.84160327911377
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 253.27959060668945
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 243.9203977584839
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 249.8284101486206
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 264.98239040374756
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 249.85239505767822
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 255.7420015335083
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 290.4367923736572
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 264.4968032836914
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 264.82601165771484
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 262.69400119781494
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 251.72200202941895
+    },
+    {
+     "BLOCK_N": 32,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 258.1500053405762
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 308.3643913269043
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 277.64039039611816
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 278.69958877563477
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 410.7056140899658
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 368.7016010284424
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 367.6503896713257
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 433.1644058227539
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 383.70399475097656
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 2,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 374.23760890960693
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 258.37879180908203
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 246.78919315338135
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 253.52599620819092
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 313.8283967971802
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 290.86320400238037
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 296.25279903411865
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 261.8052005767822
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 251.62479877471924
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 4,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 257.3348045349121
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 8,
+     "us": 253.9803981781006
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 16,
+     "us": 247.21720218658447
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 1,
+     "splits": 32,
+     "us": 256.13598823547363
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 8,
+     "us": 312.27879524230957
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 16,
+     "us": 284.6208095550537
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 2,
+     "splits": 32,
+     "us": 292.02880859375
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 8,
+     "us": 261.765193939209
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 16,
+     "us": 251.44720077514648
+    },
+    {
+     "BLOCK_N": 64,
+     "num_warps": 8,
+     "num_stages": 3,
+     "splits": 32,
+     "us": 256.7251920700073
+    }
+   ]
+  }
+ ]
+}

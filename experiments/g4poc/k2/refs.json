@@ -1,0 +1,145 @@
+{
+  "final-hc-cp2048-lpm-k2c1": {
+    "description": "Round 2 K2-c1: the final config on tree cfc12c0bac (jumanzii/g4poc-r2-k2 = a0491db764 + the c2 switch, off + tuned triton_scaled_mm tiles for the six dense FP8 shapes on the RTX 5090: decode M 1-48 leave CUTLASS, M >= 64 keeps it). Run in a 28G scope.",
+    "extends": "final-hc-cp2048-lpm",
+    "commit": "cfc12c0bac57a8cb73be37f2cb37d907ef2d0769"
+  },
+  "final-hc-cp2048-lpm-k2c1-smallpool": {
+    "description": "Exactness only: final-hc-cp2048-lpm-k2c1 on a 16K-token device pool (every later multi-turn turn is a HiCache load-back). Control: final-mem-c1-c2a-cp2048-lpm-k2c1.",
+    "extends": "final-hc-cp2048-lpm-k2c1",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "final-mem-c1-c2a-cp2048-lpm-k2c1": {
+    "description": "Exactness control for final-hc-cp2048-lpm-k2c1: the same flags without HiCache, on the K2-c1 tree.",
+    "extends": "final-mem-c1-c2a-cp2048-lpm",
+    "commit": "cfc12c0bac57a8cb73be37f2cb37d907ef2d0769"
+  },
+  "final-mem-c1-c2a-k2c1": {
+    "description": "Round 2 K2-c1 on the chat config (device-only final-mem-c1-c2a) for the think-time point (pthink30), tree cfc12c0bac.",
+    "extends": "final-mem-c1-c2a",
+    "commit": "cfc12c0bac57a8cb73be37f2cb37d907ef2d0769"
+  },
+  "final-cpl-qr-k2c1": {
+    "description": "Quality arms (GSM8K/tool-JSON against the bs3 base anchor, and role-play as final-cpl-qr) for final-hc-cp2048-lpm-k2c1 at a 0.85 static fraction, keeping its 2048-token chunks. 28G scope.",
+    "extends": "final-hc-cp2048-lpm-k2c1",
+    "server_args": [
+      "--mem-fraction-static",
+      "0.85"
+    ],
+    "numerics_unchanged": true
+  },
+  "final-hc-cp2048-lpm-k2c1c2": {
+    "description": "Round 2 K2-c2 on top of K2-c1: final-hc-cp2048-lpm-k2c1 + SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC=1 (the Triton decode replay translates the SWA window ids without the two host syncs). Same tree cfc12c0bac. 28G scope.",
+    "extends": "final-hc-cp2048-lpm-k2c1",
+    "env": {
+      "SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "final-hc-cp2048-lpm-k2c1c2-smallpool": {
+    "description": "Exactness only: final-hc-cp2048-lpm-k2c1c2 on a 16K-token device pool. Control: final-mem-c1-c2a-cp2048-lpm-k2c1c2.",
+    "extends": "final-hc-cp2048-lpm-k2c1c2",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "final-mem-c1-c2a-cp2048-lpm-k2c1c2": {
+    "description": "Exactness control for final-hc-cp2048-lpm-k2c1c2: the same flags without HiCache.",
+    "extends": "final-mem-c1-c2a-cp2048-lpm-k2c1",
+    "env": {
+      "SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "final-mem-c1-c2a-k2c1c2": {
+    "description": "K2-c1 + K2-c2 on the device-only chat config for the think-time point.",
+    "extends": "final-mem-c1-c2a-k2c1",
+    "env": {
+      "SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "final-hc-cp2048-lpm-glue-k2": {
+    "description": "Control for the stacked K2-c1 increment: the final with K1's adopted decode-glue fusion (SGLANG_OPT_GEMMA4_FUSED_GLUE=2) on the final's tree a0491db764 (T4, 1d859709ef, is in it), as K1's final-hc-cp2048-lpm-glue. 28G scope.",
+    "extends": "final-hc-cp2048-lpm",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
+    }
+  },
+  "final-hc-cp2048-lpm-glue-c1": {
+    "description": "Round 2 ship candidate: final + K1's glue fusion (level 2) + K2-c1's tuned triton_scaled_mm tiles, tree cfc12c0bac (a0491db764 + c2 code, off + the tile configs). 28G scope.",
+    "extends": "final-hc-cp2048-lpm-k2c1",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
+    }
+  },
+  "final-hc-cp2048-lpm-glue-c1-smallpool": {
+    "description": "Exactness only: final-hc-cp2048-lpm-glue-c1 on a 16K-token device pool (every later turn is a HiCache load-back of KV the fused glue kernel wrote). Control: final-mem-c1-c2a-cp2048-lpm-glue-c1.",
+    "extends": "final-hc-cp2048-lpm-glue-c1",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "final-mem-c1-c2a-cp2048-lpm-glue-c1": {
+    "description": "Exactness control for final-hc-cp2048-lpm-glue-c1: the same flags, glue and tiles without HiCache.",
+    "extends": "final-mem-c1-c2a-cp2048-lpm-k2c1",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
+    }
+  },
+  "final-mem-c1-c2a-glue-k2": {
+    "description": "Think-time control if K1's glue is adopted for chat: device-only final-mem-c1-c2a + glue level 2 (as K1's final-mem-c1-c2a-glue). 24G scope.",
+    "extends": "final-mem-c1-c2a",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
+    }
+  },
+  "final-mem-c1-c2a-glue-c1": {
+    "description": "Think-time candidate if K1's glue is adopted for chat: device-only final-mem-c1-c2a + glue + K2-c1 tiles, tree cfc12c0bac. 24G scope.",
+    "extends": "final-mem-c1-c2a-k2c1",
+    "env": {
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
+    }
+  },
+  "final-hc-cp2048-lpm-glue-c1c2": {
+    "description": "K2-c2 on the ship stack: final-hc-cp2048-lpm-glue-c1 + SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC=1. 28G scope.",
+    "extends": "final-hc-cp2048-lpm-glue-c1",
+    "env": {
+      "SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "final-hc-cp2048-lpm-glue-c1c2-smallpool": {
+    "description": "Exactness only: final-hc-cp2048-lpm-glue-c1c2 on a 16K-token device pool. Control: final-mem-c1-c2a-cp2048-lpm-glue-c1c2.",
+    "extends": "final-hc-cp2048-lpm-glue-c1c2",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "final-mem-c1-c2a-cp2048-lpm-glue-c1c2": {
+    "description": "Exactness control for final-hc-cp2048-lpm-glue-c1c2: the same flags without HiCache.",
+    "extends": "final-mem-c1-c2a-cp2048-lpm-glue-c1",
+    "env": {
+      "SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC": "1"
+    },
+    "numerics_unchanged": true
+  }
+}

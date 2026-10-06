@@ -200,3 +200,57 @@ M128 run starts. (c) passes if -m128 fails no request, its retraction rate is <=
 Reference values (PC2, bs3, `runs/sweep-final-hc-cp2048-lpm-20261006-052216-build-server-3-d12892`, soak-C28, read
 10-06 ~05:57 before (c) starts): 9,656 requests, 0 failed, p90 8.59 s, p99 11.13 s, 952 tok/s, hit 0.768, 67
 retracted (0.69%). So (c) passes if -m128 fails no request, retracts <= 1.39% of requests and keeps p99 <= 14.47 s.
+
+## Round 2, K2-c2: no host sync in the Triton SWA decode replay (registered 2026-10-06 ~11:30 KST)
+
+Basis: the K2 decode profile (COMPUTE.md section 7). On the final config every decode forward reads
+`window_kv_indptr[-1]` on the host twice (`update_sliding_window_buffer`, static SWA pool), so the CPU waits for the
+previous graph, then spends ~0.2 ms on prep and ~0.43 ms in `cudaGraphLaunch` while the GPU idles: a pre-graph gap
+of 0.53-0.56 ms (median) / 0.59-0.69 ms (mean) per decode step at C8-C28. `SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC=1`
+(tree `jumanzii/g4poc-r2-k2` fae2c5cdca, default off) translates over the host bound `bs * window` with a device-side
+mask; ids written are identical (unit test). Ref `final-hc-cp2048-lpm-nosync` = the final + the switch on that tree;
+control = the final on the same tree with the switch off.
+
+Prediction (saving 0.48-0.67 ms per decode step, diluted by the decode share of wall time):
+- C28 (deciding): E2E p90 -1.6% .. -2.6%, output tok/s +1.6% .. +2.7%.
+- C12: E2E p90 -2.5% .. -3.7%, output tok/s +2.5% .. +3.8%.
+- Mechanism: a re-profile shows the pre-graph gap below 0.10 ms per decode step and no `cudaStreamSynchronize`
+  inside a decode forward.
+- Fidelity exact (forced KL at the A/A level); multi-turn HiCache exactness 12/12 (the change touches SWA read ids).
+Falsified if the C28 p90 gain is below 0.5% or of the wrong sign, the pre-graph gap stays above 0.2 ms, or fidelity /
+exactness is not exact.
+Order (coordinator, 10-06 ~11:15): c2 is gated after c1. If c1 is kept, both arms carry c1 and the decode step is
+shorter, so the same saving is a larger share: C28 -1.8% .. -2.9%, C12 -2.9% .. -4.5% (decode step ~16.5 / ~11.1 ms,
+decode share 0.60-0.72 / 0.68-0.81). The intervals above hold if c1 is not kept.
+
+## Round 2, K2-c1: tuned Triton W8A8 tiles for the dense FP8 linears at decode M (registered 2026-10-06 ~11:50 KST)
+
+Basis: the K2 decode profile and the dense-GEMM microbench (`compute/k2_dense_gemm_bench.py`,
+`runs/k2/dense-gemm-bench.json`, bs3, CUDA graph of 30 calls over 30 weight copies per shape). The served path
+(`apply_fp8_linear`: per-token FP8 quant + CUTLASS scaled mm, 22-64 CTAs) costs 4.86-4.88 ms per decode step for the
+120 dense calls at every M from 1 to 48 (profile: 4.72 ms CUTLASS + 0.18 ms quant). `triton_scaled_mm` at the
+fastest of 18 tiles costs 1.39-1.46 ms (quant included); the weight-only small-M kernel 1.26-1.27 ms at M <= 16 but
+1.69 ms at 28 and 2.4 ms at 40-48. The coordinator's rule (W8A8 tiles if within ~10% of the best route at M 8, 12,
+28): 10.6% / 10.6% slower at 8 / 12 (0.13 ms per step), fastest at 28, so the route is the W8A8 tiles: the six
+config files on tree cfc12c0bac (`jumanzii/g4poc-r2-k2`), numerics W8A8 with a different summation order.
+Ref `final-hc-cp2048-lpm-k2c1`; control the final (`final-hc-cp2048-lpm`, a0491db764).
+
+Prediction (saving 3.1-3.5 ms per decode step: the bench's 3.45-3.47 ms, derated up to 10% for the graph context and
+a possible clock bin; diluted by the decode share of wall time, COMPUTE.md section 7):
+- C28 (deciding, same-host A-B-B-A, 2 pairs): E2E p90 -9.9% .. -13.5% (gain 1.11-1.16), output tok/s +11% .. +16%,
+  $/1M output $0.177-0.184 at $0.70 (from $0.204).
+- C12: E2E p90 -15.8% .. -20.4%, output tok/s +19% .. +26%.
+- T30 (pthink30 C72, device-only final-mem-c1-c2a vs -k2c1, same plan): sessions at the 10 s p90 SLO +12% .. +17%;
+  at the fixed plan, lower p90 and the same turn rate.
+- GPU: mean SM clock within one bin (~15 MHz) of the control, or lower by one bin with power up (claim
+  c-20260926-fusion-gains-lose-a-clock-bin-to-the-power-cap).
+- Numerics: GSM8K (1,319) and tool-JSON pass against the base anchor; role-play NLL within budget and language
+  adherence within the paired band; the KL check's teacher-forced part unchanged (prefill keeps CUTLASS), greedy
+  divergences only at near-ties; multi-turn exactness 12/12 (`final-mem-c1-c2a-cp2048-lpm-k2c1` vs
+  `final-hc-cp2048-lpm-k2c1-smallpool`).
+Falsified if the C28 p90 gain is below 1.05, a quality guard fails, or exactness is below 12/12.
+Amendment (10-06 ~14:45, before any c2 run; coordinator): K1's glue fusion is adopted for the in-flight final, so
+c2 is gated on the ship stack, final + glue + c1 (`final-hc-cp2048-lpm-glue-c1` vs `-glue-c1c2`). The glue shortens
+the decode step by another ~0.4-0.5 ms, which raises the same saving's share by ~4% of itself; the registered
+after-c1 intervals (C28 -1.8% .. -2.9%, C12 -2.9% .. -4.5%) stand as the prediction. c1's remaining gates (stacked
+A-B-B-A final+glue vs final+glue+c1, exactness, 6 s sweep, C28 soak) also run on that stack.

@@ -5,7 +5,8 @@
 # Hosts are shared with tenants outside the host lock, and a server at mem 0.955 has no room for another CUDA context:
 # each sweep waits until the GPU runs no compute process, and a pair (A1 B1, then B2 A2) with a failed sweep is rerun
 # whole, up to 3 tries, so both arms of a pair always come from back-to-back runs. Failed sweeps, with the foreign
-# processes their server's OOM names, are listed in <out json>.failures.
+# processes their server's OOM names, are listed in <out json>.failures. Before each start the weights are read
+# outside the server's cgroup (SGLang's HiCache host-memory check counts the scope's page cache).
 #   [LOAD=<load>] compute/sweep_abba.sh <control ref> <candidate ref> <concurrency list> <out json>
 set -uo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,6 +26,8 @@ latest() { ls -td "$runs"/sweep-"$1"-* | head -1; }
 # One sweep; its run dir goes to $dir. On failure, records the time and any foreign process the server's OOM names.
 sweep() {
   wait_gpu_free
+  # Read the weights outside the server's cgroup first: SGLang's HiCache start check counts the scope's page cache.
+  cat "$G4POC_MODEL_DIR"/*.safetensors > /dev/null
   step "sweep $1 ($load) at $conc"
   if python -m gate sweep --ref "$1" --load "$load" --concurrency "$conc"; then
     dir=$(latest "$1")

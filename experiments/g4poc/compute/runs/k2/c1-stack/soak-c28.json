@@ -1,0 +1,34 @@
+{
+ "run": "sweep-final-hc-cp2048-lpm-glue-c1-20261006-165610-build-server-3-e9df6b",
+ "summary": {
+  "n_sent": 11423,
+  "n_ok": 11423,
+  "n_failed": 0,
+  "n_finished_in_window": 11423,
+  "e2e_p50_s": 4.74604561200249,
+  "e2e_p90_s": 7.326791967597091,
+  "e2e_p99_s": 8.944632067676874,
+  "e2e_mean_s": 4.401820419628098,
+  "output_tok_s_per_gpu": 1127.4916666666666,
+  "total_tok_s_per_gpu": 37194.74,
+  "uncached_prefill_tok_s_per_gpu": 8404.48111111111,
+  "requests_per_s": 6.346111111111111,
+  "prefix_cache_hit_rate": 0.7668335948167563,
+  "mean_prompt_tokens": 5683.213516589337,
+  "mean_output_tokens": 177.7505909130701,
+  "client_lag_p99_s": 0.018880270842346374,
+  "inflight_mean": 27.94672693808209,
+  "inflight_max": 28,
+  "sessions_active_mean": 27.991033561158208,
+  "per_request_out_tok_s_p50": 41.33293695229745,
+  "per_request_out_tok_s_p10": 32.079629049658244,
+  "window_s": 1800.0,
+  "n_gpus": 1
+ },
+ "retractions": {
+  "requests": 99,
+  "input_tokens": 527666,
+  "source": "metrics",
+  "log_events": 95
+ }
+}

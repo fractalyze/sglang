@@ -1,0 +1,128 @@
+{
+ "refs": [
+  "final-hc-cp2048-lpm-glue-c1",
+  "final-hc-cp2048-lpm-glue-c1c2",
+  "final-hc-cp2048-lpm-glue-c1c2",
+  "final-hc-cp2048-lpm-glue-c1"
+ ],
+ "sweeps": [
+  "/home/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-glue-c1-20261006-155203-build-server-2-d139d5",
+  "/home/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-glue-c1c2-20261006-160324-build-server-2-0ce78f",
+  "/home/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-glue-c1c2-20261006-165311-build-server-2-58755a",
+  "/home/jooman/g4poc/runs/sweep-final-hc-cp2048-lpm-glue-c1-20261006-170426-build-server-2-739f03"
+ ],
+ "points": [
+  {
+   "concurrency": 12,
+   "e2e_p90_gain": 1.0061238030278528,
+   "e2e_p99_gain": 0.9959459641591899,
+   "output_tput_gain": 1.0061183303068904,
+   "control_drift_e2e_p90": 1.0002437332147303,
+   "control_drift_tput": 1.0014142491897007,
+   "control_e2e_p90_s": [
+    4.3048099800013,
+    4.303761010494782
+   ],
+   "candidate_e2e_p90_s": [
+    4.290655533026438,
+    4.26555588064948
+   ],
+   "control_out_tok_s": [
+    827.8833333333333,
+    829.0541666666667
+   ],
+   "candidate_out_tok_s": [
+    833.1041666666666,
+    833.9708333333333
+   ],
+   "control_hit": [
+    0.758774677302257,
+    0.7586696084173961
+   ],
+   "candidate_hit": [
+    0.7585338418619244,
+    0.7584863306128169
+   ],
+   "control_e2e_p99_s": [
+    4.869155629565938,
+    4.874877598838064
+   ],
+   "candidate_e2e_p99_s": [
+    4.877690122590866,
+    4.906045967382958
+   ],
+   "control_retracted": [
+    0,
+    0
+   ],
+   "candidate_retracted": [
+    0,
+    0
+   ],
+   "control_failed": [
+    0,
+    0
+   ],
+   "candidate_failed": [
+    0,
+    0
+   ]
+  },
+  {
+   "concurrency": 28,
+   "e2e_p90_gain": 1.0119199693388952,
+   "e2e_p99_gain": 1.061588737438587,
+   "output_tput_gain": 1.0044471715585739,
+   "control_drift_e2e_p90": 0.9922031612928479,
+   "control_drift_tput": 0.9998825877656453,
+   "control_e2e_p90_s": [
+    7.247177846316481,
+    7.304126946011093
+   ],
+   "candidate_e2e_p90_s": [
+    7.247104164818302,
+    7.133134208992124
+   ],
+   "control_out_tok_s": [
+    1135.6,
+    1135.4666666666667
+   ],
+   "candidate_out_tok_s": [
+    1140.1291666666666,
+    1141.0375
+   ],
+   "control_hit": [
+    0.7728012914069876,
+    0.7724443709664559
+   ],
+   "candidate_hit": [
+    0.7716012389711381,
+    0.7712091414525438
+   ],
+   "control_e2e_p99_s": [
+    10.375534158230856,
+    10.123067490697126
+   ],
+   "candidate_e2e_p99_s": [
+    10.219658881099862,
+    9.11955385129433
+   ],
+   "control_retracted": [
+    8,
+    7
+   ],
+   "candidate_retracted": [
+    18,
+    10
+   ],
+   "control_failed": [
+    0,
+    0
+   ],
+   "candidate_failed": [
+    0,
+    0
+   ]
+  }
+ ]
+}
