@@ -29,8 +29,10 @@ L_COPIES = 6
 REPLAYS = 20
 MS = (8, 12, 16, 28, 48)
 DS = (16, 24, 32, 40, 48, 64, 80, 96, 128)
+SMEM_BYTES = 99 * 1024  # SM120's shared memory per block; FP8 tiles take one byte per element per stage
 GRID = [dict(BLOCK_SIZE_M=bm, BLOCK_SIZE_N=bn, BLOCK_SIZE_K=bk, GROUP_SIZE_M=gm, num_warps=nw, num_stages=st)
-        for bm, bn, bk, gm, nw, st in itertools.product((16, 32), (32, 64, 128), (128, 256), (1, 16), (4,), (3, 4))]
+        for bm, bn, bk, gm, nw, st in itertools.product((16, 32), (32, 64, 128), (128, 256), (1, 16), (4,), (3, 4))
+        if (bm + bn) * bk * st <= SMEM_BYTES]
 
 
 def routing(m: int, d: int, mode: str, gen: torch.Generator) -> torch.Tensor:
@@ -76,6 +78,7 @@ def read_bandwidth_gbps() -> float:
 
 
 def main() -> None:
+    from sglang.srt.layers.moe.moe_runner import triton_utils
     from sglang.srt.layers.moe.moe_runner.triton_utils import override_config
     from sglang.srt.layers.moe.moe_runner.triton_utils.fused_moe import fused_experts_impl
     from sglang.srt.server_args import ServerArgs, set_global_server_args_for_scheduler
@@ -130,6 +133,8 @@ def main() -> None:
                         with override_config(cfg):
                             us = graph_time_us(layer, L_COPIES)
                     except Exception:  # a tile that does not fit shared memory
+                        # override_config does not restore the previous config when its body raises.
+                        triton_utils._config = None
                         continue
                     if best is None or us < best[0]:
                         best = (us, cfg)
