@@ -1150,6 +1150,11 @@ class Envs:
     # extend_attention._SM120_FP8_KV_EXTEND_TILES instead of the sm120 defaults.
     # Changes the KV tile width, so it reorders the softmax reduction.
     SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES = EnvBool(False)
+    # Triton decode replay on a static SWA pool: translate the sliding-window KV
+    # ids to SWA ids over a host-side bound with a device-side mask. Off: the
+    # translate slices by the GPU scalar indptr[-1], two host syncs per replay
+    # that hold the next graph launch until the previous forward has finished.
+    SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC = EnvBool(False)
     # Raise if Triton loads a kernel after the engine starts serving. This
     # verifies that startup warmup covers every kernel specialization used at
     # serving time.
