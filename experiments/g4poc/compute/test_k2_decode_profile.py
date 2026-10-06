@@ -81,11 +81,23 @@ class CycleTest(absltest.TestCase):
         self.assertEqual((c["n_kernels"], c["n_graph_nodes"]), (5, 3))
         self.assertEqual(c["busy_us"], 18)
         self.assertEqual(c["gap_us"], 12)
-        # Two 1 us gaps between graph nodes; the rest is around the graph.
-        self.assertEqual(c["graph_gap_us"], 2)
-        self.assertEqual(c["other_gap_us"], 10)
+        # Two 1 us gaps between graph nodes; the rest follows the graph (sampling and idle).
+        self.assertEqual((c["pre_gap_us"], c["graph_gap_us"], c["post_gap_us"]), (0, 2, 10))
+        self.assertEqual((c["pre_us"], c["graph_us"], c["post_us"]), (0, 17, 13))
         self.assertEqual((c["small_n"], c["small_us"]), (4, 8))
         self.assertEqual(c["class_us"]["moe_gemm"], 10)
+
+    def test_pdl_overlap_is_charged_once(self):
+        # The second kernel starts 4 us before the first ends (programmatic dependent launch): only its
+        # 1 us past the first kernel's end is its own time.
+        ev = [_graph_launch(1), _step("DECODE", 8, 0, 11), _step("DECODE", 8, 20, 5),
+              _k("fused_moe_kernel", 0, 10, 1), _k("act_and_mul_kernel", 6, 5, 1),
+              _k("fused_moe_kernel", 20, 5, 1)]
+        c = k2.cycles(k2.extract({"traceEvents": ev}))["cycles"][0]
+        self.assertEqual(c["busy_us"], 11)
+        self.assertEqual(c["class_us"], {"moe_gemm": 10, "elementwise_copy": 1})
+        # Small by its own time: the act kernel's 1 us, not its 5 us span.
+        self.assertEqual((c["small_n"], c["small_us"]), (1, 1))
 
     def test_summary_shares_tile_the_window(self):
         s = k2.summarize(self.cyc, min_cycles=1)

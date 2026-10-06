@@ -144,34 +144,40 @@ def cycles(extracted: Dict) -> Dict:
         if not cyc:
             continue
         busy = union_busy(_clip(o, t0, t1) for o in cyc)
-        graph_gap = other_gap = 0.0
-        prev_end, prev_graph = t0, None
-        for o in cyc:
-            gap = max(0.0, o["ts"] - prev_end)
-            if prev_graph and o["graph"]:
-                graph_gap += gap
-            else:
-                other_gap += gap
-            if o["ts"] + o["dur"] >= prev_end:
-                prev_end, prev_graph = o["ts"] + o["dur"], o["graph"]
-        other_gap += max(0.0, t1 - prev_end)
+        graph_ops = [o for o in cyc if o["graph"]]
+        g0 = graph_ops[0]["ts"] if graph_ops else t1
+        g1 = max(o["ts"] + o["dur"] for o in graph_ops) if graph_ops else t1
+        # Exclusive time: the part of an op not overlapped by an earlier op. A kernel launched with
+        # programmatic dependent launch starts while its predecessor drains and waits inside, so its
+        # traced span overstates its cost; only the exclusive part is charged to its class.
+        gaps = {"pre": 0.0, "graph": 0.0, "post": 0.0}
         cls_us: Dict[str, float] = collections.Counter()
         names: Dict[str, List[float]] = collections.defaultdict(lambda: [0, 0.0])
         small_n, small_us = 0, 0.0
+        prev_end = t0
         for o in cyc:
+            # The wait before the first graph node (its launch) belongs to the pre-graph phase.
+            phase = "pre" if o["ts"] <= g0 else ("graph" if o["ts"] < g1 else "post")
+            gaps[phase] += max(0.0, o["ts"] - prev_end)
+            end = min(o["ts"] + o["dur"], t1)
+            excl = max(0.0, end - max(o["ts"], prev_end))
+            prev_end = max(prev_end, end)
             c = op_class(o["name"]) if o["cat"] == "kernel" else o["cat"]
-            cls_us[c] += o["dur"]
+            cls_us[c] += excl
             names[o["name"]][0] += 1
-            names[o["name"]][1] += o["dur"]
-            if o["cat"] == "kernel" and o["dur"] < SMALL_US:
+            names[o["name"]][1] += excl
+            if o["cat"] == "kernel" and excl < SMALL_US:
                 small_n += 1
-                small_us += o["dur"]
+                small_us += excl
+        gaps["post"] += max(0.0, t1 - prev_end)
         out.append({
             "mode": st["mode"], "bs": st["bs"], "toks": st["toks"], "next_mode": steps[i + 1]["mode"],
             "t0": t0, "wall_us": t1 - t0, "fwd_span_us": st["dur"],
+            "pre_us": g0 - t0, "graph_us": g1 - g0, "post_us": t1 - g1,
             "n_ops": len(cyc), "n_kernels": sum(o["cat"] == "kernel" for o in cyc),
-            "n_graph_nodes": sum(o["graph"] for o in cyc),
-            "busy_us": busy, "gap_us": (t1 - t0) - busy, "graph_gap_us": graph_gap, "other_gap_us": other_gap,
+            "n_graph_nodes": len(graph_ops),
+            "busy_us": busy, "gap_us": (t1 - t0) - busy, "graph_gap_us": gaps["graph"],
+            "pre_gap_us": gaps["pre"], "post_gap_us": gaps["post"],
             "small_n": small_n, "small_us": small_us, "class_us": dict(cls_us), "names": dict(names),
         })
     side_us = sum(o["dur"] for o in side)
@@ -182,6 +188,14 @@ def cycles(extracted: Dict) -> Dict:
 
 def _mean(xs: Sequence[float]) -> float:
     return sum(xs) / len(xs) if xs else float("nan")
+
+
+def _median(xs: Sequence[float]) -> float:
+    s = sorted(xs)
+    if not s:
+        return float("nan")
+    m = len(s) // 2
+    return s[m] if len(s) % 2 else (s[m - 1] + s[m]) / 2
 
 
 def summarize(cyc: Dict, min_cycles: int = 5) -> Dict:
@@ -204,9 +218,11 @@ def summarize(cyc: Dict, min_cycles: int = 5) -> Dict:
         cls_mean = {k: v / len(g) for k, v in sorted(cls.items(), key=lambda kv: -kv[1])}
         r = {"n_cycles": len(g), "wall_us": wall,
              "fwd_span_us": _mean([c["fwd_span_us"] for c in g])}
-        for k in ("n_kernels", "n_graph_nodes", "n_ops", "busy_us", "gap_us", "graph_gap_us", "other_gap_us",
-                  "small_n", "small_us"):
+        for k in ("n_kernels", "n_graph_nodes", "n_ops", "busy_us", "gap_us", "graph_gap_us", "pre_gap_us",
+                  "post_gap_us", "pre_us", "graph_us", "post_us", "small_n", "small_us"):
             r[k] = _mean([c[k] for c in g])
+            r[k + "_median"] = _median([c[k] for c in g])
+        r["wall_us_median"] = _median([c["wall_us"] for c in g])
         r["gap_share"] = r["gap_us"] / wall
         r["small_share"] = r["small_us"] / wall
         r["class_us"] = cls_mean
@@ -324,8 +340,9 @@ def profile_points(ref_name: str, points: Sequence[int], windows: Sequence[float
 
 def _fmt_row(c: Dict) -> str:
     return (f"wall {c['wall_us']:.0f} us, kernels {c['n_kernels']:.0f} (graph {c['n_graph_nodes']:.0f}), "
-            f"busy {c['busy_us']:.0f}, gap {c['gap_us']:.0f} ({100 * c['gap_share']:.1f}%; in-graph "
-            f"{c['graph_gap_us']:.0f}), small<{SMALL_US:g}us {c['small_n']:.0f} / {c['small_us']:.0f} us")
+            f"busy {c['busy_us']:.0f}, gap {c['gap_us']:.0f} ({100 * c['gap_share']:.1f}%; pre-graph "
+            f"{c['pre_gap_us']:.0f}, in-graph {c['graph_gap_us']:.0f}, post {c['post_gap_us']:.0f}), "
+            f"small<{SMALL_US:g}us {c['small_n']:.0f} / {c['small_us']:.0f} us excl.")
 
 
 def main() -> None:
