@@ -1,7 +1,7 @@
 {
   "ship-inflight": {
     "description": "SHIP: the in-flight config of G4POC-DEPLOY.md (final-hc-cp2048-lpm + glue + c1) on the ship branch jumanzii/g4poc-ship, flags written out with no SGLANG_MOE_CONFIG_DIR (the C1 MoE config ships in the default config dir). Same flags and env as final-hc-cp2048-lpm-glue-c1 (tree cfc12c0bac) after argparse's last-wins. 28G scope.",
-    "commit": "2e209489f204f0820e021ee24f08c2bdbeb8be17",
+    "commit": "e652f30b1df33a4c77a82ebbfcae2f75a82cde44",
     "server_args": [
       "--kv-cache-dtype",
       "fp8_e4m3",
@@ -54,7 +54,7 @@
   },
   "ship-inflight-ctl": {
     "description": "SHIP exactness control: ship-inflight's flags and levers without HiCache (as final-mem-c1-c2a-cp2048-lpm-glue-c1 on cfc12c0bac). 24G scope.",
-    "commit": "2e209489f204f0820e021ee24f08c2bdbeb8be17",
+    "commit": "e652f30b1df33a4c77a82ebbfcae2f75a82cde44",
     "server_args": [
       "--kv-cache-dtype",
       "fp8_e4m3",
@@ -85,7 +85,7 @@
   },
   "ship-chat": {
     "description": "SHIP: the chat config of G4POC-DEPLOY.md (device-only final-mem-c1-c2a + glue + c1, default chunking) on the ship branch, flags written out with no SGLANG_MOE_CONFIG_DIR. Same flags and env as final-mem-c1-c2a-glue-c1 (tree cfc12c0bac). 24G scope.",
-    "commit": "2e209489f204f0820e021ee24f08c2bdbeb8be17",
+    "commit": "e652f30b1df33a4c77a82ebbfcae2f75a82cde44",
     "server_args": [
       "--kv-cache-dtype",
       "fp8_e4m3",
@@ -112,7 +112,7 @@
   },
   "ship-defaults-inflight": {
     "description": "SHIP upstream-equivalence: the ship branch with every switch unset, the dense FP8 tile route killed (SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE=0) and the MoE config lookup pointed at an empty config dir, under the in-flight server flags. Must match upstream-base-inflight token for token. 28G scope.",
-    "commit": "2e209489f204f0820e021ee24f08c2bdbeb8be17",
+    "commit": "e652f30b1df33a4c77a82ebbfcae2f75a82cde44",
     "server_args": [
       "--kv-cache-dtype",
       "fp8_e4m3",
