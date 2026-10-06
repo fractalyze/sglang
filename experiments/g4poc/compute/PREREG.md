@@ -219,3 +219,6 @@ Prediction (saving 0.48-0.67 ms per decode step, diluted by the decode share of 
 - Fidelity exact (forced KL at the A/A level); multi-turn HiCache exactness 12/12 (the change touches SWA read ids).
 Falsified if the C28 p90 gain is below 0.5% or of the wrong sign, the pre-graph gap stays above 0.2 ms, or fidelity /
 exactness is not exact.
+Order (coordinator, 10-06 ~11:15): c2 is gated after c1. If c1 is kept, both arms carry c1 and the decode step is
+shorter, so the same saving is a larger share: C28 -1.8% .. -2.9%, C12 -2.9% .. -4.5% (decode step ~16.5 / ~11.1 ms,
+decode share 0.60-0.72 / 0.68-0.81). The intervals above hold if c1 is not kept.
