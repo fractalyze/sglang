@@ -698,3 +698,73 @@ number. The others were found later; none changes a reported in-flight number.
   its overnight think-time failures to this. The final's single failure at C96 (bs2) ran before failed records
   kept their error, so its cause is not recorded. A client that sends turns after more than 5 s idle needs the
   same setting.
+
+## 7. Round 2: K1, gemma4nv T4's decode-glue fusion on the finals (2026-10-06, bs2)
+
+**Change.** `SGLANG_OPT_GEMMA4_FUSED_GLUE=2`, gemma4nv T4 (commit 1d859709ef, default off). Per layer:
+- one Triton kernel does the q/k/v RMSNorm, RoPE and the FP8 E4M3 KV store;
+- post-attention RMSNorm + FusedAddRMSNorm run in one kernel;
+- router norm + pre-FF-2 RMSNorm run as one two-output kernel;
+- the next layer's input norm folds into the dual-norm epilogue.
+
+Both round-1 trees already hold T4: a0491db764 (in-flight final) and 1425761173 (chat final). The candidates differ
+from their finals by the env alone (`glue/refs.json`):
+- `final-hc-cp2048-lpm-glue`;
+- `final-mem-c1-c2a-glue`.
+
+Prediction, gates and decision rule: `glue/PREREG.md` (vault `g4poc-k1`), registered before any candidate run. Scripts:
+`glue/k1_gates.sh`, `glue/k1_soak.sh`, `compute/profile_decode_steps.py`.
+
+**Fit to this stack.** The fused path engages on exactly what both finals run: the Triton backend and the hybrid
+`SWAKVPool` with E4M3 sub-pools (sliding 8 kv heads x 256, full 2 x 512).
+- Full layers project V with K's weights (the loader copies k_proj into the v shard), so the kernel's separate v
+  slice is right.
+- Sliding layers write at the backend's `swa_out_cache_loc`.
+- The unfused store it replaces is a unit-scale `div_` x2 + E4M3 cast x2 + `store_kvcache`.
+- The HiCache write-through fence waits on `forward_stream`, the stream the fused kernel writes on.
+
+A new unit test on `jumanzii/g4poc-r2-k1-glue` (65bf14fb6f, `test_gemma4_fused_glue_hybrid_pool.py`) checks every byte
+of both sub-pools through this pool and routing, against the backend's own store, at 12 and 2,048 rows. One
+difference is by design. Slot 0 is the CUDA-graph padding slot: `store_kvcache` skips it, the fused kernel writes it,
+and no request ever owns it.
+
+### Measured mechanism (`compute/profile_decode_steps.py`)
+
+A decode step is one CUDA-graph replay: kernels grouped by the `cudaGraphLaunch` that issued them.
+
+| point | kernels / decode step, final -> glue | decode step span (traced), final -> glue | decode share of GPU wall |
+|---|---|---|---|
+| C12 in flight (bs 12) | 1,061 -> **791** | 14.32 -> 13.92 ms | 0.73 |
+| C28 in flight (bs 24 / 32) | 1,061 -> **791** | 17.64 / 18.93 -> 17.05 / 18.01 ms | 0.63 |
+| T30 chat (bs 4-16, mean 10) | 1,001-1,061 (final only) | 12.9 ms at bs 8 | 0.56 |
+
+Runs:
+- `decsteps-final-hc-cp2048-lpm-20261006-100122-*`;
+- `decsteps-final-hc-cp2048-lpm-glue-20261006-105259-*`;
+- `decsteps-final-mem-c1-c2a-20261006-101203-*`.
+
+The glue removes 270 launches per step:
+- -6 per layer: q/k/v norm, RoPE, four elementwise quantize ops and the KV store become one kernel;
+- -3 per layer: the norm pairs and the input-norm fold.
+
+The rest of the step is untouched (~790 kernels). That includes 180 FP8 per-token activation-quant kernels (6 per
+layer), the next fusion candidate: a norm + quant epilogue.
+
+### Correctness (all pass)
+
+| gate | result | run |
+|---|---|---|
+| unit tests (fused kernels, norm pairs, hybrid-pool routing) | 50/50 | code tree 65bf14fb6f |
+| KL vs the final, 8 role-play prompts | mean 0.0475 vs A/A 0.0328 (limit 0.066); p99 0.385 vs 0.234 (limit 0.467); worst-prompt top-1 0.917 vs 0.922 (limit 0.902) | `kl-final-hc-cp2048-lpm-glue-20261006-111422-*` |
+| HiCache C1 multi-turn exactness | **12/12**, identical `cached_tokens` on every turn (turns 1-2 reuse 4.1-6.4K tokens by host load-back on the 16K device pool) | control `exactmt-final-mem-c1-c2a-cp2048-lpm-glue-20261006-111608-*`, candidate `exactmt-final-hc-cp2048-lpm-glue-smallpool-20261006-111653-*` |
+| quality vs the bs2 base anchor | GSM8K 1319 96.44% vs 96.13% (+0.30 pt, CI95 [-0.31, +0.91], McNemar p 0.45); tool JSON 40/40 | `quality-final-hc-cp2048-lpm-glue-20261006-112038-*` |
+| role-play arm, paired per item vs `final-cpl-qr` | NLL +0.0030 (budget 0.02); language 68 -> 66 of 80, 2 flips out, 0 in (limit net 2) | `rp-quality-final-cpl-qr-20261006-112524-*`, `rp-quality-final-cpl-glue-qr-20261006-112655-*` |
+
+KL notes:
+- The norm kernels reorder the sum of squares, so serial greedy outputs re-roll: 1/8 identical, against the base's
+  8/8 run to run.
+- In the rp arm, 5/80 replies are token-identical.
+
+Both language flips are mixed-language detector items, and the two arms give the same kind of reply on each:
+- s000686 (ja card): a Portuguese explanation of a Japanese sentence, tagged ja for the control and es for the glue;
+- s001101 (ru card): Russian with an English quiz, tagged ru and en.
