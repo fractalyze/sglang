@@ -249,3 +249,8 @@ a possible clock bin; diluted by the decode share of wall time, COMPUTE.md secti
   divergences only at near-ties; multi-turn exactness 12/12 (`final-mem-c1-c2a-cp2048-lpm-k2c1` vs
   `final-hc-cp2048-lpm-k2c1-smallpool`).
 Falsified if the C28 p90 gain is below 1.05, a quality guard fails, or exactness is below 12/12.
+Amendment (10-06 ~14:45, before any c2 run; coordinator): K1's glue fusion is adopted for the in-flight final, so
+c2 is gated on the ship stack, final + glue + c1 (`final-hc-cp2048-lpm-glue-c1` vs `-glue-c1c2`). The glue shortens
+the decode step by another ~0.4-0.5 ms, which raises the same saving's share by ~4% of itself; the registered
+after-c1 intervals (C28 -1.8% .. -2.9%, C12 -2.9% .. -4.5%) stand as the prediction. c1's remaining gates (stacked
+A-B-B-A final+glue vs final+glue+c1, exactness, 6 s sweep, C28 soak) also run on that stack.

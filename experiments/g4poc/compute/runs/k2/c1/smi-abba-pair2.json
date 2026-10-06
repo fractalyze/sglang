@@ -1,0 +1,18 @@
+{
+ "sweep-final-hc-cp2048-lpm-k2c1-20261006-140843-build-server-3-26df7f": {
+  "n_busy": 630,
+  "clocks_sm_mean": 2805.265079365079,
+  "clocks_mem_mean": 13801.0,
+  "power_w_mean": 436.3922063492064,
+  "temp_c_mean": 62.37301587301587,
+  "clocks_sm_p10": 2767.0
+ },
+ "sweep-final-hc-cp2048-lpm-20261006-142031-build-server-3-88b18d": {
+  "n_busy": 635,
+  "clocks_sm_mean": 2813.096062992126,
+  "clocks_mem_mean": 13801.0,
+  "power_w_mean": 393.27119685039366,
+  "temp_c_mean": 60.585826771653544,
+  "clocks_sm_p10": 2775.0
+ }
+}

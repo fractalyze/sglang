@@ -1,0 +1,41 @@
+{
+ "run": "/data/jooman/g4poc/runs/rp-quality-final-cpl-qr-k2c1-20261006-115431-build-server-3-06188c",
+ "verdict": {
+  "baseline_nll": 0.18783997811757075,
+  "candidate_nll": 0.18945481685791576,
+  "nll_rise": 0.0016148387403450148,
+  "budget": 0.02,
+  "language_ok": {
+   "baseline": 68,
+   "candidate": 67,
+   "n": 80
+  },
+  "checks": {
+   "nll_rise_within_budget": true,
+   "language_adherence_not_lower": false
+  },
+  "pass": false
+ },
+ "vs_base_anchor": {
+  "adherent": [
+   68,
+   67
+  ],
+  "out": [
+   "s000794/0"
+  ],
+  "in": [],
+  "identical": 2
+ },
+ "vs_final_cpl_qr": {
+  "adherent": [
+   68,
+   67
+  ],
+  "out": [
+   "s001692/0"
+  ],
+  "in": [],
+  "identical": 4
+ }
+}
