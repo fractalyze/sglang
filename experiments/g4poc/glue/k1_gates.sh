@@ -15,7 +15,7 @@ set -uo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 source "$here/gate/env.sh"
 cd "$here"
-CODE=062b2447d4
+CODE=062b2447d492f863a14f82039b7fa094c5255375
 CTL=final-hc-cp2048-lpm
 CAND=final-hc-cp2048-lpm-glue
 R=$G4POC_RUNS_DIR
