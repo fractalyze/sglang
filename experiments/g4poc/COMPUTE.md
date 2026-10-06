@@ -990,3 +990,48 @@ per expert (NVFP4 / FP6 experts, about -45% of MoE time, ~15-19% E2E), which cha
 fixed the weights at FP8. The next decode item after MoE is decode attention (17% of the step, ~1.6x its KV-bytes floor
 at 12 running and ~1.25x at 27), ~0.6 ms per step of headroom that needs a better decode-attention kernel, not a config
 (C4's 16 KV splits was null).
+
+## 9. Round 2, K4: decode attention (measured, NO-GO)
+
+**Question.** Decode attention is 17% of the ship stack's decode step. Do stage-1 tile constants or split counts of the
+Triton grouped decode kernel (no new algorithm) recover a meaningful part of the gap to its KV-bytes floor?
+
+**Microbench** (`compute/k4_decode_attn_bench.py`, `runs/k2/attn-bench.json`, bs3, tree cfc12c0bac):
+`decode_attention_fwd_grouped` (stage 1 + the split reduce) in a CUDA graph over 4 layers' KV, FP8 E4M3 KV in scattered
+page-1 slots. Sliding layers: 16 q heads over 8 KV heads, head_dim 256, a 1,024-token window. Full layers: 16 q heads over
+2 KV heads, head_dim 512, contexts 3-9K (mean 6K). Stage-1 constants (BLOCK_N 32 / 64, 2 / 4 / 8 warps, 1 / 2 / 3 stages)
+x 8 / 16 / 32 splits, applied by wrapping the stage-1 kernel object; BLOCK_N 16 does not compile. The served launch
+(BLOCK_N 32, 4 warps, 2 stages, 8 splits) reproduces the profile (sliding at 12 running 41.8 vs 40 us; full 149 vs 141 us).
+
+| layer, batch | KV-bytes floor | served | best constants | best |
+|---|---|---|---|---|
+| sliding, 8 | 19.9 us | 29.2 us (1.47x) | 1 stage | 26.1 us (-11%) |
+| sliding, 12 | 29.9 | 41.8 (1.40x) | 1 stage (BLOCK_N 64) | 37.3-38.9 (-7 .. -11%) |
+| sliding, 28 | 69.7 | 81.7 (1.17x) | 1 stage | 78.8 (-3.5%) |
+| full, 8 | 66.1 | 134.5 (2.04x) | **3 stages**, 16 splits | 83.6-90.0 (-33 .. -38%) |
+| full, 12 | 85.8 | 149.1 (1.74x) | **3 stages** | 108.9 (-27%) |
+| full, 28 | 211.0 | 287.9 (1.36x) | 3 stages, 16 splits | 243.9-253.3 (-12 .. -15%) |
+
+The served 2 pipeline stages is the worst choice for head_dim 512 over an FP8 KV cache on SM120; 3 stages takes a quarter
+to a third off the full layers, and 1 stage helps the sliding layers a little. `num_stages` changes software pipelining
+only, not the reduction order, so the change should be bit-exact (not verified).
+
+**Headroom** (ship stack, scaled to served contexts): 0.21-0.25 ms per decode step at 28 in flight (**0.8-1.2% E2E**),
+0.26-0.28 ms at 12 (**1.6-2.2%**), ~1.4-1.7% at T30 chat; every layer at its KV floor would be ~0.6 ms at 12 (~4%) and
+~0.5 ms at 28 (~2.2%), which needs a new decode kernel. **NO-GO** (coordinator, 10-06): under 3% at every point.
+
+**Round-2 decode picture** (ship stack, 12 running, ~10.5 ms step): fused_moe 55% at ~1.08x its weight floor (K3), decode
+attention 17% at ~1.5x its floor (K4), dense GEMMs 16% after c1, glue and small kernels ~9%, gaps between graph nodes
+0.6%. Within the FP8-weights constraint every remaining decode lever is under 3% on its own; round 2's hypothesis list is
+closed.
+
+### Open items after round 2
+
+- **A small exact bundle** (future candidate; gate it as one unit if picked up): the decode-attention stages switch
+  (SM120 FP8-KV stage 1 at 3 stages for head_dim 512 and 1 for 256: 0.8-2.2% E2E) + c2's host-sync removal (opt-in switch
+  on the tree: 0.6-1.2%) + fusing the MoE glue (align + quant, act + quant, top-8 sum into the down epilogue; needs code:
+  1.0-2.2%). Together they might clear 3% at 12 in flight; also listed in `hicache/UPSTREAM-PERF.md`.
+- **Fewer bytes per expert** (NVFP4 / FP6 experts, ~-45% MoE time, ~15-19% E2E) conflicts with the study's FP8-weights
+  requirement; raised with the user as a decision by the coordinator.
+- The K2 open items above (HiCache write-through stall, the gate's swap preflight counting the waiting gate, profile-gap
+  sizing).
