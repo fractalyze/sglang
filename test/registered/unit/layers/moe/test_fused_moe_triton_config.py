@@ -73,6 +73,46 @@ def test_down_moe_reuses_tuned_up_config_when_separate_config_is_absent(
         fused_moe_triton_config.get_moe_configs.cache_clear()
 
 
+def test_rtx5090_gemma4_26b_fp8_per_channel_config_is_found_by_default(monkeypatch):
+    # Gemma-4-26B-A4B (128 experts, moe_intermediate_size 704) with
+    # compressed-tensors FP8 per-channel weights, tuned on an RTX 5090.
+    config_path = (
+        Path(fused_moe_triton_config.__file__).parent
+        / "configs"
+        / "triton_3_7_1"
+        / "E=128,N=704,device_name=NVIDIA_GeForce_RTX_5090,dtype=fp8_w8a8,"
+        "per_channel_quant=True.json"
+    )
+    tuned = {int(m): cfg for m, cfg in json.loads(config_path.read_text()).items()}
+
+    monkeypatch.delenv("SGLANG_MOE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr(fused_moe_triton_config.triton, "__version__", "3.7.1")
+    monkeypatch.setattr(
+        fused_moe_triton_config,
+        "get_device_name",
+        lambda: "NVIDIA GeForce RTX 5090",
+    )
+    fused_moe_triton_config.get_moe_configs.cache_clear()
+
+    try:
+        with get_context().override_server_args(enable_deterministic_inference=False):
+            assert (
+                fused_moe_triton_config.get_moe_configs(
+                    128, 704, "fp8_w8a8", per_channel_quant=True
+                )
+                == tuned
+            )
+            # No separate down-projection file: the up config serves both GEMMs.
+            assert (
+                fused_moe_triton_config.get_moe_configs(
+                    128, 704, "fp8_w8a8", per_channel_quant=True, down_moe=True
+                )
+                == tuned
+            )
+    finally:
+        fused_moe_triton_config.get_moe_configs.cache_clear()
+
+
 def test_int4_tuner_filename_uses_runtime_down_projection_dimension(monkeypatch):
     monkeypatch.setattr(
         common_utils,

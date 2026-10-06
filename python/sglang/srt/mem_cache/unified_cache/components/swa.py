@@ -570,8 +570,12 @@ class SWAComponent(TreeComponent):
             return None
 
         page_size = self.tree_core.page_size
-        # Smallest page-aligned size that still covers the sliding window.
-        tail_size = (self.sliding_window_size + page_size - 1) // page_size * page_size
+        # Smallest page-aligned size that still covers the retained window, so
+        # the margin below the window stays in one node with it: a separate
+        # margin node falls outside the window-bounded LRU refresh and is
+        # evicted first, which would cut the window the margin exists for.
+        retained = self._retained_window_size()
+        tail_size = (retained + page_size - 1) // page_size * page_size
         leaf_len = len(leaf.key)
         if leaf_len <= tail_size:
             return None
@@ -951,13 +955,24 @@ class SWAComponent(TreeComponent):
         insert_params.swa_branching_seqlen = branching_seqlen
         return effective_cache_len
 
+    def _retained_window_size(self) -> int:
+        """SWA tokens a tree insert keeps live behind its end: the sliding window
+        plus SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN. With exactly one window, a
+        later request matching a few tokens short of the insert end (a chat
+        template that re-renders the previous assistant turn without the
+        generation prompt's tail) finds an incomplete window behind its match
+        point, and the validator refuses the whole prefix."""
+        return (
+            self.sliding_window_size + envs.SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN.get()
+        )
+
     def _free_out_of_window_slots(self, req: Req, pre_len: int) -> None:
         if self.sliding_window_size is None:
             return
         free_swa_out_of_window_slots(
             req,
             pre_len,
-            sliding_window_size=self.sliding_window_size,
+            sliding_window_size=self._retained_window_size(),
             page_size=self.cache.page_size,
             req_to_token_pool=self.cache.req_to_token_pool,
             token_to_kv_pool_allocator=self.cache.token_to_kv_pool_allocator,

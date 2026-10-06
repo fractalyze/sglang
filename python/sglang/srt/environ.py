@@ -254,6 +254,17 @@ class DsparkFoldedSampling(IntEnum):
     FORCE = 2
 
 
+class Gemma4FusedGlue(IntEnum):
+    """How much of Gemma4's per-layer decode glue runs fused (each level includes the lower)."""
+
+    OFF = 0
+    # q/k/v RMSNorm + RoPE + FP8 KV-cache store in one kernel (KV bytes bit-identical).
+    QKV_ROPE_KV = 1
+    # Also the post-attention norm pair, the router / pre-FF-2 norm pair and the
+    # next layer's input norm folded into the dual-norm epilogue (reorders norm sums).
+    ALL = 2
+
+
 class Envs:
     # Organization principles for this registry:
     # - Put every field in exactly one topical section. Prefer an existing
@@ -670,6 +681,13 @@ class Envs:
     # (auto-enabled for GLM-5.2-style DSA); set True to A/B synchronous swap-in.
     SGLANG_DISABLE_HISPARSE_PREFETCH = EnvBool(False)
     SGLANG_OPT_UNIFIED_CACHE_FREE_OUT_OF_WINDOW_SLOTS = EnvBool(True)
+    # Extra SWA tokens a tree insert keeps live below the sliding window
+    # (0: exactly one window). A chat template that renders past assistant
+    # turns without the generation prompt's tail (Gemma-4 drops the empty
+    # thought channel) makes the next turn match a few tokens short of the
+    # inserted prompt; with no margin the window behind that match point is
+    # incomplete and the whole prefix is refused.
+    SGLANG_OPT_SWA_PREFILL_WINDOW_MARGIN = EnvInt(0)
     # Decode batches between SWA out-of-window evictions.
     SGLANG_SWA_EVICTION_INTERVAL = EnvInt(128)
     # Deprecated: the unified radix tree is the default tree cache now, so the
@@ -679,6 +697,18 @@ class Envs:
     # Registered TreeCore backend serving the unified radix cache.
     SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND = EnvStr("python")
     SGLANG_OPT_SWA_RELEASE_LEAF_LOCK_AFTER_WINDOW = EnvBool(False)
+    # HiCache load-back on a sliding-window model: during prefill admission,
+    # also pin the request's best_match_node, whose window the request locks
+    # once the host prefix is loaded. Off: only the device-matched last_node is
+    # pinned, so device SWA inside the post-load window counts as evictable,
+    # the load-back locks it uncharged, and the allocator can come up short.
+    SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW = EnvBool(False)
+    # HiCache under the overlap scheduler: order each write-through D2H copy
+    # after the forwards already queued on the forward stream. Off: a finished
+    # request is cached while the next forward still writes its last output
+    # token's KV, the copy can read it half-written, and a later load-back
+    # restores that stale KV.
+    SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH = EnvBool(False)
 
     # ===================================================================
     # PD disaggregation runtime
@@ -1108,6 +1138,15 @@ class Envs:
     # (parity with flash-attn's ragged-aware launch). The feature checks _is_hip
     # explicitly in code; this env var allows override (0=force off, 1=force on).
     SGLANG_TRITON_COMPACT_EXTEND_ATTENTION = EnvBool(True)
+    # sm120 extend attention over an FP8 KV cache: use the re-tuned tiles in
+    # extend_attention._SM120_FP8_KV_EXTEND_TILES instead of the sm120 defaults.
+    # Changes the KV tile width, so it reorders the softmax reduction.
+    SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES = EnvBool(False)
+    # Triton decode replay on a static SWA pool: translate the sliding-window KV
+    # ids to SWA ids over a host-side bound with a device-side mask. Off: the
+    # translate slices by the GPU scalar indptr[-1], two host syncs per replay
+    # that hold the next graph launch until the previous forward has finished.
+    SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC = EnvBool(False)
     # Raise if Triton loads a kernel after the engine starts serving. This
     # verifies that startup warmup covers every kernel specialization used at
     # serving time.
@@ -1292,6 +1331,12 @@ class Envs:
     SGLANG_FORCE_FUSED_OP_BACKEND = EnvStr(None)
     USE_TRITON_W8A8_FP8_KERNEL = EnvBool(False)
     SGLANG_MOE_PADDING = EnvBool(False)
+    # Fuse Gemma4's per-layer decode glue kernels; see Gemma4FusedGlue for the levels.
+    SGLANG_OPT_GEMMA4_FUSED_GLUE = EnvInt(Gemma4FusedGlue.OFF)
+    # Replace the Gemma-4 target's tied BF16 embedding/LM head (262144 x 2816)
+    # with one FP8 E4M3 table (per-row scales) for both the lookup and the head,
+    # freeing ~0.69 GB for the KV pool. Off by default: it changes numerics.
+    SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE = EnvBool(False)
 
     # ===================================================================
     # Logits and log-probability processing
