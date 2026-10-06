@@ -200,3 +200,22 @@ M128 run starts. (c) passes if -m128 fails no request, its retraction rate is <=
 Reference values (PC2, bs3, `runs/sweep-final-hc-cp2048-lpm-20261006-052216-build-server-3-d12892`, soak-C28, read
 10-06 ~05:57 before (c) starts): 9,656 requests, 0 failed, p90 8.59 s, p99 11.13 s, 952 tok/s, hit 0.768, 67
 retracted (0.69%). So (c) passes if -m128 fails no request, retracts <= 1.39% of requests and keeps p99 <= 14.47 s.
+
+## Round 2, K2-c2: no host sync in the Triton SWA decode replay (registered 2026-10-06 ~11:30 KST)
+
+Basis: the K2 decode profile (COMPUTE.md section 7). On the final config every decode forward reads
+`window_kv_indptr[-1]` on the host twice (`update_sliding_window_buffer`, static SWA pool), so the CPU waits for the
+previous graph, then spends ~0.2 ms on prep and ~0.43 ms in `cudaGraphLaunch` while the GPU idles: a pre-graph gap
+of 0.53-0.56 ms (median) / 0.59-0.69 ms (mean) per decode step at C8-C28. `SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC=1`
+(tree `jumanzii/g4poc-r2-k2` fae2c5cdca, default off) translates over the host bound `bs * window` with a device-side
+mask; ids written are identical (unit test). Ref `final-hc-cp2048-lpm-nosync` = the final + the switch on that tree;
+control = the final on the same tree with the switch off.
+
+Prediction (saving 0.48-0.67 ms per decode step, diluted by the decode share of wall time):
+- C28 (deciding): E2E p90 -1.6% .. -2.6%, output tok/s +1.6% .. +2.7%.
+- C12: E2E p90 -2.5% .. -3.7%, output tok/s +2.5% .. +3.8%.
+- Mechanism: a re-profile shows the pre-graph gap below 0.10 ms per decode step and no `cudaStreamSynchronize`
+  inside a decode forward.
+- Fidelity exact (forced KL at the A/A level); multi-turn HiCache exactness 12/12 (the change touches SWA read ids).
+Falsified if the C28 p90 gain is below 0.5% or of the wrong sign, the pre-graph gap stays above 0.2 ms, or fidelity /
+exactness is not exact.
