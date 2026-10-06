@@ -11,12 +11,13 @@ Routing models per (M, D): `even` gives each of the D experts about the same loa
 Zipf(1) popularity, which loads a few experts past one BLOCK_SIZE_M block. Configs: the served C1 file
 (SGLANG_MOE_CONFIG_DIR) and a grid through `override_config`.
 
-  PYTHONPATH=<tree>/python SGLANG_MOE_CONFIG_DIR=<c1 dir> python compute/k3_moe_bench.py --out <json>
+  PYTHONPATH=<tree>/python SGLANG_MOE_CONFIG_DIR=<c1 dir> G4POC_MODEL_DIR=<model> python compute/k3_moe_bench.py --out <json>
 """
 
 import argparse
 import itertools
 import json
+import os
 import sys
 from typing import Dict, List, Optional
 
@@ -77,6 +78,10 @@ def read_bandwidth_gbps() -> float:
 def main() -> None:
     from sglang.srt.layers.moe.moe_runner.triton_utils import override_config
     from sglang.srt.layers.moe.moe_runner.triton_utils.fused_moe import fused_experts_impl
+    from sglang.srt.server_args import ServerArgs, set_global_server_args_for_scheduler
+
+    # The MoE config lookup reads the runtime context (as SGLang's own MoE benchmarks set it up).
+    set_global_server_args_for_scheduler(ServerArgs(model_path=os.environ["G4POC_MODEL_DIR"]))
 
     p = argparse.ArgumentParser()
     p.add_argument("--out", required=True)
