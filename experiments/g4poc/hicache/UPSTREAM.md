@@ -192,6 +192,25 @@ Test `test_margin_survives_decode_after_a_branch_insert` fails on the first part
   p90 (8.17 vs 8.81 s), hit 0.80 vs 0.71, 0 failures. Retractions rise from 2-3 to 7-8 per 240 s
   window, from the SWA held during decode.
 
+## 5. (candidate, not root-caused) Write-through issue cost stalls the scheduler thread
+
+Found by round 2's decode profile (K2, `experiments/g4poc/COMPUTE.md` section 7; torch profiler, CPU + GPU, on the
+final config `final-hc-cp2048-lpm`, bs3). Not a correctness bug: a throughput cost.
+
+- Inside `scheduler.process_batch_result` the scheduler thread issues one `cudaMemcpyAsync` runtime call at a time
+  (not an ATen copy). The longest call seen, 63.6 ms, issued 25,412 of them (56 ms); averaged over a 6.3 s window
+  at 8 in flight it is ~237 calls (~1 ms of CPU) per decode step.
+- Under the overlap scheduler only one forward is queued ahead, so whenever such a call outlasts the queued
+  decode step (~13-21 ms) the GPU idles. GPU idle in post-forward stalls longer than 2 ms: 0.8-1.9% of wall time
+  at 8 in flight, 0.9-2.1% at 12, 2.2-2.4% at 28 (two 6-10 s windows each; the longest single stall 45 ms).
+- The same stack without HiCache (`final-mem-c1-c2a`, think-time chat load) shows no such stall (0.0%).
+- The count is consistent with one copy per page and pool for a finished request's write-through (page size 1,
+  `page_first` host layout; ~6K tokens x full and sliding-window K/V), but the call site is not traced yet.
+
+Candidate fix direction: issue the write-through D2H for a node as one batched transfer (a gather kernel into a
+staging buffer, or the `kernel` io backend's batched path that load-back uses), or move the issue off the
+scheduler thread. Expected gain: the stall share above, i.e. ~1-2.4% of throughput on this workload.
+
 ## Open item: host copy kept when a node adopts a later request's FULL slots
 
 The fenced byte trace still shows two shared-prefix prompt nodes (228 and 229 tokens) whose FULL host

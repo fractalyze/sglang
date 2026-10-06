@@ -109,9 +109,10 @@ def bench_shape(name: str, n: int, k: int, ms: List[int]) -> List[Dict]:
             row[f"wonly_{bn}x{bk}x{st}_us"] = us
             if best is None or us < best[0]:
                 best = (us, f"{bn}x{bk}x{st}")
-        out = sm._launch(x, w_fp8[0], scale[0], sm._TileConfig(32, 256, 4, max_m=max(ms)))
-        row["wonly_rel_err"] = ((out.float() - ref).norm() / ref.norm()).item()
         row["wonly_best_us"], row["wonly_best_tile"] = best
+        bn, bk, st = (int(v) for v in best[1].split("x"))
+        out = sm._launch(x, w_fp8[0], scale[0], sm._TileConfig(bn, bk, st, max_m=max(ms)))
+        row["wonly_rel_err"] = ((out.float() - ref).norm() / ref.norm()).item()
 
         best = None
         for bm, bn, bk, nw, st in W8A8_TRITON_TILES:
