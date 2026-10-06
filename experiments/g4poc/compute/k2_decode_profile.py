@@ -271,8 +271,12 @@ def analyse(trace_path: str) -> Dict:
 
 
 def profile_points(ref_name: str, points: Sequence[int], windows: Sequence[float], steps: int, out_dir: str,
-                   window_s: float) -> List[Dict]:
-    """One server; per point: flush, the in-flight replay, profiler windows at the given replay seconds."""
+                   window_s: float, load_name: str = "inflight") -> List[Dict]:
+    """One server; per point: flush, the replay, profiler windows at the given replay seconds.
+
+    The in-flight load gets a 60 s warm-up and a `window_s` window; any other gate load (e.g. pthink30)
+    keeps its own warm-up and window, with only the concurrency replaced.
+    """
     import msgspec
     import requests
 
@@ -286,8 +290,10 @@ def profile_points(ref_name: str, points: Sequence[int], windows: Sequence[float
                                               extra_args=runner.server_extra_args(ref)) as srv:
         runner.warm_up(srv, sessions, tok, "k2-profile")
         for c in points:
-            load = msgspec.structs.replace(config.INFLIGHT, concurrency=c, name=f"inflight-C{c}-k2profile",
-                                           warmup_s=60.0, window_s=window_s)
+            base = config.LOADS[load_name]
+            load = msgspec.structs.replace(base, concurrency=c, name=f"{load_name}-C{c}-k2profile")
+            if load_name == "inflight":
+                load = msgspec.structs.replace(load, warmup_s=60.0, window_s=window_s)
             srv.flush_cache()
             result: Dict = {}
             t = threading.Thread(target=lambda: result.update(
@@ -328,6 +334,7 @@ def main() -> None:
     s = sub.add_parser("serve")
     s.add_argument("--ref", default="final-hc-cp2048-lpm")
     s.add_argument("--concurrency", default="8,12,28")
+    s.add_argument("--load", default="inflight", help="gate load name (inflight, pthink30, ...)")
     s.add_argument("--windows", default="75,150", help="replay seconds at which profiler windows start")
     s.add_argument("--window-s", type=float, default=180.0)
     s.add_argument("--steps", type=int, default=400)
@@ -345,7 +352,7 @@ def main() -> None:
         print(f"run dir: {out_dir}", file=sys.stderr, flush=True)
         points = [int(x) for x in args.concurrency.split(",")]
         windows = [float(x) for x in args.windows.split(",")]
-        profile_points(args.ref, points, windows, args.steps, out_dir, args.window_s)
+        profile_points(args.ref, points, windows, args.steps, out_dir, args.window_s, args.load)
         for tr in sorted(glob.glob(os.path.join(out_dir, "C*", "w*", "*.trace.json*"))):
             res = analyse(tr)
             res.pop("_extracted")
