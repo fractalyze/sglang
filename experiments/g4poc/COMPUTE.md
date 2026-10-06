@@ -8,7 +8,9 @@ point, they agree within ~1% in flight and ~3% under think time.
 **Headline.** With requests always in flight, one RTX 5090 serves Gemma-4-26B-A4B FP8 for multi-turn role-play at
 **28 in flight, held for 30 min on two hosts: p90 8.5-8.6 s, p99 11.1-11.6 s, 952-960 output tok/s, $0.203-0.204
 per 1M output tokens at $0.70/GPU-hour, -41% against the FP8 base ($0.343)**, quality unchanged, 0 failed requests,
-0.7% retracted. The 4-min sweeps' cheapest point, 32 in flight at $0.197-0.200, carries
+0.7% retracted. **Round 2 (section 7) adds gemma4nv's decode-glue fusion (`SGLANG_OPT_GEMMA4_FUSED_GLUE=2`, an env
+flag on the same trees) to both finals: the C28 30-min soak on bs3 gives p90 8.27 s, p99 10.59 s, 986 tok/s,
+$0.197 per 1M output, -43% against the base; chat p90 -8% at 30 s think, capacity ~72 -> ~74 sessions per GPU.** The 4-min sweeps' cheapest point, 32 in flight at $0.197-0.200, carries
 a retraction tail over 30 min (p99 37 s), so 28 is the operating point. Chat sessions with 30-60 s of think time cost
 ~$0.45-0.47 per 1M output tokens (~70 sessions per GPU at 30 s, held 30 min on both hosts at ~68; ≥ 118 at
 60 s), and there the device prefix cache alone
@@ -858,3 +860,24 @@ is >= 1.0. The new chat final is `final-mem-c1-c2a-glue` (tree 1425761173, an en
   `/data/jooman/g4poc/unit.lock` (`glue/k1_unit.sh`), so two workers' A-B-B-A sets never interleave.
   - bs2: correctness gates 0-5 and the T30 A-B-B-A.
   - bs3: the C12/C28 A-B-B-A and the soak.
+
+### T30 capacity probe at pthink30 76 (bs2, 14:43-15:36; measured after the gates, not a gate)
+
+Run: `glue/k1_unit.sh capacity-t30`, the same pair as the T30 A-B-B-A at 76. Its seeded plan offers ~73 live sessions
+at 2.52 turns/s (`compute/plan_offer.py`). That is where round 1's chat final broke the 10 s SLO on bs3 (73.0 live,
+p90 10.59 s). Comparison: `runs/k1/capacity-t30-c76-build-server-2.json`.
+
+| pthink30 at 76 | E2E p90 (s) | E2E p99 (s) | live sessions | output tok/s |
+|---|---|---|---|---|
+| final-mem-c1-c2a | 10.08, 10.22 | 12.56, 13.00 | 72.4 | 446 |
+| + glue | **9.24, 9.66** | 12.19, 13.02 | 71.5 | 445 |
+
+p90 gain 1.075, control drift 1.4%, 0 failed, 0 retracted. At this load the final misses the 10 s p90 SLO in both
+sweeps and the glue meets it in both.
+
+Interpolating each arm's p90 between 72 and 76 puts the 10 s edge at:
+- final: ~71.8 live sessions, 2.51 turns/s;
+- glue: ~73.7 live sessions, 2.54 turns/s.
+
+**The chat capacity at 30 s think moves from ~72 to ~74 sessions per GPU** (+2.6% in live sessions, +1.2% in turns
+served). The cost at the SLO edge falls ~1-3%; at T30 that is the only way $/1M moves.
