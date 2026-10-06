@@ -33,5 +33,40 @@
       "0.85"
     ],
     "numerics_unchanged": true
+  },
+  "final-hc-cp2048-lpm-k2c1c2": {
+    "description": "Round 2 K2-c2 on top of K2-c1: final-hc-cp2048-lpm-k2c1 + SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC=1 (the Triton decode replay translates the SWA window ids without the two host syncs). Same tree cfc12c0bac. 28G scope.",
+    "extends": "final-hc-cp2048-lpm-k2c1",
+    "env": {
+      "SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "final-hc-cp2048-lpm-k2c1c2-smallpool": {
+    "description": "Exactness only: final-hc-cp2048-lpm-k2c1c2 on a 16K-token device pool. Control: final-mem-c1-c2a-cp2048-lpm-k2c1c2.",
+    "extends": "final-hc-cp2048-lpm-k2c1c2",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "final-mem-c1-c2a-cp2048-lpm-k2c1c2": {
+    "description": "Exactness control for final-hc-cp2048-lpm-k2c1c2: the same flags without HiCache.",
+    "extends": "final-mem-c1-c2a-cp2048-lpm-k2c1",
+    "env": {
+      "SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC": "1"
+    },
+    "numerics_unchanged": true
+  },
+  "final-mem-c1-c2a-k2c1c2": {
+    "description": "K2-c1 + K2-c2 on the device-only chat config for the think-time point.",
+    "extends": "final-mem-c1-c2a-k2c1",
+    "env": {
+      "SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC": "1"
+    },
+    "numerics_unchanged": true
   }
 }

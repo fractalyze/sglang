@@ -698,3 +698,110 @@ number. The others were found later; none changes a reported in-flight number.
   its overnight think-time failures to this. The final's single failure at C96 (bs2) ran before failed records
   kept their error, so its cause is not recorded. A client that sends turns after more than 5 s idle needs the
   same setting.
+
+## 7. Round 2, K2: decode-step headroom on the final config (bs3)
+
+**Question.** How much of the final config's time could a persistent megakernel, or cheaper launch and glue fusion,
+recover, and does any candidate predict at least 3% of E2E at a relevant point (C28, C12 or T30 chat)? A prototype is
+built only past that bar, and only within a scope the coordinator approves.
+
+### Decode profile
+
+`compute/k2_decode_profile.py` serves a ref under the gate's host lock, runs the gate's replay, and takes torch-profiler
+windows (CPU + GPU activities, no stacks or shapes; 2 windows x 400 forward steps per point). SGLang wraps each
+`ModelRunner.forward` in a `step[<MODE> bs=..]` range that the trace carries on the GPU timeline, and graph nodes share
+their `cudaGraphLaunch`'s correlation id. Each forward's cycle runs from its first GPU op to the next forward's. Each
+kernel is charged its exclusive time, the part not overlapped by an earlier op, because some kernels use programmatic
+dependent launch (PDL) and start while their predecessor drains. Profiler overhead is ~1%: at bs 8 the traced decode
+step median is 13.35 ms against 13.27 ms untraced (server log, `decode_log_interval` 1).
+Runs: `k2-profile-final-hc-cp2048-lpm-20261006-100500-build-server-3-10837c` (in flight) and
+`k2-profile-final-mem-c1-c2a-20261006-103045-build-server-3-499503` (T30: device-only chat config, pthink30 at 72
+sessions); per-window summaries and decode-graph kernel sequences in `compute/runs/k2/`.
+
+Per clean decode step (a decode forward followed by a decode forward; mean of both windows):
+
+| | C8 (bs 8) | C12 (bs 12) | C28 (bs 25-28) | T30 chat (bs 6-17) |
+|---|---|---|---|---|
+| decode step, traced mean / untraced median | 13.72 / 13.27 ms | 15.38 / 14.76 ms | 20.74 / 19.77 ms | 15.2 ms (traced) |
+| kernel launches (graph nodes) | 1,053 (1,031) | 1,083 (1,061) | 1,088 (1,061) | ~1,080 (~1,055) |
+| GPU busy | 93.2% | 93.2% | 92.9% | 95.5% |
+| gaps, total | 0.93 ms (6.8%) | 1.04 ms (6.7%) | 1.48 ms (7.1%) | 0.68 ms (4.5%) |
+| - before the graph (host sync + graph launch) | 0.59 ms | 0.61 ms | 0.67 ms | 0.58 ms |
+| - between graph nodes | 0.10 ms | 0.10 ms | 0.10 ms | 0.10 ms |
+| - after the graph (scheduler stalls; median ~5 us) | 0.24 ms | 0.32 ms | 0.70 ms | 0.00 ms |
+| kernels under 5 us, exclusive | 838, 1.53 ms (11.2%) | 867, 1.52 ms (9.9%) | 871, 1.58 ms (7.6%) | ~865, 1.54 ms |
+| fused_moe | 34.5% | 38.7% | 44.8% | 39.4-41.8% |
+| dense GEMM (CUTLASS FP8 W8A8 x 120, router, FP8 lm_head) | 38.7% | 34.5% | 25.5% | 33-37% |
+| decode attention | 10.2% | 11.4% | 15.7% | 10.5-12.4% |
+| norm / RoPE / KV-write glue | 4.0% | 3.6% | 2.7% | 3.4-3.8% |
+| other elementwise (incl. the MoE activation) | 2.3% | 2.1% | 1.7% | 2.0-2.3% |
+| activation FP8 quant (6 per layer) | 2.0% | 1.8% | 1.4% | 1.7-1.9% |
+| MoE routing glue (routing, align, sum) | 1.4% | 1.1% | 0.9% | 1.1-1.3% |
+| decode share of GPU time | 0.80-0.90 | 0.75-0.86 | 0.63-0.76 | 0.53-0.64 of busy time |
+
+Decode share: the range over the two trace windows and a server-log estimate (decode steps x median step over the
+whole timed window). At T30 it is the share of busy time; the GPU idles ~26% of that plan, which offers 2.32 turns/s.
+
+What the profile shows:
+
+- **Inside the graph the step is not launch-bound.** Gaps between graph nodes total 0.10 ms per step (0.5-0.7%). A
+  near-zero-work node costs 0.77-0.80 us in a CUDA graph on this GPU (`k2_dense_gemm_bench.py` node probe), so
+  launch removal alone is worth at most ~0.8 us per kernel boundary. The small kernels' 1.5 ms per step is mostly
+  their own latency (single-CTA reductions, dependent loads), which only fusion or overlap removes.
+- **The per-layer glue that K1 fuses** (13 launches per layer: q/k/v RMSNorm, RoPE, 4 ATen FP8 KV-quantize ops, the KV
+  store, 6 norms) is 391 launches and 0.74-0.76 ms per step. K1's level 2 removes 270 of them, 9 per layer.
+- **A host sync before every decode graph.** `update_sliding_window_buffer` (Triton backend, static SWA pool) slices
+  the window-id buffer with the GPU scalar `window_kv_indptr[-1]`, twice. The scheduler's `run_batch` for step k+1
+  blocks in `.item()` until graph k finishes, then spends ~0.2 ms on prep and ~0.43 ms in `cudaGraphLaunch` (1,061
+  nodes) while the GPU idles. The overlap scheduler hides none of it. Upstream main (21c9bbdf2c, 10-06) has the same
+  code.
+- **The CUTLASS FP8 W8A8 dense GEMMs at decode M are the largest item.** The 120 dense calls per step (qkv, o,
+  gate_up, down) launch 22-64 CTAs on 170 SMs and stream weights at 0.2-0.6 TB/s: a flat 4.72 ms per step from bs
+  8 to 28 (plus 0.18 ms of activation quant), about 5x the 1.66 GB bytes floor.
+- **HiCache write-through stalls the scheduler thread** (post-graph gaps; `hicache/UPSTREAM.md` item 5): some
+  `process_batch_result` calls issue ~25,000 `cudaMemcpyAsync` calls (up to 64 ms); the GPU idles 0.8-2.4% of wall
+  at C8-C28. The device-only chat config has none.
+
+### Dense GEMM microbench (`compute/k2_dense_gemm_bench.py`, `runs/k2/dense-gemm-bench.json`)
+
+Each shape is timed in a CUDA graph of 30 calls over 30 weight copies, so every call streams its weight from DRAM as
+in a decode step; per decode step = 25 sliding + 5 full qkv / o calls and 30 gate_up / down calls:
+
+| M | served: per-token quant + CUTLASS | `triton_scaled_mm` W8A8, best of 18 tiles, quant included | weight-only FP8 small-M Triton | BF16 cuBLAS |
+|---|---|---|---|---|
+| 8 | 4.86 ms | 1.40 ms | 1.27 ms | 2.75 ms |
+| 12 | 4.86 ms | 1.41 ms | 1.27 ms | 2.75 ms |
+| 28 | 4.87 ms | 1.41 ms | 1.69 ms | 2.57 ms |
+| 48 | 4.88 ms | 1.46 ms | 2.36 ms | 2.65 ms |
+
+Error against the dequantized fp32 product: 0.026 for W8A8 (the activation quantization), 0.0017 for weight-only.
+The tree already routes per-token x per-channel FP8 linears through tuned `triton_scaled_mm` tiles when a config file
+for the shape and device exists; none existed for the RTX 5090. The W8A8 tiles are within 10.6% of weight-only at M 8
+and 12 and the fastest from M 20 up, and keep today's numerics, so c1 is those tiles.
+
+### Headroom model (`compute/k2_headroom.py`, inputs `compute/k2/inputs.json`)
+
+A decode-only lever that saves s ms of an S ms decode step moves GPU wall time by d x s / S, d being the decode share.
+In flight, throughput scales by 1 / (1 - g) and E2E roughly by (1 - g); under chat sessions the same g raises the
+sessions a GPU holds at the SLO. Levers stack in the order shown, each on the step the earlier ones leave. Baselines:
+C28 p90 8.59 s / 952 tok/s / $0.204 per 1M output at $0.70; C12 5.47 s / 647 / $0.300; T30 ~70 sessions / $0.452.
+
+| lever | saving per decode step | C28 E2E | C12 E2E | T30 E2E (sessions) | bar (3%) |
+|---|---|---|---|---|---|
+| (a) K1 glue fusion (270 launches at their traced time; +0-3% of prefill) | 0.37-0.52 ms | 1.2-2.7% | 1.9-3.4% | 1.3-3.2% (71-72) | K1's lever |
+| (c2) no host sync in the SWA decode replay | 0.48-0.67 ms | 1.6-2.6% | 2.5-3.7% | 1.7-2.5% (~71.5) | at the bar at C12 |
+| (c1) tuned W8A8 tiles at decode M (alone: 3.1-3.5 ms) | 2.9-3.7 ms | 9.5-14.2% | 17.5-23.2% | 11.9-16.5% (79-84) | **passes** |
+| (c3) MoE routing chain fusion (router GEMM, split-K, routing, align, quant) | ~0.2 ms | ~0.7% | ~1% | ~0.6% | no |
+| (c3) norm / MoE-act emits FP8 | ~0.08 ms | ~0.3% | ~0.5% | ~0.3% | no |
+| (b) persistent megakernel over what is left after a, c2, c1 | 0.45-1.35 ms | 1.6-6.4% | 2.9-11% | 1.8-7.2% | straddles |
+
+(b) counts the in-graph gaps (0.10 ms), ~420 remaining small ops at 0.5-1.3 us of removable cost each (the
+node-cost probe since put the launch part at <= 0.8 us), 0.5-2 us of tail per large op (210 per step), and partial
+prefetch of the next dense weights under the small ops. MoE expert prefetch waits on routing. Vault rule
+r-megakernel-compute-bound does not apply (decode here is memory-bound). The prior is Hazy/MPK, which assume ~220 KB of
+shared memory against SM120's 99 KB.
+
+**Decisions (coordinator, 10-06 ~11:15).** c1 GO (config route, as the microbench picked); c2 GO, gated after c1 under
+its own switch; (b) NO-GO for now, re-decided from a re-profile after K1, c1 and c2 land, with PDL and a next-layer
+weight-prefetch branch as the cheaper probes first; (c3) below the bar; the HiCache stall goes to `hicache/UPSTREAM.md`
+item 5 (candidate), not posted.
