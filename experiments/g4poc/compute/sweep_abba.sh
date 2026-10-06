@@ -12,6 +12,7 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 source "$here/gate/env.sh"
 cd "$here"
 ctrl=$1 cand=$2 conc=$3 out=$4 load=${LOAD:-inflight}
+runs=${G4POC_RUNS_DIR:-$G4POC/runs}
 step() { echo "=== $(date -Is) $*"; }
 wait_gpu_free() {
   local apps
@@ -20,7 +21,7 @@ wait_gpu_free() {
     sleep 20
   done
 }
-latest() { ls -td "$G4POC_RUNS_DIR"/sweep-"$1"-* | head -1; }
+latest() { ls -td "$runs"/sweep-"$1"-* | head -1; }
 # One sweep; its run dir goes to $dir. On failure, records the time and any foreign process the server's OOM names.
 sweep() {
   wait_gpu_free

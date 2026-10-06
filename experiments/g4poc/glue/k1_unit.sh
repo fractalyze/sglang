@@ -4,14 +4,23 @@
 #   abba-inflight: final-hc-cp2048-lpm vs -glue at 12 and 28 in flight (28G)
 #   abba-t30:      final-mem-c1-c2a vs -glue under pthink30 at 72 (24G)
 #   soak:          final-hc-cp2048-lpm-glue at 28 in flight for 30 min (28G)
-#   glue/k1_unit.sh <unit> > /home/jooman/g4poc/logs/k1-<unit>.log 2>&1
+# The unit holds $G4POC/unit.lock throughout, so units of different workers on one host never interleave their sweeps
+# (the gate's host.lock is per server); WAIT_PID first waits out a running queue that predates that lock.
+#   [WAIT_PID=<pid>] glue/k1_unit.sh <unit> > <log> 2>&1
 set -uo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 source "$here/gate/env.sh"
 cd "$here"
-out=$G4POC_RUNS_DIR/k1
+out=${G4POC_RUNS_DIR:-$G4POC/runs}/k1
 mkdir -p "$out"
 host=$(hostname)
+if [ -n "${WAIT_PID:-}" ]; then
+  echo "=== $(date -Is) unit $1 waits for pid $WAIT_PID to exit"
+  while kill -0 "$WAIT_PID" 2>/dev/null; do sleep 30; done
+fi
+exec 8>"$G4POC/unit.lock"
+echo "=== $(date -Is) unit $1 waits for $G4POC/unit.lock"
+flock 8
 echo "=== $(date -Is) unit $1 on $host"
 case "$1" in
   abba-inflight)

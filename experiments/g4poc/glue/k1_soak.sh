@@ -9,7 +9,8 @@ source "$here/gate/env.sh"
 cd "$here"
 export G4POC_SERVER_MEMORY_MAX=28G
 ref=final-hc-cp2048-lpm-glue
-out=$G4POC_RUNS_DIR/k1
+runs=${G4POC_RUNS_DIR:-$G4POC/runs}
+out=$runs/k1
 mkdir -p "$out"
 step() { echo "=== $(date -Is) $*"; }
 wait_gpu_free() {
@@ -34,7 +35,7 @@ for try in 1 2 3; do
     step "k1 soak done"
     exit 0
   fi
-  d=$(ls -td "$G4POC_RUNS_DIR"/sweep-"$ref"-* | head -1)
+  d=$(ls -td "$runs"/sweep-"$ref"-* | head -1)
   foreign=$(grep -ohE "Process [0-9]+ has [0-9.]+ [GM]iB memory in use" "$d"/server.log* 2>/dev/null | sort -u | tr '\n' ';')
   echo "$(date -Is) soak try $try failed ($d); OOM names: ${foreign:-none}" | tee -a "$out/soak.failures"
 done
