@@ -222,3 +222,30 @@ exactness is not exact.
 Order (coordinator, 10-06 ~11:15): c2 is gated after c1. If c1 is kept, both arms carry c1 and the decode step is
 shorter, so the same saving is a larger share: C28 -1.8% .. -2.9%, C12 -2.9% .. -4.5% (decode step ~16.5 / ~11.1 ms,
 decode share 0.60-0.72 / 0.68-0.81). The intervals above hold if c1 is not kept.
+
+## Round 2, K2-c1: tuned Triton W8A8 tiles for the dense FP8 linears at decode M (registered 2026-10-06 ~11:50 KST)
+
+Basis: the K2 decode profile and the dense-GEMM microbench (`compute/k2_dense_gemm_bench.py`,
+`runs/k2/dense-gemm-bench.json`, bs3, CUDA graph of 30 calls over 30 weight copies per shape). The served path
+(`apply_fp8_linear`: per-token FP8 quant + CUTLASS scaled mm, 22-64 CTAs) costs 4.86-4.88 ms per decode step for the
+120 dense calls at every M from 1 to 48 (profile: 4.72 ms CUTLASS + 0.18 ms quant). `triton_scaled_mm` at the
+fastest of 18 tiles costs 1.39-1.46 ms (quant included); the weight-only small-M kernel 1.26-1.27 ms at M <= 16 but
+1.69 ms at 28 and 2.4 ms at 40-48. The coordinator's rule (W8A8 tiles if within ~10% of the best route at M 8, 12,
+28): 10.6% / 10.6% slower at 8 / 12 (0.13 ms per step), fastest at 28, so the route is the W8A8 tiles: the six
+config files on tree cfc12c0bac (`jumanzii/g4poc-r2-k2`), numerics W8A8 with a different summation order.
+Ref `final-hc-cp2048-lpm-k2c1`; control the final (`final-hc-cp2048-lpm`, a0491db764).
+
+Prediction (saving 3.1-3.5 ms per decode step: the bench's 3.45-3.47 ms, derated up to 10% for the graph context and
+a possible clock bin; diluted by the decode share of wall time, COMPUTE.md section 7):
+- C28 (deciding, same-host A-B-B-A, 2 pairs): E2E p90 -9.9% .. -13.5% (gain 1.11-1.16), output tok/s +11% .. +16%,
+  $/1M output $0.177-0.184 at $0.70 (from $0.204).
+- C12: E2E p90 -15.8% .. -20.4%, output tok/s +19% .. +26%.
+- T30 (pthink30 C72, device-only final-mem-c1-c2a vs -k2c1, same plan): sessions at the 10 s p90 SLO +12% .. +17%;
+  at the fixed plan, lower p90 and the same turn rate.
+- GPU: mean SM clock within one bin (~15 MHz) of the control, or lower by one bin with power up (claim
+  c-20260926-fusion-gains-lose-a-clock-bin-to-the-power-cap).
+- Numerics: GSM8K (1,319) and tool-JSON pass against the base anchor; role-play NLL within budget and language
+  adherence within the paired band; the KL check's teacher-forced part unchanged (prefill keeps CUTLASS), greedy
+  divergences only at near-ties; multi-turn exactness 12/12 (`final-mem-c1-c2a-cp2048-lpm-k2c1` vs
+  `final-hc-cp2048-lpm-k2c1-smallpool`).
+Falsified if the C28 p90 gain is below 1.05, a quality guard fails, or exactness is below 12/12.

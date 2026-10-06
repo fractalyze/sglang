@@ -1,0 +1,37 @@
+{
+  "final-hc-cp2048-lpm-k2c1": {
+    "description": "Round 2 K2-c1: the final config on tree cfc12c0bac (jumanzii/g4poc-r2-k2 = a0491db764 + the c2 switch, off + tuned triton_scaled_mm tiles for the six dense FP8 shapes on the RTX 5090: decode M 1-48 leave CUTLASS, M >= 64 keeps it). Run in a 28G scope.",
+    "extends": "final-hc-cp2048-lpm",
+    "commit": "cfc12c0bac57a8cb73be37f2cb37d907ef2d0769"
+  },
+  "final-hc-cp2048-lpm-k2c1-smallpool": {
+    "description": "Exactness only: final-hc-cp2048-lpm-k2c1 on a 16K-token device pool (every later multi-turn turn is a HiCache load-back). Control: final-mem-c1-c2a-cp2048-lpm-k2c1.",
+    "extends": "final-hc-cp2048-lpm-k2c1",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "final-mem-c1-c2a-cp2048-lpm-k2c1": {
+    "description": "Exactness control for final-hc-cp2048-lpm-k2c1: the same flags without HiCache, on the K2-c1 tree.",
+    "extends": "final-mem-c1-c2a-cp2048-lpm",
+    "commit": "cfc12c0bac57a8cb73be37f2cb37d907ef2d0769"
+  },
+  "final-mem-c1-c2a-k2c1": {
+    "description": "Round 2 K2-c1 on the chat config (device-only final-mem-c1-c2a) for the think-time point (pthink30), tree cfc12c0bac.",
+    "extends": "final-mem-c1-c2a",
+    "commit": "cfc12c0bac57a8cb73be37f2cb37d907ef2d0769"
+  },
+  "final-cpl-qr-k2c1": {
+    "description": "Quality arms (GSM8K/tool-JSON against the bs3 base anchor, and role-play as final-cpl-qr) for final-hc-cp2048-lpm-k2c1 at a 0.85 static fraction, keeping its 2048-token chunks. 28G scope.",
+    "extends": "final-hc-cp2048-lpm-k2c1",
+    "server_args": [
+      "--mem-fraction-static",
+      "0.85"
+    ],
+    "numerics_unchanged": true
+  }
+}
