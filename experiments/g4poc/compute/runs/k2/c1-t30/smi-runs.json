@@ -1,0 +1,18 @@
+{
+ "sweep-final-mem-c1-c2a-glue-k2-20261006-152124-build-server-3-e4ebc3": {
+  "n_busy": 1472,
+  "clocks_sm_mean": 2804.5101902173915,
+  "clocks_mem_mean": 13801.0,
+  "power_w_mean": 428.7685190217391,
+  "temp_c_mean": 61.905570652173914,
+  "clocks_sm_p10": 2767.0
+ },
+ "sweep-final-mem-c1-c2a-glue-c1-20261006-154644-build-server-3-338271": {
+  "n_busy": 1443,
+  "clocks_sm_mean": 2803.045738045738,
+  "clocks_mem_mean": 13801.0,
+  "power_w_mean": 448.31185724185724,
+  "temp_c_mean": 62.44767844767845,
+  "clocks_sm_p10": 2767.0
+ }
+}
