@@ -4,6 +4,8 @@
 #   abba-inflight: final-hc-cp2048-lpm vs -glue at 12 and 28 in flight (28G)
 #   abba-t30:      final-mem-c1-c2a vs -glue under pthink30 at 72 (24G)
 #   soak:          final-hc-cp2048-lpm-glue at 28 in flight for 30 min (28G)
+#   capacity-t30:  the T30 pair again at pthink30 76, whose seeded plan offers ~73 live sessions, the round-1 chat
+#                  final's 10 s SLO edge (a capacity measurement after the gates, not a gate)
 # The unit holds $G4POC/unit.lock throughout, so units of different workers on one host never interleave their sweeps
 # (the gate's host.lock is per server); WAIT_PID first waits out a running queue that predates that lock. flock is not
 # FIFO, so a unit the coordinator orders behind another worker's waits for WAIT_FILE (that worker touches it when done)
@@ -38,6 +40,9 @@ case "$1" in
   abba-t30)
     LOAD=pthink30 G4POC_SERVER_MEMORY_MAX=24G compute/sweep_abba.sh final-mem-c1-c2a final-mem-c1-c2a-glue 72 \
       "$out/abba-t30-$host.json" ;;
+  capacity-t30)
+    LOAD=pthink30 G4POC_SERVER_MEMORY_MAX=24G compute/sweep_abba.sh final-mem-c1-c2a final-mem-c1-c2a-glue 76 \
+      "$out/capacity-t30-c76-$host.json" ;;
   soak)
     glue/k1_soak.sh ;;
   *)

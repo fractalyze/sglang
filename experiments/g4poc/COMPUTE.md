@@ -788,3 +788,25 @@ tok/s +1.5..+3.5%); C12 landed inside its interval (-2.0..-4.5%, +2.0..+4.5%). I
 shrank 0.40 ms at bs 12 and 0.6-0.9 ms at bs 24/32: 1.5 us and 2.2-3.4 us per removed launch, against the gemma4nv
 rule's 1.6-2.3 us. Why the saving grows with the batch was not measured. Retractions
 at 28 rose 1.5x (14 -> 21), inside the 2x guard; the soak tests the tail.
+
+### 30-min soak at 28 in flight (bs3, 13:36-14:08)
+
+Run: `glue/k1_unit.sh soak`, `sweep-final-hc-cp2048-lpm-glue-20261006-133604-build-server-3-85f668`, memory
+`runs/k1/soak-mem.json`. The reference is round 1's bs3 soak of the final, on the same host.
+
+| 30 min at 28 in flight, bs3 | requests | failed | p50 / p90 / p99 | out tok/s | $/1M @ $0.70 | hit | retracted |
+|---|---|---|---|---|---|---|---|
+| final (round 1, PC2) | 9,656 | 0 | 5.54 / 8.59 / 11.13 s | 952 | 0.204 | 0.768 | 67 (0.69%) |
+| **final + glue** | **9,976** | **0** | **5.38 / 8.27 / 10.59 s** | **986** | **0.197** | 0.767 | **64 (0.64%)** |
+
+The criteria were fixed before the run: 0 failed, retractions <= 1.39% and p99 <= 14.47 s. The soak passes all three.
+Against round 1's soak the glue gives p90 -3.7%, p99 -4.9%, output tok/s +3.6% and $/1M -3.4%.
+
+GPU memory held a flat plateau at 31,354 MiB, inside both hosts' rules (31,599 on bs2, 31,642 on bs3). Only 5 of
+19,559 samples sat above it, all at 31,885 MiB at 13:43:10, 13:53:10 and 14:03:10: the bs3 co-tenant canary's
+~530 MiB context every 10 minutes (round 1, `memory/REPORT.md`), not this server.
+
+**Verdict, in flight: adopted.** Every preregistered gate passes. The new in-flight final is `final-hc-cp2048-lpm-glue`
+on the same tree a0491db764, an env flag. 30-min operating point at 28 in flight: p90 8.27 s, p99 10.59 s, 986 output
+tok/s, **$0.197 per 1M output at $0.70/GPU-hour, -43% against the FP8 base's $0.343** (round 1: $0.203-0.204,
+-41%). Concurrency is unchanged: 28 stays the operating point and 12 the 6 s point.
