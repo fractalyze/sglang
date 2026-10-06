@@ -951,3 +951,42 @@ branch. The largest decode item is now fused_moe itself (K3).
   the gate's own process tree from the swap check, or swap it back in before checking.
 - **Profile-derived host gaps overstate untraced ones** when the CPU work in the gap is a large graph launch (c2 above).
 - **c1's T30 edge** is bracketed (84.4 meets, 97.7 misses), not pinned.
+
+## 8. Round 2, K3: fused_moe at decode M (measured, NO-GO)
+
+**Question.** On the ship stack fused_moe is 55% of the decode step. Is there config or fusion headroom against its
+weight floor, the distinct experts a step touches x 5.95 MB (FP8 gate_up + down per expert) over DRAM bandwidth?
+
+**Microbench** (`compute/k3_moe_bench.py`, `runs/k2/moe-bench.json`, bs3, tree cfc12c0bac, the served C1 config dir):
+one MoE layer exactly as served (`fused_experts_impl`: align, per-token FP8 quant, gate_up fused_moe, gelu-and-mul,
+quant, down, top-8 sum; FP8 W8A8 per-channel, E 128, hidden 2816, intermediate 704) in a CUDA graph over 6 layers of
+weights, at M 8 / 12 / 16 / 28 / 48 and 16-128 distinct experts, with even and Zipf-skewed routing; a 40-tile grid at
+M 8, 12 and 28. DRAM read rate (a plain 2 GB reduction): 1,686 GB/s.
+
+| M | layer time = fixed + per distinct expert | served D_eff (uniform top-8) | over the floor per layer | per decode step |
+|---|---|---|---|---|
+| 8 | 20.5 us + 3.46 us/expert | 43 (52) | 18 us | 0.53 ms |
+| 12 | 14.4 us + 3.55 us/expert | 56 (69) | 16 us | 0.47 ms |
+| 28 | 17.5 us + 3.54 us/expert | 86 (107) | 19 us | 0.56 ms |
+| 16 / 48 | 15.6 / 26.4 us + 3.55 / 3.47 us/expert | | | |
+
+The floor slope is 5.95 MB / 1,686 GB/s = 3.53 us per expert: **the expert GEMMs already stream at the measured DRAM
+rate**, and the only headroom is the fixed part (the MoE glue kernels and the two GEMMs' ramp and tail). D_eff is read off
+by matching the profile's served fused_moe time to the curve; served routing touches ~80% of the experts uniform top-8
+draws would. The tile grid beats C1 by at most 7.6 us per layer (M 8, few experts) and by ~0 at M 12 and 28. No other
+MoE backend in the tree serves this per-channel FP8 checkpoint on SM120 (flashinfer_trtllm crashes there, Marlin MoE
+wants e8m0 / MX scales, the CUTLASS FP8 MoE targets SM90/100).
+
+**Headroom** (ship stack; decode step ~10.4 ms at 12 running and ~15 ms at 28, decode share 0.63-0.75):
+
+| lever | per decode step | C28 E2E | C12 E2E | T30 |
+|---|---|---|---|---|
+| retuned tiles | <= 0.1 ms | ~0-0.5% | ~0% | ~0% |
+| fuse the MoE glue (align + quant, act + quant, top-8 sum into the down epilogue) | 0.2-0.3 ms | 1.0-1.6% | 1.4-2.2% | 1.0-1.6% |
+| bound: all of the fixed part gone | 0.47-0.56 ms | 2.3-2.6% | ~3.4% | ~2.5% |
+
+**NO-GO** (under the 3% bar at every point but the unreachable bound at C12). The one large MoE lever left is fewer bytes
+per expert (NVFP4 / FP6 experts, about -45% of MoE time, ~15-19% E2E), which changes the weights' precision; the study
+fixed the weights at FP8. The next decode item after MoE is decode attention (17% of the step, ~1.6x its KV-bytes floor
+at 12 running and ~1.25x at 27), ~0.6 ms per step of headroom that needs a better decode-attention kernel, not a config
+(C4's 16 KV splits was null).
