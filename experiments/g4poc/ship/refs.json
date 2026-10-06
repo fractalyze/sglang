@@ -1,0 +1,189 @@
+{
+  "ship-inflight": {
+    "description": "SHIP: the in-flight config of G4POC-DEPLOY.md (final-hc-cp2048-lpm + glue + c1) on the ship branch jumanzii/g4poc-ship, flags written out with no SGLANG_MOE_CONFIG_DIR (the C1 MoE config ships in the default config dir). Same flags and env as final-hc-cp2048-lpm-glue-c1 (tree cfc12c0bac) after argparse's last-wins. 28G scope.",
+    "commit": "2e209489f204f0820e021ee24f08c2bdbeb8be17",
+    "server_args": [
+      "--kv-cache-dtype",
+      "fp8_e4m3",
+      "--context-length",
+      "16384",
+      "--json-model-override-args",
+      "{\"max_position_embeddings\": 16384}",
+      "--disable-prefill-cuda-graph",
+      "--max-running-requests",
+      "64",
+      "--mem-fraction-static",
+      "0.955",
+      "--swa-full-tokens-ratio",
+      "0.268",
+      "--cuda-graph-max-bs-decode",
+      "48",
+      "--enable-hierarchical-cache",
+      "--hicache-size",
+      "12",
+      "--hicache-write-policy",
+      "write_through",
+      "--hicache-io-backend",
+      "kernel",
+      "--hicache-mem-layout",
+      "page_first",
+      "--chunked-prefill-size",
+      "2048",
+      "--schedule-policy",
+      "lpm"
+    ],
+    "env": {
+      "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE": "1",
+      "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+      "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1",
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2",
+      "SGLANG_OPT_HICACHE_PIN_LOAD_BACK_WINDOW": "1",
+      "SGLANG_OPT_HICACHE_FENCE_WRITE_THROUGH": "1"
+    }
+  },
+  "ship-inflight-smallpool": {
+    "description": "SHIP exactness only: ship-inflight on a 16K-token device pool, so every later multi-turn turn is a HiCache load-back. Control: ship-inflight-ctl.",
+    "extends": "ship-inflight",
+    "server_args": [
+      "--max-total-tokens",
+      "16384",
+      "--swa-full-tokens-ratio",
+      "1.0"
+    ],
+    "numerics_unchanged": true
+  },
+  "ship-inflight-ctl": {
+    "description": "SHIP exactness control: ship-inflight's flags and levers without HiCache (as final-mem-c1-c2a-cp2048-lpm-glue-c1 on cfc12c0bac). 24G scope.",
+    "commit": "2e209489f204f0820e021ee24f08c2bdbeb8be17",
+    "server_args": [
+      "--kv-cache-dtype",
+      "fp8_e4m3",
+      "--context-length",
+      "16384",
+      "--json-model-override-args",
+      "{\"max_position_embeddings\": 16384}",
+      "--disable-prefill-cuda-graph",
+      "--max-running-requests",
+      "64",
+      "--mem-fraction-static",
+      "0.955",
+      "--swa-full-tokens-ratio",
+      "0.268",
+      "--cuda-graph-max-bs-decode",
+      "48",
+      "--chunked-prefill-size",
+      "2048",
+      "--schedule-policy",
+      "lpm"
+    ],
+    "env": {
+      "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE": "1",
+      "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+      "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1",
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
+    }
+  },
+  "ship-chat": {
+    "description": "SHIP: the chat config of G4POC-DEPLOY.md (device-only final-mem-c1-c2a + glue + c1, default chunking) on the ship branch, flags written out with no SGLANG_MOE_CONFIG_DIR. Same flags and env as final-mem-c1-c2a-glue-c1 (tree cfc12c0bac). 24G scope.",
+    "commit": "2e209489f204f0820e021ee24f08c2bdbeb8be17",
+    "server_args": [
+      "--kv-cache-dtype",
+      "fp8_e4m3",
+      "--context-length",
+      "16384",
+      "--json-model-override-args",
+      "{\"max_position_embeddings\": 16384}",
+      "--disable-prefill-cuda-graph",
+      "--max-running-requests",
+      "64",
+      "--mem-fraction-static",
+      "0.955",
+      "--swa-full-tokens-ratio",
+      "0.268",
+      "--cuda-graph-max-bs-decode",
+      "48"
+    ],
+    "env": {
+      "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE": "1",
+      "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+      "SGLANG_OPT_TRITON_EXTEND_SM120_FP8_KV_TILES": "1",
+      "SGLANG_OPT_GEMMA4_FUSED_GLUE": "2"
+    }
+  },
+  "ship-defaults-inflight": {
+    "description": "SHIP upstream-equivalence: the ship branch with every switch unset, the dense FP8 tile route killed (SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE=0) and the MoE config lookup pointed at an empty config dir, under the in-flight server flags. Must match upstream-base-inflight token for token. 28G scope.",
+    "commit": "2e209489f204f0820e021ee24f08c2bdbeb8be17",
+    "server_args": [
+      "--kv-cache-dtype",
+      "fp8_e4m3",
+      "--context-length",
+      "16384",
+      "--json-model-override-args",
+      "{\"max_position_embeddings\": 16384}",
+      "--disable-prefill-cuda-graph",
+      "--max-running-requests",
+      "64",
+      "--mem-fraction-static",
+      "0.955",
+      "--swa-full-tokens-ratio",
+      "0.268",
+      "--cuda-graph-max-bs-decode",
+      "48",
+      "--enable-hierarchical-cache",
+      "--hicache-size",
+      "12",
+      "--hicache-write-policy",
+      "write_through",
+      "--hicache-io-backend",
+      "kernel",
+      "--hicache-mem-layout",
+      "page_first",
+      "--chunked-prefill-size",
+      "2048",
+      "--schedule-policy",
+      "lpm"
+    ],
+    "env": {
+      "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+      "SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE": "0",
+      "SGLANG_MOE_CONFIG_DIR": "/data/jooman/g4poc/moe-configs/none"
+    }
+  },
+  "upstream-base-inflight": {
+    "description": "SHIP upstream-equivalence control: upstream a9871012ac (the ship branch's base, jumanzii/g4poc-ship-base) under the in-flight server flags, no lever env. 28G scope.",
+    "commit": "a9871012acb768dc94a43a6542cc32626c7b7b0b",
+    "server_args": [
+      "--kv-cache-dtype",
+      "fp8_e4m3",
+      "--context-length",
+      "16384",
+      "--json-model-override-args",
+      "{\"max_position_embeddings\": 16384}",
+      "--disable-prefill-cuda-graph",
+      "--max-running-requests",
+      "64",
+      "--mem-fraction-static",
+      "0.955",
+      "--swa-full-tokens-ratio",
+      "0.268",
+      "--cuda-graph-max-bs-decode",
+      "48",
+      "--enable-hierarchical-cache",
+      "--hicache-size",
+      "12",
+      "--hicache-write-policy",
+      "write_through",
+      "--hicache-io-backend",
+      "kernel",
+      "--hicache-mem-layout",
+      "page_first",
+      "--chunked-prefill-size",
+      "2048",
+      "--schedule-policy",
+      "lpm"
+    ],
+    "env": {
+      "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
+    }
+  }
+}
