@@ -2504,6 +2504,7 @@ def update_sliding_window_buffer(
     )
     window_kv_indptr[1 : bs + 1] = torch.cumsum(window_kv_lens, dim=0)
     window_kv_indptr = window_kv_indptr[: bs + 1]
+    preallocated = window_kv_indices is not None
     if window_kv_indices is None:
         window_kv_indices = torch.empty(
             window_kv_indptr[-1], dtype=torch.int64, device=device
@@ -2519,10 +2520,46 @@ def update_sliding_window_buffer(
         sliding_window=translator.reads_are_translated,
     )
     if not translated and isinstance(token_to_kv_pool, BaseSWAKVPool):
-        kv_last_index = window_kv_indptr[-1]
-        window_kv_indices[:kv_last_index] = (
-            token_to_kv_pool.translate_loc_from_full_to_swa(
-                window_kv_indices[:kv_last_index]
+        if preallocated and envs.SGLANG_OPT_SWA_DECODE_NO_HOST_SYNC.get():
+            _translate_window_kv_indices_no_host_sync(
+                token_to_kv_pool,
+                window_kv_indptr,
+                window_kv_indices,
+                bs,
+                sliding_window_size,
             )
-        )
+        else:
+            kv_last_index = window_kv_indptr[-1]
+            window_kv_indices[:kv_last_index] = (
+                token_to_kv_pool.translate_loc_from_full_to_swa(
+                    window_kv_indices[:kv_last_index]
+                )
+            )
     return window_kv_indptr, window_kv_indices, window_kv_lens, window_kv_start_idx
+
+
+def _translate_window_kv_indices_no_host_sync(
+    token_to_kv_pool: BaseSWAKVPool,
+    window_kv_indptr: torch.Tensor,
+    window_kv_indices: torch.Tensor,
+    bs: int,
+    sliding_window_size: int,
+) -> None:
+    """Translate ``window_kv_indices[:window_kv_indptr[bs]]`` from full to SWA ids in place.
+
+    The filled length lives on the device, and slicing by it would block the
+    host until the previous forward finishes. Every request holds at most
+    ``sliding_window_size`` window ids, so ``bs * sliding_window_size`` bounds
+    it on the host; a device-side mask confines the translate to the filled
+    ids. Masked lanes gather index 0 and are written back unchanged.
+    """
+    n = min(bs * sliding_window_size, window_kv_indices.numel())
+    head = window_kv_indices[:n]
+    filled = (
+        torch.arange(n, device=head.device, dtype=window_kv_indptr.dtype)
+        < window_kv_indptr[bs]
+    )
+    translated = token_to_kv_pool.translate_loc_from_full_to_swa(
+        torch.where(filled, head, 0)
+    )
+    head.copy_(torch.where(filled, translated.to(head.dtype), head))
