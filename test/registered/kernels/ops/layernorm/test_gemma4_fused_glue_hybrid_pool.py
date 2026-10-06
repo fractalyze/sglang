@@ -111,9 +111,10 @@ def _inputs(M, hkv, d, k_eq_v, seed):
     k_w = (1.0 + 0.5 * torch.randn(d, device="cuda", generator=g)).to(torch.bfloat16)
     pos = torch.randint(0, _MAX_POS, (M,), device="cuda", generator=g)
     pos[0] = _MAX_POS - 1
-    # Distinct slots in each sub-pool: the request's full-pool rows and their SWA translation.
-    loc = torch.randperm(_FULL_SLOTS, device="cuda", generator=g)[:M]
-    swa_loc = torch.randperm(_SWA_SLOTS, device="cuda", generator=g)[:M]
+    # Distinct slots in each sub-pool: the request's full-pool rows and their SWA translation. Slot 0 is
+    # the CUDA-graph padding slot, never allocated; the backend's store skips it and the fused kernel does not.
+    loc = torch.randperm(_FULL_SLOTS - 1, device="cuda", generator=g)[:M] + 1
+    swa_loc = torch.randperm(_SWA_SLOTS - 1, device="cuda", generator=g)[:M] + 1
     return qkv, q_w, k_w, pos, loc, swa_loc
 
 
