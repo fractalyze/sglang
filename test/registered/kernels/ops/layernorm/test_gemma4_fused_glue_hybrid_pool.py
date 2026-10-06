@@ -37,7 +37,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 _FULL_SLOTS = 4096
-_SWA_SLOTS = 2048
+# Smaller than the full pool, as served, but above the largest M so every token gets its own SWA slot.
+_SWA_SLOTS = 3072
 # Served with max_position_embeddings 16384, so positions reach the last cache row.
 _MAX_POS = 16384
 _EPS = 1e-6
@@ -115,6 +116,7 @@ def _inputs(M, hkv, d, k_eq_v, seed):
     # the CUDA-graph padding slot, never allocated; the backend's store skips it and the fused kernel does not.
     loc = torch.randperm(_FULL_SLOTS - 1, device="cuda", generator=g)[:M] + 1
     swa_loc = torch.randperm(_SWA_SLOTS - 1, device="cuda", generator=g)[:M] + 1
+    assert loc.numel() == swa_loc.numel() == M
     return qkv, q_w, k_w, pos, loc, swa_loc
 
 
