@@ -24,6 +24,12 @@ from transformers import (
     PreTrainedModel,
 )
 
+from sglang.kernels.ops.gemm.triton_small_m_bf16_gemm import (
+    fp8_vocab_head_max_m,
+    quantize_fp8_weight_per_channel_chunked,
+    triton_small_m_fp8_vocab_head,
+    use_fp8_vocab_head,
+)
 from sglang.kernels.ops.layernorm.gemma4_fused_ops import (
     gemma4_fused_routing,
     gemma_dual_output_rmsnorm,
@@ -1214,6 +1220,59 @@ class Gemma4TextModel(PreTrainedModel):
         return hidden_states, aux_hidden_states
 
 
+# Rows quantized at a time, so load never holds an fp32 copy of the whole table.
+_FP8_VOCAB_QUANT_CHUNK = 16384
+
+
+class _Fp8VocabTableHeadMethod:
+    """LogitsProcessor hook: the head runs the FP8 vocab-head kernel in row chunks of its max M."""
+
+    def process_weights_after_loading(self, layer: nn.Module) -> None:
+        # The model loader calls this on every quant_method; the table is final after load_weights.
+        del layer
+
+    def apply(
+        self,
+        layer: "_Fp8VocabTable",
+        x: torch.Tensor,
+        bias: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        x2d = x.reshape(-1, x.shape[-1]).to(torch.bfloat16)
+        logits = torch.cat(
+            [
+                triton_small_m_fp8_vocab_head(
+                    x2d[start : start + layer.max_m].contiguous(),
+                    layer.weight,
+                    layer.weight_scale,
+                )
+                for start in range(0, x2d.shape[0], layer.max_m)
+            ]
+        )
+        if bias is not None:
+            logits = logits + bias
+        return logits.view(*x.shape[:-1], -1)
+
+
+class _Fp8VocabTable(nn.Module):
+    """The tied embedding and LM head as one FP8 E4M3 table with per-row scales
+    (SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE); it replaces the BF16 table outright."""
+
+    def __init__(self, bf16_table: nn.Embedding, embed_scale: float):
+        super().__init__()
+        self.weight, self.weight_scale = quantize_fp8_weight_per_channel_chunked(
+            bf16_table.weight.data, _FP8_VOCAB_QUANT_CHUNK
+        )
+        self.embed_scale = embed_scale
+        self.max_m = fp8_vocab_head_max_m(*self.weight.shape)
+        self.quant_method = _Fp8VocabTableHeadMethod()
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        # Gather raw bytes: indexing has no float8 kernel.
+        rows = self.weight.view(torch.uint8)[input_ids].view(torch.float8_e4m3fn)
+        scale = self.weight_scale[input_ids] * self.embed_scale
+        return (rows.float() * scale.unsqueeze(-1)).to(torch.bfloat16)
+
+
 class Gemma4ForCausalLM(PreTrainedModel):
     config_class = Gemma4TextConfig
     base_model_prefix = "language_model"
@@ -1558,7 +1617,33 @@ class Gemma4ForCausalLM(PreTrainedModel):
                 names = sorted(p for p in unloaded_params if pred(p))
                 if names:
                     logger.log(level, "%s: %s", msg, names)
+        if envs.SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE.get():
+            self._use_fp8_vocab_table()
         return loaded_params
+
+    @torch.no_grad()
+    def _use_fp8_vocab_table(self) -> None:
+        embed = self.model.embed_tokens
+        if not (
+            self.lm_head is embed
+            and embed.weight.is_cuda
+            and use_fp8_vocab_head(*embed.weight.shape)
+        ):
+            raise ValueError(
+                "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE needs the head tied to the embedding "
+                f"on CUDA with a tuned FP8 vocab-head shape; got {list(embed.weight.shape)} "
+                f"on {embed.weight.device} (tied={self.lm_head is embed})."
+            )
+        table = _Fp8VocabTable(embed, embed.embed_scale)
+        self.model.embed_tokens = table
+        self.lm_head = table
+        del embed
+        # The KV pool is sized after load, so the freed BF16 table goes to it.
+        torch.cuda.empty_cache()
+        logger.info(
+            "Replaced the tied BF16 embedding/LM head %s with an FP8 E4M3 table (per-row scales).",
+            list(table.weight.shape),
+        )
 
     def _shard_weight(self, weight: torch.Tensor) -> torch.Tensor:
         """Shard a full embedding/lm_head weight along vocab dim for the current TP rank.

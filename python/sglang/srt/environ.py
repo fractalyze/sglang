@@ -1305,6 +1305,10 @@ class Envs:
     SGLANG_MOE_PADDING = EnvBool(False)
     # Fuse Gemma4's per-layer decode glue kernels; see Gemma4FusedGlue for the levels.
     SGLANG_OPT_GEMMA4_FUSED_GLUE = EnvInt(Gemma4FusedGlue.OFF)
+    # Replace the Gemma-4 target's tied BF16 embedding/LM head (262144 x 2816)
+    # with one FP8 E4M3 table (per-row scales) for both the lookup and the head,
+    # freeing ~0.69 GB for the KV pool. Off by default: it changes numerics.
+    SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE = EnvBool(False)
 
     # ===================================================================
     # Logits and log-probability processing

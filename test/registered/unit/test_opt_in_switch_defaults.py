@@ -15,6 +15,7 @@ register_cpu_ci(est_time=2, suite="base-a-test-cpu")
 # Switch -> its value when the environment does not set it.
 _OFF_BY_DEFAULT = {
     "SGLANG_OPT_GEMMA4_FUSED_GLUE": Gemma4FusedGlue.OFF,
+    "SGLANG_OPT_GEMMA4_FP8_VOCAB_TABLE": False,
 }
 
 
