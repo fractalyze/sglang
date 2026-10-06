@@ -810,3 +810,51 @@ GPU memory held a flat plateau at 31,354 MiB, inside both hosts' rules (31,599 o
 on the same tree a0491db764, an env flag. 30-min operating point at 28 in flight: p90 8.27 s, p99 10.59 s, 986 output
 tok/s, **$0.197 per 1M output at $0.70/GPU-hour, -43% against the FP8 base's $0.343** (round 1: $0.203-0.204,
 -41%). Concurrency is unchanged: 28 stays the operating point and 12 the 6 s point.
+
+### Performance, chat with think time: A-B-B-A at T30 (bs2, 13:15-14:41)
+
+Run: `glue/k1_unit.sh abba-t30`, i.e. `final-mem-c1-c2a` vs `final-mem-c1-c2a-glue` under pthink30 at 72. The plan
+is seeded per concurrency, so all four sweeps offer the same arrivals: ~67 live sessions, 2.46 turns/s. Comparison:
+`runs/k1/abba-t30-build-server-2.json`. Sweeps:
+- A1 `sweep-final-mem-c1-c2a-20261006-131533-*-cb3cdc`
+- B1 `sweep-final-mem-c1-c2a-glue-20261006-140149-*-5b5c3e`
+- B2 `-141517-*-24a39e`
+- A2 `sweep-final-mem-c1-c2a-20261006-142829-*-194952`
+
+| T30 (pthink30 at 72) | E2E p90 (s) | E2E p99 (s) | output tok/s | retracted / failed |
+|---|---|---|---|---|
+| final-mem-c1-c2a | 8.83, 8.77 | 12.11, 11.58 | 433, 431 | 1, 0 / 0 |
+| + glue | 8.01, 8.16 | 11.28, 11.03 | 432, 429 | 0, 0 / 0 |
+| gain | **1.088 (-8.1%)** | 1.062 | 0.998 (the load fixes it) | |
+
+Control drift is 0.6%. The p90 cut lands inside the predicted -3..-10%. At this load a 2-4% service-time cut lowers p90
+directly and through queueing near the 10 s edge.
+
+A baz job (614 MiB) held the GPU from 13:23 to 14:01, so B1 started 31 min after A1 finished. The second pair ran
+back to back and agrees with the first.
+
+At a fixed offered load the cost per 1M output is unchanged: $0.451 at 431 tok/s, both arms. At T30 the cost moves
+only through sessions per GPU at the 10 s SLO; the capacity probe below measures that.
+
+**Verdict, chat: adopted.** Gates 0-5 pass, and the glue numerics and kernels are the same as in flight. The T30 p90 gain
+is >= 1.0. The new chat final is `final-mem-c1-c2a-glue` (tree 1425761173, an env flag).
+
+### Host events during K1 (2026-10-06)
+
+- **Co-tenant GPU use on bs2.** baz's agents (frax#594) ran CUDA tests and `zisk-worker --gpu` proof jobs
+  (~30 GB GPU, ~41 GB host RAM). None of it takes the host lock. There were 3 interruptions:
+  1. 11:18: a 1.5 GB CUDA test OOMed the first quality run, which was rerun.
+  2. 11:39: a 29 GB proof job OOMed the bs2 C12/C28 A-B-B-A's first glue sweep.
+  3. 13:23-14:01: a 614 MiB setup job held up the T30 A-B-B-A's B1.
+
+  After interruption 2 the in-flight A-B-B-A and the soak moved to bs3; the bs2 A-B-B-A was never used. Since then
+  `compute/sweep_abba.sh` and `glue/k1_soak.sh` start a sweep only on a GPU with no compute process, and rerun a pair
+  that fails whole (up to 3 tries). That listing also counts other workers' servers.
+- **Idle co-tenant swap on bs2.** The gate refuses to start with more than 2 GB of swap in use. Twice, at 11:05 and
+  13:16, idle swap from co-tenants (2.3 and 2.1 GB) blocked a run while MemAvailable was 54 GB and si/so ~0. With the
+  coordinator's approval, `swapoff -a && swapon -a` cleared it each time, in 23 s and 22 s. The rule itself is
+  unchanged.
+- **Units per host.** A performance unit (an A-B-B-A set or the soak) runs whole on one host and holds that host's
+  `/data/jooman/g4poc/unit.lock` (`glue/k1_unit.sh`), so two workers' A-B-B-A sets never interleave.
+  - bs2: correctness gates 0-5 and the T30 A-B-B-A.
+  - bs3: the C12/C28 A-B-B-A and the soak.
