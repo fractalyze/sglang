@@ -184,10 +184,10 @@ class TestDSABackendDPPadding(unittest.TestCase):
         self.assertTrue(torch.all(output[:2] == 1))
         self.assertTrue(torch.all(output[2:] == 0))
 
-    def _flashmla_kv_backend(self, *, schedules_topk_length=False, index_kpool=1):
+    def _flashmla_kv_backend(self, *, num_sm_parts=0, index_kpool=1):
         backend = SimpleNamespace(
             _flashmla_kv_q_row_fit=None,
-            _flashmla_kv_schedules_topk_length=schedules_topk_length,
+            _flashmla_kv_num_sm_parts=num_sm_parts,
             flashmla_kv_num_q_heads=2,
             real_page_size=64,
             kv_cache_dim=3,
@@ -195,9 +195,16 @@ class TestDSABackendDPPadding(unittest.TestCase):
             dsa_index_topk=4,
             dsa_index_kpool=index_kpool,
         )
-        backend._flashmla_kv_topk_length = MethodType(
-            DeepseekSparseAttnBackend._flashmla_kv_topk_length, backend
-        )
+        for method in (
+            "_flashmla_kv_topk_length",
+            "_flashmla_kv_skips_padding",
+            "_compute_flashmla_row_per_part_metadata",
+        ):
+            setattr(
+                backend,
+                method,
+                MethodType(getattr(DeepseekSparseAttnBackend, method), backend),
+            )
         metadata_rows = []
 
         def fake_compute_flashmla_metadata(*, cache_seqlens, seq_len_q):
@@ -239,14 +246,10 @@ class TestDSABackendDPPadding(unittest.TestCase):
             ),
         )
 
-    def _run_flashmla_kv_layers(
-        self, *, dsa_cache_seqlens, num_q_rows, schedules_topk_length=False
-    ):
+    def _run_flashmla_kv_layers(self, *, dsa_cache_seqlens, num_q_rows, num_sm_parts=0):
         """Two layers of one forward through _forward_flashmla_kv with q of
         num_q_rows; returns the seqlens FlashMLA got and the metadata rebuilds."""
-        backend, metadata_rows = self._flashmla_kv_backend(
-            schedules_topk_length=schedules_topk_length
-        )
+        backend, metadata_rows = self._flashmla_kv_backend(num_sm_parts=num_sm_parts)
         metadata = self._flashmla_kv_metadata(dsa_cache_seqlens)
         layer = SimpleNamespace(tp_q_head_num=2, head_dim=3)
 
@@ -256,7 +259,7 @@ class TestDSABackendDPPadding(unittest.TestCase):
         def fake_flash_mla_with_kvcache(
             *, q, cache_seqlens, tile_scheduler_metadata, num_splits=None, **kwargs
         ):
-            if schedules_topk_length:
+            if num_q_rows <= num_sm_parts:
                 # The schedule rides in the sched-meta object, beside the
                 # topk_length it was built from.
                 self.assertIsNone(num_splits)
@@ -313,16 +316,42 @@ class TestDSABackendDPPadding(unittest.TestCase):
         self.assertEqual(metadata_rows, [8])
         self.assertEqual(cache_seqlens.tolist(), [1, 2, 3, 4, 0, 0, 0, 0])
 
-    def test_flashmla_kv_topk_length_schedule_passes_valid_lengths(self):
-        """With the top-k-length schedule, FlashMLA gets each row's valid
-        top-k length alongside the schedule built from it."""
+    def test_flashmla_kv_skips_padding_when_each_row_has_a_part(self):
+        """With a SM part per q row, FlashMLA gets each row's valid top-k length
+        beside the schedule."""
         cache_seqlens, metadata_rows = self._run_flashmla_kv_layers(
             dsa_cache_seqlens=torch.tensor([1, 2, 3, 4, 0, 0], dtype=torch.int32),
             num_q_rows=8,
-            schedules_topk_length=True,
+            num_sm_parts=8,
         )
         self.assertEqual(metadata_rows, [8])
         self.assertEqual(cache_seqlens.tolist(), [1, 2, 3, 4, 0, 0, 0, 0])
+
+    def test_flashmla_kv_keeps_full_topk_with_more_rows_than_parts(self):
+        cache_seqlens, _ = self._run_flashmla_kv_layers(
+            dsa_cache_seqlens=torch.tensor([1, 2, 3, 4], dtype=torch.int32),
+            num_q_rows=4,
+            num_sm_parts=3,
+        )
+        self.assertEqual(cache_seqlens.tolist(), [1, 2, 3, 4])
+
+    def test_flashmla_kv_row_per_part_schedule(self):
+        backend, _ = self._flashmla_kv_backend(num_sm_parts=5)
+        metadata = backend._compute_flashmla_row_per_part_metadata(
+            torch.tensor([0, 64, 65, 4], dtype=torch.int32)
+        )
+        # begin_req, end_req, begin_block, end_block, then split fields and pad.
+        self.assertEqual(
+            metadata.flashmla_metadata.tolist(),
+            [
+                [0, 0, 0, 1, 0, 0, 0, 0],
+                [1, 1, 0, 1, 0, 0, 0, 0],
+                [2, 2, 0, 2, 0, 0, 0, 0],
+                [3, 3, 0, 1, 0, 0, 0, 0],
+                [4, 3, 0, 0, 0, 0, 0, 0],
+            ],
+        )
+        self.assertEqual(metadata.num_splits.tolist(), [0, 1, 2, 3, 4])
 
     def test_flashmla_kv_topk_length_clamps_pooled_tail_to_topk(self):
         seqlens = torch.tensor([2, 4, 6], dtype=torch.int32)

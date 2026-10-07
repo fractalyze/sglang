@@ -495,14 +495,13 @@ class DeepseekSparseAttnBackend(
             self.device_capability = torch.cuda.get_device_capability()
         self.device_sm_major = self.device_capability[0]
         self.kv_cache_dtype = model_runner.kv_cache_dtype
-        # flashmla_kv schedules each row's valid top-k prefix on SM90, where the
-        # FlashMLA decode scheduling constants are known; elsewhere it keeps the
-        # full-topk schedule from get_mla_metadata.
-        self._flashmla_kv_schedules_topk_length = self.device_sm_major == 9
-        if self._flashmla_kv_schedules_topk_length:
-            self._num_sms = torch.cuda.get_device_properties(
+        # SM parts of FlashMLA's SM90 sparse decode (Decode_Sm90_Impl::get_meta at
+        # s_q = 1); 0 elsewhere, where flashmla_kv keeps the full-topk schedule.
+        self._flashmla_kv_num_sm_parts = 0
+        if self.device_sm_major == 9:
+            self._flashmla_kv_num_sm_parts = torch.cuda.get_device_properties(
                 self.device
-            ).multi_processor_count
+            ).multi_processor_count // (self.flashmla_kv_num_q_heads // 64)
 
         # `flashmla_sparse_q8` = the native FP8 SM90 sparse-prefill kernel. It always
         # runs FP8 (requires fp8_e4m3 KV) and is SM90-only, so validate both at
@@ -2979,7 +2978,7 @@ class DeepseekSparseAttnBackend(
         )  # requirement of FlashMLA decode kernel
 
         flashmla_metadata = metadata.flashmla_metadata
-        if self._flashmla_kv_schedules_topk_length:
+        if self._flashmla_kv_skips_padding(num_rows=q_all.shape[0]):
             # The schedule covers only each row's valid top-k prefix, so the
             # kernel must be told where that prefix ends.
             schedule = dict(
@@ -3768,9 +3767,16 @@ class DeepseekSparseAttnBackend(
             return cache_seqlens.clamp(max=self.dsa_index_topk)
         return cache_seqlens
 
+    def _flashmla_kv_skips_padding(self, num_rows: int) -> bool:
+        # With a row per SM part, a row's time is its own block count, so
+        # stopping at its valid top-k length cannot slow the longest row down.
+        return num_rows <= self._flashmla_kv_num_sm_parts
+
     def _compute_flashmla_metadata(self, cache_seqlens: torch.Tensor, seq_len_q: int):
-        if self._flashmla_kv_schedules_topk_length:
-            return self._compute_flashmla_topk_length_metadata(cache_seqlens, seq_len_q)
+        if seq_len_q == 1 and self._flashmla_kv_skips_padding(
+            num_rows=cache_seqlens.shape[0]
+        ):
+            return self._compute_flashmla_row_per_part_metadata(cache_seqlens)
 
         from sgl_kernel.flash_mla import get_mla_metadata
 
@@ -3792,40 +3798,29 @@ class DeepseekSparseAttnBackend(
             num_splits=num_splits,
         )
 
-    def _compute_flashmla_topk_length_metadata(
-        self, cache_seqlens: torch.Tensor, seq_len_q: int
+    def _compute_flashmla_row_per_part_metadata(
+        self, cache_seqlens: torch.Tensor
     ) -> DSAFlashMLAMetadata:
-        """FlashMLA's SM90 split-KV schedule over each row's valid top-k prefix."""
-        from sglang.kernels.ops.attention.dsv4.flashmla_sched_meta import (
-            META_INTS,
-            flashmla_sched_meta,
+        """FlashMLA split-KV schedule giving each row a whole SM part of its own."""
+        # DecodingSchedMeta, per part: begin_req_idx, end_req_idx, begin_block_idx,
+        # end_block_idx, begin_split_idx, is_first_req_splitted,
+        # is_last_req_splitted, pad. Unsplit rows write their output directly,
+        # so the combine kernel skips them.
+        num_rows, device = cache_seqlens.shape[0], cache_seqlens.device
+        num_blocks = (self._flashmla_kv_topk_length(cache_seqlens) + 63) // 64
+        rows = torch.arange(num_rows, dtype=torch.int32, device=device)
+        flashmla_metadata = torch.zeros(
+            (self._flashmla_kv_num_sm_parts, 8), dtype=torch.int32, device=device
         )
-
-        device = cache_seqlens.device
-        # Decode_Sm90_Impl::get_meta's part count; FlashMLA checks the metadata
-        # shape against it.
-        num_sm_parts = max(
-            self._num_sms // seq_len_q // (self.flashmla_kv_num_q_heads // 64), 1
-        )
-        flashmla_metadata = torch.empty(
-            (num_sm_parts, META_INTS), dtype=torch.int32, device=device
-        )
-        num_splits = torch.empty(
-            (cache_seqlens.shape[0] + 1,), dtype=torch.int32, device=device
-        )
-        flashmla_sched_meta(
-            flashmla_metadata,
-            num_splits,
-            topk_length=self._flashmla_kv_topk_length(cache_seqlens),
-            # Decode_Sm90_Impl::get_meta's block_size_topk and
-            # fixed_overhead_num_blocks.
-            block_size_n=64,
-            fixed_overhead_num_blocks=5,
-            topk=self.dsa_index_topk,
-        )
+        flashmla_metadata[:num_rows, 0] = rows
+        flashmla_metadata[:num_rows, 1] = rows
+        flashmla_metadata[:num_rows, 3] = num_blocks.clamp(min=1)
+        # Idle parts start past the last row, which the kernel returns on.
+        flashmla_metadata[num_rows:, 0] = num_rows
+        flashmla_metadata[num_rows:, 1] = num_rows - 1
         return DSAFlashMLAMetadata(
             flashmla_metadata=flashmla_metadata,
-            num_splits=num_splits,
+            num_splits=torch.arange(num_rows + 1, dtype=torch.int32, device=device),
         )
 
 

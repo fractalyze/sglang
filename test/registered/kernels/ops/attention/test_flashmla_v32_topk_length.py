@@ -18,9 +18,6 @@ pytestmark = pytest.mark.skipif(
 # the 656-byte fp8 KV token.
 H_Q, D_QK, D_V, TOPK, PAGE = 128, 576, 512, 2048, 64
 NUM_TOKENS = 64 * 1024
-BLOCK_SIZE_N = 64
-# FlashMLA's DecodingSchedMeta ends in a `_pad` word it never writes.
-DEFINED = slice(0, 7)
 
 
 def _inputs(lengths, seed=0):
@@ -44,32 +41,42 @@ def _inputs(lengths, seed=0):
     return q, quantize_k_cache(kv), indices
 
 
-def _backend_schedule(topk_length):
-    """The schedule DeepseekSparseAttnBackend builds for flashmla_kv."""
+def _backend():
+    """The flashmla_kv pieces of DeepseekSparseAttnBackend on this GPU."""
     from sglang.srt.layers.attention.dsa_backend import DeepseekSparseAttnBackend
 
+    num_sms = torch.cuda.get_device_properties(0).multi_processor_count
     backend = SimpleNamespace(
-        _num_sms=torch.cuda.get_device_properties(0).multi_processor_count,
-        flashmla_kv_num_q_heads=H_Q,
+        _flashmla_kv_num_sm_parts=num_sms // (H_Q // 64),
         dsa_index_topk=TOPK,
         dsa_index_kpool=1,
     )
-    backend._flashmla_kv_topk_length = MethodType(
-        DeepseekSparseAttnBackend._flashmla_kv_topk_length, backend
-    )
-    metadata = DeepseekSparseAttnBackend._compute_flashmla_topk_length_metadata(
-        backend, topk_length, seq_len_q=1
-    )
-    return metadata.flashmla_metadata, metadata.num_splits
+    for method in (
+        "_flashmla_kv_topk_length",
+        "_flashmla_kv_skips_padding",
+        "_compute_flashmla_row_per_part_metadata",
+    ):
+        setattr(
+            backend,
+            method,
+            MethodType(getattr(DeepseekSparseAttnBackend, method), backend),
+        )
+    return backend
 
 
-def _decode(q, kv, indices, topk_length, sched=None):
-    """Sparse decode; with no `sched`, FlashMLA schedules the call itself."""
+def _decode(q, kv, indices, topk_length=None):
+    """Sparse decode: today's full-top-k path with no `topk_length`, else the
+    backend's row-per-part schedule with it."""
     import sgl_kernel.flash_mla as flash_mla
 
     b = q.shape[0]
-    if sched is None:
-        sched = flash_mla.FlashMLASchedMeta()
+    sched = flash_mla.FlashMLASchedMeta()
+    if topk_length is not None:
+        backend = _backend()
+        assert backend._flashmla_kv_skips_padding(num_rows=b)
+        metadata = backend._compute_flashmla_row_per_part_metadata(topk_length)
+        sched.tile_scheduler_metadata = metadata.flashmla_metadata
+        sched.num_splits = metadata.num_splits
     out, _ = flash_mla.flash_mla_with_kvcache(
         q,
         kv,
@@ -83,14 +90,6 @@ def _decode(q, kv, indices, topk_length, sched=None):
         is_fp8_kvcache=True,
     )
     return out
-
-
-def _backend_decode(q, kv, indices, topk_length):
-    import sgl_kernel.flash_mla as flash_mla
-
-    meta, splits = _backend_schedule(topk_length)
-    sched = flash_mla.FlashMLASchedMeta(tile_scheduler_metadata=meta, num_splits=splits)
-    return _decode(q, kv, indices, topk_length, sched)
 
 
 def _lengths(b, mode):
@@ -107,59 +106,40 @@ def _lengths(b, mode):
 
 @pytest.mark.parametrize("b", [8, 64])
 @pytest.mark.parametrize("mode", ["full", "short", "mixed"])
-def test_topk_length_matches_full_topk(b, mode):
-    """Stopping a row at its valid length gives the full-top-k row's output: the
-    skipped slots are -1 padding the full run masks out."""
+def test_padding_skip_is_bitwise_full_topk(b, mode):
+    """Stopping each row at its valid length gives exactly today's output: the
+    skipped blocks hold only -1 slots, which the full run masks out."""
     lengths = _lengths(b, mode)
     q, kv, indices = _inputs(lengths)
-    out = _backend_decode(q, kv, indices, lengths)
-    full = _decode(q, kv, indices, None)
+    out = _decode(q, kv, indices, lengths)
+    full = _decode(q, kv, indices)
     valid = lengths > 0
-    torch.testing.assert_close(out[valid], full[valid], atol=2e-3, rtol=2e-3)
+    assert torch.equal(out[valid], full[valid])
 
 
-def test_topk_length_is_the_truncated_top_k():
-    """Rows that share a length run exactly the blocks of top-k rows cut to that
-    length, so the outputs are bitwise equal."""
+def test_padding_skip_is_the_truncated_top_k():
+    """A row runs exactly the blocks of a top-k row cut to its length."""
     lengths = _lengths(64, "short")
     q, kv, indices = _inputs(lengths)
-    cut = (1242 + BLOCK_SIZE_N - 1) // BLOCK_SIZE_N * BLOCK_SIZE_N
+    cut = (1242 + PAGE - 1) // PAGE * PAGE
     truncated = indices[..., :cut].contiguous()
-    assert torch.equal(
-        _backend_decode(q, kv, indices, lengths), _decode(q, kv, truncated, None)
-    )
+    assert torch.equal(_decode(q, kv, indices, lengths), _decode(q, kv, truncated))
 
 
-@pytest.mark.parametrize("mode", ["full", "short", "mixed"])
-def test_backend_schedule_is_flashmla_own(mode):
-    """The backend's schedule is the one FlashMLA computes for itself from the
-    same topk_length, so its shape and split counts match the kernel's."""
-    import sgl_kernel.flash_mla as flash_mla
-
-    lengths = _lengths(64, mode)
-    q, kv, indices = _inputs(lengths)
-    own = flash_mla.FlashMLASchedMeta()
-    _decode(q, kv, indices, lengths, own)
-    meta, splits = _backend_schedule(lengths)
-    assert meta.shape == own.tile_scheduler_metadata.shape
-    assert torch.equal(meta[:, DEFINED], own.tile_scheduler_metadata[:, DEFINED])
-    assert torch.equal(splits, own.num_splits)
-
-
-def test_topk_length_is_deterministic_and_graph_safe():
+def test_padding_skip_is_deterministic_and_graph_safe():
     lengths = _lengths(64, "mixed")
     q, kv, indices = _inputs(lengths)
-    eager = _backend_decode(q, kv, indices, lengths)
-    assert torch.equal(eager, _backend_decode(q, kv, indices, lengths))
+    eager = _decode(q, kv, indices, lengths)
+    assert torch.equal(eager, _decode(q, kv, indices, lengths))
 
     graph = torch.cuda.CUDAGraph()
     stream = torch.cuda.Stream()
     stream.wait_stream(torch.cuda.current_stream())
     with torch.cuda.stream(stream):
-        _backend_decode(q, kv, indices, lengths)
+        _decode(q, kv, indices, lengths)
     torch.cuda.current_stream().wait_stream(stream)
     with torch.cuda.graph(graph):
-        replayed = _backend_decode(q, kv, indices, lengths)
+        replayed = _decode(q, kv, indices, lengths)
     graph.replay()
     torch.cuda.synchronize()
     assert torch.equal(replayed, eager)
