@@ -4,7 +4,7 @@
 # each lever in LEVERS switched on. Blocks until the server exits, like launch.sh.
 #   launch_stack.sh <baseline dir> <python/sglang tree> eagle|nospec [server flag ...]
 # <baseline dir> holds runs/baseline-current (launch.sh, image_id.txt, the loader fix).
-# LEVERS defaults to every lever; LEVERS="" is the baseline itself, plus any server flags.
+# LEVERS defaults to "moe dense"; LEVERS="" is the baseline itself, plus any server flags.
 # The derived launcher is written to $DERIVED (default: a temp file) and checked against
 # launch.sh before it runs, so a launch.sh edit that breaks a substitution fails here.
 set -euo pipefail
@@ -21,6 +21,7 @@ for lever in $LEVERS; do
   case $lever in
     moe) ARGS="$ARGS --moe-runner-backend w4a16_sm90" ;;
     dense) ENV="$ENV -e SGLANG_USE_W4A16_SM90_GEMM=1" ;;
+    comm) ENV="$ENV -e SGLANG_OPT_USE_PUSH_AG_RS=1" ;;
     *) echo "unknown lever $lever" >&2; exit 2 ;;
   esac
 done

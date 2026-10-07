@@ -30,15 +30,18 @@ prompts, since a single EAGLE wave finishes decoding before the profiler arms.
 | `base-nospec` | baseline | `nospec` | 1024 | no | c1024 | c512, c1024 |
 | `base-eagle` | baseline | `eagle` | 512 (its own) | no | none | c128, c256 |
 | `stack-nospec-fp8kv` | stack, `--kv-cache-dtype fp8_e4m3` | `nospec` | 1536 | yes | c512, c1024, c1536 | c512, c1024, c1536 |
+| `stack-nospec-ab` | stack | `nospec` | 1024 | no | c256, c512 | c512 |
+| `stack-nospec-comm` | stack + `comm` | `nospec` | 1024 | yes | c256, c512 | c512 |
 
 `launch_stack.sh` starts the stack. It is `launch.sh` with these changes:
 
 - the `dsv32/base` `python/sglang` tree mounted over the image's;
 - each lever in `LEVERS` switched on: `moe` adds `--moe-runner-backend
-  w4a16_sm90`, `dense` sets `SGLANG_USE_W4A16_SM90_GEMM=1`;
+  w4a16_sm90`, `dense` sets `SGLANG_USE_W4A16_SM90_GEMM=1`, and `comm` sets
+  `SGLANG_OPT_USE_PUSH_AG_RS=1`;
 - any server flags passed after the mode.
 
-`LEVERS` defaults to every lever; `LEVERS=""` is the baseline plus the passed
+`LEVERS` defaults to `moe dense`; `LEVERS=""` is the baseline plus the passed
 flags, which is how the baseline arm adds its request cap. A new lever is one
 more `LEVERS` entry. The launcher checks that each change landed in its copy of
 `launch.sh` and fails otherwise.
@@ -54,6 +57,10 @@ branches from, so nothing else differs. A request cap of 1024 is
 so each rank takes 128. Each session saves the derived launcher's diff against
 `launch.sh` as `launch.diff`, and the per-rank KV pool
 (`max_total_num_tokens`) with the scheduler's retraction count as `kv.txt`.
+
+`stack-nospec-ab` and `stack-nospec-comm` are the `comm` lever's A/B. They run
+the same commit, one without the lever and one with it, so the lever is the only
+difference.
 
 `stack-nospec-fp8kv` is a KV-capacity point, not part of the stack-vs-baseline
 comparison. With the bf16 KV cache, a rank's pool cannot hold 128 requests of
