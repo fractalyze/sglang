@@ -15,14 +15,15 @@ BASELINE_S3=s3://fractalyze-dsv32-use2/runs/baseline-current
 export MODEL=/opt/dlami/nvme/models/DeepSeek-V3.2-AWQ
 export GSM8K_DATA=/opt/dlami/nvme/work/dsv32/data/gsm8k_test.jsonl
 
-# <arm> <mode> <request cap or -> <GSM8K 0|1> <bench concurrencies> / <profile concurrencies>
+# <arm> <mode> <request cap or -> <GSM8K + long-context 0|1> <bench concurrencies> / <profile concurrencies>
 case $SESSION in
   stack-nospec) SPEC="stack nospec 1024 1 512 1024 / 512 1024" ;;
   stack-eagle) SPEC="stack eagle - 1 128 256 / 128 256" ;;
   base-nospec) SPEC="base nospec 1024 0 1024 / 512 1024" ;;
   base-eagle) SPEC="base eagle - 0 / 128 256" ;;
   # A KV-capacity point: the fp8 KV cache holds more requests per rank than bf16.
-  stack-nospec-fp8kv) SPEC="stack nospec 1024 1 512 1024 /"; EXTRA="--kv-cache-dtype fp8_e4m3" ;;
+  stack-nospec-fp8kv)
+    SPEC="stack nospec 1536 1 512 1024 1536 / 512 1024 1536"; EXTRA="--kv-cache-dtype fp8_e4m3" ;;
   *) echo "unknown session $SESSION" >&2; exit 2 ;;
 esac
 read -r ARM MODE CAP GSM8K REST <<< "$SPEC"
@@ -49,6 +50,7 @@ if [ ! -f $SRC/.unpacked ]; then
   touch $SRC/.unpacked
 fi
 cp "$0" "$SRC_TAR" $OUT/
+export HERE=$(cd "$(dirname "$0")" && pwd)
 
 # The session's server: launch_stack.sh with every lever for the stack arm and none for the
 # baseline, plus the request cap and any extra server flags.
@@ -57,7 +59,7 @@ LEVERS="moe dense"
 SERVER_FLAGS=$EXTRA
 [ $CAP != - ] && SERVER_FLAGS="--max-running-requests $CAP $SERVER_FLAGS"
 LAUNCH_STACK=$OUT/launch_stack.sh
-cp "$(dirname "$0")/launch_stack.sh" $LAUNCH_STACK
+cp "$HERE/launch_stack.sh" $LAUNCH_STACK
 export LEVERS SERVER_FLAGS LAUNCH_STACK DERIVED=$OUT/launch_$ARM.sh
 export CACHE=$W/cache-$ARM CONTAINER=stack-zgvm6q-$ARM
 
@@ -91,6 +93,9 @@ session() {
       python3 -m sglang.test.few_shot_gsm8k --num-questions 1319 --parallel 128 \
         --data-path $GSM8K_DATA --host 127.0.0.1 --port 30000 > $OUT/gsm8k.log 2>&1
     grep -E '^(Accuracy|Invalid|Latency|Output throughput)' $OUT/gsm8k.log > $OUT/gsm8k.txt
+    # Long context, where a lossy KV cache would show first.
+    timeout 1800 python3 $HERE/niah.py --lengths 8192 16384 32768 \
+      --output $OUT/niah.json > $OUT/niah.txt 2>&1
   fi
   for c in $BENCH_CS; do
     timeout 2700 $B/bench.sh $c $OUT/bench_c$c.jsonl > $OUT/bench_c$c.log 2>&1

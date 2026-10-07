@@ -15,20 +15,21 @@ every server here, unmodified.
 ## Sessions
 
 `run_session.sh` runs one session under `gpu-lease 8`. It starts a server, then
-runs GSM8K, benches with `bench.sh`, and records decode-stage torch-profiler
-traces of a wave of c concurrent requests shaped like `bench.sh`'s. Each profile
+runs GSM8K and the long-context check, benches with `bench.sh`, and records
+decode-stage torch-profiler traces of a wave of c concurrent requests shaped
+like `bench.sh`'s. Each profile
 starts once every request is admitted and prefill has drained, or at once when
 the KV pool cannot hold every request. An EAGLE profile sends four waves of
 prompts, since a single EAGLE wave finishes decoding before the profiler arms.
 `PROFILE_ONLY=1` re-records a session's profiles without GSM8K and the benches.
 
-| session | arm | `launch.sh` mode | request cap | GSM8K | bench | profile |
+| session | arm | `launch.sh` mode | request cap | GSM8K, long context | bench | profile |
 |---|---|---|---|---|---|---|
 | `stack-nospec` | stack | `nospec` | 1024 | yes | c512, c1024 | c512, c1024 |
 | `stack-eagle` | stack | `eagle` | 512 (its own) | yes | c128, c256 | c128, c256 |
 | `base-nospec` | baseline | `nospec` | 1024 | no | c1024 | c512, c1024 |
 | `base-eagle` | baseline | `eagle` | 512 (its own) | no | none | c128, c256 |
-| `stack-nospec-fp8kv` | stack, `--kv-cache-dtype fp8_e4m3` | `nospec` | 1024 | yes | c512, c1024 | none |
+| `stack-nospec-fp8kv` | stack, `--kv-cache-dtype fp8_e4m3` | `nospec` | 1536 | yes | c512, c1024, c1536 | c512, c1024, c1536 |
 
 `launch_stack.sh` starts the stack. It is `launch.sh` with these changes:
 
@@ -58,9 +59,14 @@ so each rank takes 128. Each session saves the derived launcher's diff against
 comparison. With the bf16 KV cache, a rank's pool cannot hold 128 requests of
 2048 tokens, so c1024 measures retractions rather than kernels.
 
+The long-context check is `niah.py`: a needle-in-a-haystack recall over 8k,
+16k and 32k token contexts, eleven depths each. It is where a lossy KV cache
+shows first, which GSM8K's short prompts do not exercise. It writes
+`niah.txt` (recall per length) and `niah.json` (every reply).
+
 ```sh
 git archive --format=tar.gz -o src.tar.gz HEAD python/sglang test/registered/kernels/benchmark/gemm
-# On the node, as root, with launch_stack.sh next to run_session.sh:
+# On the node, as root, with launch_stack.sh and niah.py next to run_session.sh:
 ./run_session.sh stack-nospec <run-name> src.tar.gz
 ```
 
