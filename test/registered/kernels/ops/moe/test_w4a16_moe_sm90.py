@@ -180,10 +180,7 @@ _TOKENS_PER_EXPERT = [1, 4, 8, 16, 32, 64, 128]
 @pytest.mark.parametrize("k,n", _SHAPES)
 @pytest.mark.parametrize("tokens_per_expert", _TOKENS_PER_EXPERT)
 @pytest.mark.parametrize("weighted", [False, True])
-@pytest.mark.parametrize("half_tile_tail", [False, True])
-def test_routed_gemm_matches_reference(
-    k, n, tokens_per_expert, weighted, half_tile_tail
-):
+def test_routed_gemm_matches_reference(k, n, tokens_per_expert, weighted):
     num_experts, top_k = 16, 4
     num_tokens = max(1, tokens_per_expert * num_experts // top_k)
     weights = repack_awq_moe_weights(*_random_awq(num_experts, k, n, "cuda"), _GROUP)
@@ -213,7 +210,6 @@ def test_routed_gemm_matches_reference(
         topk_weights=topk_weights.view(-1) if weighted else None,
         token_block=token_block,
         a_row_divisor=a_row_divisor,
-        half_tile_tail=half_tile_tail,
     )
     expected = _routed_reference(
         a, dense, topk_ids, topk_weights if weighted else None, a_row_divisor
@@ -275,56 +271,6 @@ def test_zero_unrouted_matches_zero_fill_bitwise(tokens_per_expert, masked):
     # NaN-filled, so a row the kernel skips shows up.
     unfilled = torch.full(rows, float("nan"), device="cuda").to(torch.bfloat16)
     assert torch.equal(run(unfilled, True), zero_filled)
-
-
-@pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
-# Tile counts as (full waves, remainder in eighths of the SM count): all halves, a
-# tail just past one and two full waves, and a remainder too large for halves.
-@pytest.mark.parametrize("waves,eighths", [(0, 2), (1, 1), (2, 3), (1, 6)])
-@pytest.mark.parametrize("masked", [False, True])
-@pytest.mark.parametrize("zero_unrouted", [False, True])
-def test_half_tile_tail_is_bitwise_the_full_tile_result(
-    waves, eighths, masked, zero_unrouted
-):
-    """Halves run each element's K chain unchanged, so the output matches full tiles
-    bit for bit, padding and unrouted rows included."""
-    num_experts, top_k, k, n, token_block = 16, 8, 1024, 512, 32
-    sms = torch.cuda.get_device_properties(0).multi_processor_count
-    num_tiles = waves * sms + eighths * sms // 8
-    num_blocks = num_tiles // (n // (2 * TILE_N))
-    # Blocks cycle through the experts, each one full of distinct rows but the last,
-    # which pads with the out-of-range sentinel; masked runs give some blocks no expert.
-    num_rows = num_blocks * token_block - token_block // 2
-    sorted_ids = torch.arange(num_blocks * token_block, dtype=torch.int32)
-    sorted_ids = sorted_ids[torch.randperm(sorted_ids.numel())].clamp(max=num_rows)
-    expert_ids = torch.arange(num_blocks, dtype=torch.int32) % num_experts
-    if masked:
-        expert_ids[::5] = -1
-    sorted_ids, expert_ids = sorted_ids.cuda(), expert_ids.cuda()
-    num_post_padded = torch.tensor([num_blocks * token_block], dtype=torch.int32).cuda()
-    weights = repack_awq_moe_weights(*_random_awq(num_experts, k, n, "cuda"), _GROUP)
-    a = (torch.randn(num_rows, k) * 0.5).to(torch.bfloat16).cuda()
-
-    def run(half_tile_tail):
-        # NaN-filled, so a row either schedule skips shows up.
-        out = torch.full((num_rows, n), float("nan"), device="cuda")
-        out = out.to(torch.bfloat16)
-        w4a16_moe_sm90_gemm(
-            a=a,
-            out=out,
-            weights=weights,
-            sorted_token_ids=sorted_ids,
-            expert_ids=expert_ids,
-            num_tokens_post_padded=num_post_padded,
-            topk_weights=None,
-            token_block=token_block,
-            a_row_divisor=1,
-            zero_unrouted=zero_unrouted,
-            half_tile_tail=half_tile_tail,
-        )
-        return out.view(torch.int16)
-
-    assert torch.equal(run(True), run(False))
 
 
 def _awq_layer(num_experts, hidden, intermediate, device):

@@ -24,12 +24,6 @@ limitations under the License.
 // persistent over (token block, 256-row tile) pairs, rows fastest so concurrent
 // CTAs share the block's tokens in L2.
 //
-// With kHalfTail, the tiles past the last full wave run as 128-row halves instead,
-// both warpgroups taking one 64-row atom of the same weight tile, so a launch whose
-// tile count is just past a multiple of the grid ends half a tile sooner. Every
-// output element is still summed over K by one wgmma chain, as in a full tile, so
-// the result is bitwise the same whichever unit computes it.
-//
 // The weight layout is produced by sglang/kernels/ops/moe/w4a16_moe_sm90.py.
 
 #pragma once
@@ -106,7 +100,7 @@ struct Config {
   static_assert(kStages >= 3, "token block too wide for a three-stage pipeline");
   static constexpr int kSmemBytes = kAlignSlack + kStages * kStageBytes + kEpilogueBytes + kMetaBytes + kBarrierBytes;
 
-  static constexpr int kTileTxBytes = kWeightBytes + kScaleBytes + kZeroBytes;
+  static constexpr int kStageTxBytes = kTilesPerCta * (kWeightBytes + kScaleBytes + kZeroBytes);
   // One expect_tx arrival plus one cp.async arrival per producer thread.
   static constexpr int kFullArrivals = 1 + kProducerThreads;
 
@@ -170,46 +164,7 @@ struct RingPos {
   }
 };
 
-// One (token block, 256-row tile) pair, or with half >= 0 only its 128-row weight
-// tile `half`, shared by both warpgroups.
-struct Work {
-  int tile;
-  int half;
-};
-
-// One CTA's work in order: whole tiles strided by the grid, then with kHalfTail the
-// remainder past the last full wave as halves, one per CTA, adjacent CTAs taking
-// the two halves of a tile so they share its tokens in L2. A remainder over half
-// the grid would take a whole round as halves too, so it stays whole.
-template <bool kHalfTail>
-struct Schedule {
-  int full_tiles;
-  int num_halves;
-  int item;
-
-  __device__ explicit Schedule(int num_tiles) : full_tiles(num_tiles), num_halves(0), item(blockIdx.x) {
-    const int remainder = num_tiles % gridDim.x;
-    if (kHalfTail && 2 * remainder <= int(gridDim.x)) {
-      full_tiles = num_tiles - remainder;
-      num_halves = 2 * remainder;
-    }
-  }
-  __device__ bool valid() const {
-    return item < full_tiles + num_halves;
-  }
-  __device__ Work work() const {
-    if (item < full_tiles) return {item, -1};
-    const int h = item - full_tiles;
-    return {full_tiles + h / kTilesPerCta, h % kTilesPerCta};
-  }
-  __device__ Schedule next() const {
-    Schedule s = *this;
-    s.item += gridDim.x;
-    return s;
-  }
-};
-
-template <int kTokenBlock, bool kHalfTail>
+template <int kTokenBlock>
 __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64_t* full, uint64_t* empty) {
   using Cfg = Config<kTokenBlock>;
   constexpr int kRowsPerThread = kTokenBlock * kChunksPerTokenRow / kProducerThreads;
@@ -231,10 +186,10 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
     int expert = -1;  // negative: no local expert, the tile is skipped
     int ids[kRowsPerThread];
   };
-  auto load_meta = [&](const Schedule<kHalfTail>& sched) {
+  auto load_meta = [&](int tile) {
     Meta m;
-    if (sched.valid()) {
-      const int m_block = sched.work().tile / n_pairs;
+    if (tile < num_tiles) {
+      const int m_block = tile / n_pairs;
       m.expert = p.expert_ids[m_block];
 #pragma unroll
       for (int i = 0; i < kRowsPerThread; ++i) {
@@ -245,11 +200,9 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   };
 
   RingPos pos;
-  Schedule<kHalfTail> sched(num_tiles);
-  Meta cur = load_meta(sched);
-  for (; sched.valid(); sched = sched.next()) {
-    const Work work = sched.work();
-    const Meta next = load_meta(sched.next());
+  Meta cur = load_meta(blockIdx.x);
+  for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
+    const Meta next = load_meta(tile + gridDim.x);
     if (cur.expert < 0) {
       cur = next;
       continue;
@@ -262,10 +215,7 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
       valid[i] = cur.ids[i] < p.num_rows;
       src[i] = p.a + int64_t(valid[i] ? cur.ids[i] / p.a_row_divisor : 0) * p.k + chunk * 8;
     }
-    // A half streams its one weight tile into the first slot.
-    const int first_tile = work.tile % n_pairs * kTilesPerCta + max(work.half, 0);
-    const int stage_tiles = work.half < 0 ? kTilesPerCta : 1;
-    const int64_t stage_index = (int64_t(cur.expert) * n_tiles + first_tile) * k_tiles;
+    const int64_t stage_index = (int64_t(cur.expert) * n_tiles + tile % n_pairs * kTilesPerCta) * k_tiles;
 
     for (int kt = 0; kt < k_tiles; ++kt, pos.advance(Cfg::kStages)) {
       const int s = pos.stage;
@@ -273,8 +223,9 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
       uint8_t* stage = stages + s * Cfg::kStageBytes;
 
       if (tid == 0) {
-        device::ptx::mbar_arrive_expect_tx(&full[s], stage_tiles * Cfg::kTileTxBytes);
-        for (int w = 0; w < stage_tiles; ++w) {
+        device::ptx::mbar_arrive_expect_tx(&full[s], Cfg::kStageTxBytes);
+#pragma unroll
+        for (int w = 0; w < kTilesPerCta; ++w) {
           const int64_t block = stage_index + w * k_tiles + kt;
           bulk_copy_g2s(stage + w * kWeightBytes, p.qweight + block * kWordsPerStage, kWeightBytes, &full[s]);
           bulk_copy_g2s(stage + Cfg::kScaleOffset + w * kScaleBytes, p.scales + block * kTileN, kScaleBytes, &full[s]);
@@ -294,7 +245,7 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   }
 }
 
-template <int kTokenBlock, bool kZeroUnrouted, bool kHalfTail>
+template <int kTokenBlock, bool kZeroUnrouted>
 __device__ __forceinline__ void
 consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_t* full, uint64_t* empty) {
   using namespace cute;
@@ -332,31 +283,30 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
     int expert = -1;  // negative: no local expert, the tile is skipped
     int id = 0;
   };
-  auto load_meta = [&](const Schedule<kHalfTail>& sched) {
+  auto load_meta = [&](int tile) {
     Meta m;
-    if (sched.valid()) {
-      const int m_block = sched.work().tile / n_pairs;
+    if (tile < num_tiles) {
+      const int m_block = tile / n_pairs;
       m.expert = p.expert_ids[m_block];
       if (tid < kTokenBlock) m.id = p.sorted_token_ids[m_block * kTokenBlock + tid];
     }
     return m;
   };
 
-  // Dequantises 64-row atom `atom` of the weight tile in slot `slot` of stage `s`
+  // Dequantises 64-row atom `atom` of this warpgroup's weight tile in stage `s`
   // into `frag_a` and issues its wgmma batch into `acc` without waiting on it.
-  auto issue_atom = [&](auto& frag_a, auto& acc, int s, int slot, int atom) {
+  auto issue_atom = [&](auto& frag_a, auto& acc, int s, int atom) {
     const uint8_t* stage = stages + s * Cfg::kStageBytes;
     const int row = atom * kAtomRows + row_lo;
-    const __nv_bfloat16* scales =
-        reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset + slot * kScaleBytes);
-    const uint8_t* zeros = stage + Cfg::kZeroOffset + slot * kZeroBytes;
+    const __nv_bfloat16* scales = reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset + wg * kScaleBytes);
+    const uint8_t* zeros = stage + Cfg::kZeroOffset + wg * kZeroBytes;
     const nv_bfloat162 scale_lo = __bfloat162bfloat162(scales[row]);
     const nv_bfloat162 scale_hi = __bfloat162bfloat162(scales[row + 8]);
     const nv_bfloat162 zero_lo = biased_zero(zeros[row]);
     const nv_bfloat162 zero_hi = biased_zero(zeros[row + 8]);
 
     Tensor frag_a_words = recast<uint32_t>(frag_a);
-    const uint4* words = reinterpret_cast<const uint4*>(stage + slot * kWeightBytes) + atom * 2 * 128 + tid;
+    const uint4* words = reinterpret_cast<const uint4*>(stage + wg * kWeightBytes) + atom * 2 * 128 + tid;
 #pragma unroll
     for (int half = 0; half < 2; ++half) {
       const uint4 q = words[half * 128];
@@ -386,11 +336,9 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   };
 
   RingPos pos;
-  Schedule<kHalfTail> sched(num_tiles);
-  Meta cur = load_meta(sched);
-  for (; sched.valid(); sched = sched.next()) {
-    const Work work = sched.work();
-    const Meta next = load_meta(sched.next());
+  Meta cur = load_meta(blockIdx.x);
+  for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
+    const Meta next = load_meta(tile + gridDim.x);
     // The producer streams nothing for a block routed to no local expert; with
     // kZeroUnrouted its rows are stored as zeros, so every listed row is written.
     const bool has_expert = cur.expert >= 0;
@@ -414,23 +362,11 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
       for (int kt = 0; kt < k_tiles; ++kt, pos.advance(Cfg::kStages)) {
         const int s = pos.stage;
         device::ptx::mbar_wait_parity(&full[s], pos.phase);
-        if (work.half < 0) {
-          issue_atom(frag_a_lo, acc_lo, s, wg, 0);
-          warpgroup_wait<1>();
-          if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
-          issue_atom(frag_a_hi, acc_hi, s, wg, 1);
-          warpgroup_wait<1>();
-        } else {
-          // A half: this warpgroup's atom of the one tile in slot 0, alternating
-          // fragments so the batch in flight keeps its own.
-          if (kt % 2 == 0) {
-            issue_atom(frag_a_lo, acc_lo, s, 0, wg);
-          } else {
-            issue_atom(frag_a_hi, acc_lo, s, 0, wg);
-          }
-          warpgroup_wait<1>();
-          if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
-        }
+        issue_atom(frag_a_lo, acc_lo, s, 0);
+        warpgroup_wait<1>();
+        if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
+        issue_atom(frag_a_hi, acc_hi, s, 1);
+        warpgroup_wait<1>();
         prev_stage = s;
       }
       warpgroup_wait<0>();
@@ -456,13 +392,10 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
     }
     named_barrier_sync(1 + wg, 128);
 
-    // A full tile leaves this warpgroup's 128-row tile; a half, its 64-row atom.
-    const int tile_in_pair = work.half < 0 ? wg : work.half;
-    const int col = (work.tile % n_pairs * kTilesPerCta + tile_in_pair) * kTileN + (work.half < 0 ? 0 : wg * kAtomRows);
-    const int parts = (work.half < 0 ? kTileN : kAtomRows) / 8;
-    for (int ci = tid; ci < kTokenBlock * parts; ci += 128) {
-      const int token = ci / parts;
-      const int part = ci % parts;
+    const int col = ((tile % n_pairs) * kTilesPerCta + wg) * kTileN;
+    for (int ci = tid; ci < kTokenBlock * kTileN / 8; ci += 128) {
+      const int token = ci / (kTileN / 8);
+      const int part = ci % (kTileN / 8);
       const int id = tile_ids[token];
       if (id >= 0) {
         *reinterpret_cast<uint4*>(p.out + int64_t(id) * p.n + col + part * 8) =
@@ -474,7 +407,7 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   }
 }
 
-template <int kTokenBlock, bool kZeroUnrouted, bool kHalfTail>
+template <int kTokenBlock, bool kZeroUnrouted>
 __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __grid_constant__ Params p) {
   using Cfg = Config<kTokenBlock>;
   extern __shared__ uint8_t smem_raw[];
@@ -497,16 +430,16 @@ __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __gri
 
   if (threadIdx.x < kProducerThreads) {
     cutlass::arch::warpgroup_reg_dealloc<40>();
-    produce<kTokenBlock, kHalfTail>(p, stages, full, empty);
+    produce<kTokenBlock>(p, stages, full, empty);
   } else {
     cutlass::arch::warpgroup_reg_alloc<232>();
-    consume<kTokenBlock, kZeroUnrouted, kHalfTail>(p, stages, epilogue, meta, full, empty);
+    consume<kTokenBlock, kZeroUnrouted>(p, stages, epilogue, meta, full, empty);
   }
 }
 
 }  // namespace w4a16_moe_sm90
 
-template <int kTokenBlock, bool kZeroUnrouted, bool kHalfTail>
+template <int kTokenBlock, bool kZeroUnrouted>
 struct W4A16MoeSm90Kernel {
   using Cfg = w4a16_moe_sm90::Config<kTokenBlock>;
 
@@ -573,11 +506,9 @@ struct W4A16MoeSm90Kernel {
     RuntimeDeviceCheck(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev.device_id));
     // The tile count lives on the device; a CTA without work exits after setup.
     const int64_t max_tiles = sorted_token_ids.size(0) / kTokenBlock * (n_tiles.unwrap() / kTilesPerCta);
-    // With kHalfTail, a remainder past the last full wave fills up to twice as many SMs.
-    const int64_t max_units = kHalfTail ? kTilesPerCta * max_tiles : max_tiles;
-    const int grid = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(sms, max_units)));
+    const int grid = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(sms, max_tiles)));
 
-    constexpr auto kernel = w4a16_moe_sm90_kernel<kTokenBlock, kZeroUnrouted, kHalfTail>;
+    constexpr auto kernel = w4a16_moe_sm90_kernel<kTokenBlock, kZeroUnrouted>;
     [[maybe_unused]] static const auto _ = [] {
       RuntimeDeviceCheck(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, Cfg::kSmemBytes));
       return 0;
