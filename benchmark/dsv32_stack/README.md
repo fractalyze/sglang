@@ -1,12 +1,15 @@
 # DeepSeek V3.2 AWQ: the dsv32/base stack against the max-tuned baseline
 
 This directory measures the whole `dsv32/base` stack on one node of eight H100s
-against the max-tuned SGLang baseline. Both levers are switched on:
+against the max-tuned SGLang baseline. These levers are switched on by default:
 
 - `--moe-runner-backend w4a16_sm90` runs the MoE experts on the W4A16 SM90
   grouped GEMM.
 - `SGLANG_USE_W4A16_SM90_GEMM=1` runs the dense AWQ projections at M <= 192 on
   the W4A16 SM90 GEMM instead of Marlin.
+- `--enable-prefill-delayer` holds a rank's prefill until the other ranks have
+  prefill work too, so their prefills share a step (see "Step types under DP
+  attention" below).
 
 The baseline is `s3://fractalyze-dsv32-use2/runs/baseline-current/`. Its
 `summary.md` holds the numbers. Its `launch.sh` and `bench.sh` start and bench
@@ -37,11 +40,12 @@ prompts, since a single EAGLE wave finishes decoding before the profiler arms.
 
 - the `dsv32/base` `python/sglang` tree mounted over the image's;
 - each lever in `LEVERS` switched on: `moe` adds `--moe-runner-backend
-  w4a16_sm90`, `dense` sets `SGLANG_USE_W4A16_SM90_GEMM=1`, and `comm` sets
-  `SGLANG_OPT_USE_PUSH_AG_RS=1`;
+  w4a16_sm90`, `dense` sets `SGLANG_USE_W4A16_SM90_GEMM=1`, `delayer` adds
+  `--enable-prefill-delayer`, `comm` sets `SGLANG_OPT_USE_PUSH_AG_RS=1`, and
+  `profile` mounts the step record hook;
 - any server flags passed after the mode.
 
-`LEVERS` defaults to `moe dense`; `LEVERS=""` is the baseline plus the passed
+`LEVERS` defaults to `moe dense delayer`; `LEVERS=""` is the baseline plus the passed
 flags, which is how the baseline arm adds its request cap. A new lever is one
 more `LEVERS` entry. The launcher checks that each change landed in its copy of
 `launch.sh` and fails otherwise.
@@ -75,6 +79,48 @@ shows first, which GSM8K's short prompts do not exercise. It writes
 git archive --format=tar.gz -o src.tar.gz HEAD python/sglang test/registered/kernels/benchmark/gemm
 # On the node, as root, with launch_stack.sh and niah.py next to run_session.sh:
 ./run_session.sh stack-nospec <run-name> src.tar.gz
+```
+
+## Step types under DP attention
+
+With DP attention every rank runs every step, because the MoE layers need all
+eight ranks' tokens. A step where one rank prefills is a prefill step on all of
+them: the decode-only ranks wait for it, running their decode batch as 1-token
+extends. When such a step's time follows the largest per-rank prefill rather
+than how many ranks prefill (`step_report.py` prints both), lining the ranks'
+prefills up into shared steps cuts the stall, which is what the `delayer`
+lever does. `run_steps.sh` measures how much of a run those steps take.
+
+- `step_profile/` is a `sitecustomize` that wraps `Scheduler.run_batch` and
+  appends one row per launched step to `$STEP_PROFILE_DIR/steps-dp<r>-tp<t>.csv`.
+  `launch_stack.sh` mounts it when `LEVERS` includes `profile`; the mounted
+  tree is not changed.
+- `step_report.py` lines the ranks' rows up and splits the steps into DECODE
+  (no rank prefills), PREFILL-SOME (some ranks prefill, others only decode)
+  and PREFILL-ALL. For each type it reports count, step time, share of wall
+  time and CUDA graph replay. It also reports the decode stall: the time the
+  PREFILL-SOME steps take beyond a median decode step.
+- `run_steps.sh` serves the stack in its c512 configuration with the `LEVERS`
+  under test (`LEVERS="moe dense"` is the control without the delayer), plus
+  any server flags. It benches each workload in `WORKLOADS` on
+  varied-length random traffic (`--random-range-ratio 0.25` by default), then
+  writes a `<len>_c<c>_r<i>.steps.txt` table per bench; `REPEATS=<n>` benches each
+  workload n times on the same server. `GSM8K=<n>` runs GSM8K n
+  times first.
+
+`tests/test_step_report.py` checks the hook and the report on synthetic
+batches and rows, without GPUs. It needs `absl-py`:
+`uv run --no-project --with absl-py python tests/test_step_report.py`.
+
+Use varied lengths for these A/Bs. With fixed lengths a closed-loop bench
+finishes its requests in waves, so the steps synchronize in a way that served
+traffic does not.
+
+```sh
+# On the node, as root, with launch_stack.sh, step_profile/ and step_report.py next to it:
+LEVERS="moe dense" WORKLOADS="2048:512:1024" ./run_steps.sh control <run-name> src.tar.gz
+WORKLOADS="2048:512:1024" ./run_steps.sh delayer <run-name> src.tar.gz [server flag ...]
+python3 step_report.py <session>/steps --start-ts <t0> --end-ts <t1>
 ```
 
 ## Reading the traces
