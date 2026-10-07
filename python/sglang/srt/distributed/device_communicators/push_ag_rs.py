@@ -10,53 +10,66 @@ fp32 accumulation. The result does not depend on which rank reduces it, and no
 host collective runs per call, so the path is deterministic and CUDA-graph
 safe.
 
-The kernels stage through a CustomAllReduceV2 push workspace of their own,
-sized for a rank's shard; the group's all-reduce workspace is sized for
-all-reduce and is far smaller. Which sizes take the push path, and at what
-launch grid, comes from the checked-in ``sp_collective`` table for the device;
-everything else, and every device without a table, stays on NCCL.
+The kernels stage through the group's CustomAllReduceV2 push workspace, whose
+slot the group enlarges to ``PUSH_SLOT_BYTES`` when this path is on; the
+all-reduce thresholds do not move with it. Which sizes take the push path, and
+at what launch grid, comes from the checked-in ``sp_collective`` table for the
+device; everything else, and every device without a table, stays on NCCL.
 """
 
 import logging
 from typing import Optional
 
 import torch
-from torch.distributed import ProcessGroup
 
 from sglang.kernels.ops.communication import sp_collective
+from sglang.srt.distributed.device_communicators.custom_all_reduce_v2 import (
+    CustomAllReduceV2,
+)
 
 logger = logging.getLogger(__name__)
 
 # Per-peer push slot. Holds a rank's shard of 1024 tokens at hidden 7168 bf16
 # on 8 ranks; larger calls fall back to NCCL.
-_PUSH_SLOT_BYTES = 2 * 1024 * 1024
+PUSH_SLOT_BYTES = 2 * 1024 * 1024
+
+
+def custom_all_reduce_kwargs(ca_class: type) -> dict:
+    """Constructor arguments that let a group's communicator carry this path.
+
+    The push all-gather / reduce-scatter stage a rank's whole shard through the
+    communicator's push slot.
+    """
+    if issubclass(ca_class, CustomAllReduceV2):
+        return {"max_push_size": PUSH_SLOT_BYTES}
+    return {}
+
+
+def create(comm: Optional[object]) -> Optional["PushAllGatherReduceScatter"]:
+    """The push path over ``comm``, or None (NCCL) when ``comm`` cannot carry it."""
+    if (
+        isinstance(comm, CustomAllReduceV2)
+        and not comm.disabled
+        and comm.has_multicast
+        and comm.max_push_size >= PUSH_SLOT_BYTES
+    ):
+        return PushAllGatherReduceScatter(comm)
+    logger.warning(
+        "SGLANG_OPT_USE_PUSH_AG_RS needs CustomAllReduceV2 with multicast on the "
+        "TP group; using NCCL."
+    )
+    return None
 
 
 class PushAllGatherReduceScatter:
-    def __init__(self, group: ProcessGroup, device: torch.device) -> None:
-        from sglang.srt.distributed.device_communicators.custom_all_reduce_v2 import (
-            CustomAllReduceV2,
-        )
-
-        self.device = device
-        self.comm = CustomAllReduceV2(
-            group=group,
-            device=device,
-            max_push_size=_PUSH_SLOT_BYTES,
-            max_pull_size=0,
-        )
-        self.disabled = self.comm.disabled or not self.comm.has_multicast
-        if self.disabled:
-            logger.warning(
-                "Push all-gather / reduce-scatter needs CustomAllReduceV2 with "
-                "multicast on this group; using NCCL."
-            )
-            return
-        self.world_size = self.comm.world_size
+    def __init__(self, comm: CustomAllReduceV2) -> None:
+        self.comm = comm
+        self.device = comm.device
+        self.world_size = comm.world_size
         self._dispatches: dict[
             tuple[str, int, int], Optional[sp_collective.Dispatch]
         ] = {}
-        sp_collective.register_comm(self.comm.obj)
+        sp_collective.register_comm(comm.obj)
 
     def _dispatch(
         self, kind: str, hidden_size: int, num_tokens: int
@@ -73,8 +86,7 @@ class PushAllGatherReduceScatter:
 
     def _eligible(self, output: torch.Tensor, input: torch.Tensor) -> bool:
         return (
-            not self.disabled
-            and input.dtype == torch.bfloat16
+            input.dtype == torch.bfloat16
             and output.dtype == torch.bfloat16
             and input.ndim == 2
             and input.is_contiguous()
@@ -114,6 +126,3 @@ class PushAllGatherReduceScatter:
             self.world_size, input, output, tuning=dispatch.tuning
         )
         return True
-
-    def close(self) -> None:
-        self.comm.close()

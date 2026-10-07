@@ -41,7 +41,7 @@ def _tp_group():
     with envs.SGLANG_OPT_USE_PUSH_AG_RS.override(True):
         initialize_model_parallel()
     group = get_parallel().tp_group
-    if group.push_ag_rs is None or group.push_ag_rs.disabled:
+    if group.push_ag_rs is None:
         pytest.skip("push all-gather / reduce-scatter needs multicast NVLink")
     return group
 
@@ -150,6 +150,24 @@ def test_falls_back_past_the_push_slot(forced_push):
     output = torch.empty(group.world_size * rows_per_rank, _HIDDEN_SIZE, **_like(local))
     assert not forced_push.all_gather(output, local)
     assert not forced_push.reduce_scatter(local, output)
+
+
+@pytest.mark.parametrize("tokens", [1, 64])
+@torch.inference_mode()
+def test_shared_communicator_still_all_reduces(tokens):
+    """The push path shares the group's all-reduce communicator, whose push slot
+    it enlarges; all-reduce through that communicator must stay exact."""
+    group = _tp_group()
+    assert group.push_ag_rs.comm is group.ca_comm
+    input = torch.randint(
+        1, 16, (tokens, _HIDDEN_SIZE), device="cuda", dtype=torch.int32
+    ).to(torch.bfloat16)
+    expected = input.clone()
+    dist.all_reduce(expected, group=group.device_group)
+    assert group.ca_comm.should_custom_ar(input)
+    torch.testing.assert_close(
+        group.all_reduce(input.clone()), expected, rtol=0, atol=0
+    )
 
 
 def test_device_table_routes_decode_sizes():

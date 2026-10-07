@@ -441,9 +441,6 @@ class GroupCoordinator:
         from sglang.srt.distributed.device_communicators.custom_all_reduce import (
             dispatch_custom_allreduce,
         )
-        from sglang.srt.distributed.device_communicators.push_ag_rs import (
-            PushAllGatherReduceScatter,
-        )
         from sglang.srt.distributed.device_communicators.pymscclpp import (
             PyMscclppCommunicator,
         )
@@ -510,6 +507,14 @@ class GroupCoordinator:
                 )
             except Exception as e:
                 logger.warning(f"Setup FlashInfer PCIe-IPC allreduce failed with {e}.")
+        # sp_collective keeps one communicator per world size, so only the TP
+        # group, which carries the DP-attention gather, takes the push path.
+        want_push_ag_rs = (
+            envs.SGLANG_OPT_USE_PUSH_AG_RS.get()
+            and is_cuda()
+            and group_name == "tp"
+            and self.world_size > 1
+        )
         if use_custom_allreduce and self.world_size > 1:
             # Initialize a custom fast all-reduce implementation.
             try:
@@ -517,9 +522,17 @@ class GroupCoordinator:
                     group=self.cpu_group,
                     device=self.device,
                 )
+                ca_kwargs = {}
+                if want_push_ag_rs:
+                    from sglang.srt.distributed.device_communicators import (
+                        push_ag_rs,
+                    )
+
+                    ca_kwargs = push_ag_rs.custom_all_reduce_kwargs(CAClass)
                 self.ca_comm = CAClass(
                     group=self.cpu_group,
                     device=self.device,
+                    **ca_kwargs,
                 )
             except Exception as e:
                 logger.warning(
@@ -542,18 +555,11 @@ class GroupCoordinator:
         elif self.world_size > 1 and is_hip():
             logger.info("[AR] All-reduce call path: NCCL (custom AR disabled)")
 
-        self.push_ag_rs: Optional[PushAllGatherReduceScatter] = None
-        if (
-            envs.SGLANG_OPT_USE_PUSH_AG_RS.get()
-            and is_cuda()
-            and group_name == "tp"
-            and self.world_size > 1
-        ):
-            # sp_collective keeps one communicator per world size, so only the
-            # TP group, which carries the DP-attention gather, gets one.
-            self.push_ag_rs = PushAllGatherReduceScatter(
-                group=self.cpu_group, device=self.device
-            )
+        self.push_ag_rs: Optional[Any] = None
+        if want_push_ag_rs:
+            from sglang.srt.distributed.device_communicators import push_ag_rs
+
+            self.push_ag_rs = push_ag_rs.create(self.ca_comm)
 
         self.torch_symm_mem_comm: Optional[TorchSymmMemCommunicator] = None
         if self.use_torch_symm_mem_all_reduce and self.world_size > 1:
@@ -2121,9 +2127,6 @@ class GroupCoordinator:
         if self.pcie_ipc_comm is not None:
             self.pcie_ipc_comm.destroy()
             self.pcie_ipc_comm = None
-        if self.push_ag_rs is not None:
-            self.push_ag_rs.close()
-            self.push_ag_rs = None
         if self.device_group is not None:
             torch.distributed.destroy_process_group(self.device_group)
             self.device_group = None
@@ -2136,6 +2139,7 @@ class GroupCoordinator:
             self.pymscclpp_comm.destroy()
         if self.ca_comm is not None:
             self.ca_comm = None
+            self.push_ag_rs = None
         if self.mq_broadcaster is not None:
             self.mq_broadcaster = None
 
