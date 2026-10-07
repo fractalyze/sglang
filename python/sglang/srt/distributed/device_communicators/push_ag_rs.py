@@ -11,8 +11,8 @@ host collective runs per call, so the path is deterministic and CUDA-graph
 safe.
 
 The kernels stage through the group's CustomAllReduceV2 push workspace, whose
-slot the group enlarges to ``PUSH_SLOT_BYTES`` when this path is on; the
-all-reduce thresholds do not move with it. Which sizes take the push path, and
+slot the group enlarges to at least ``PUSH_SLOT_BYTES`` when this path is on;
+the all-reduce thresholds do not move with it. Which sizes take the push path, and
 at what launch grid, comes from the checked-in ``sp_collective`` table for the
 device; everything else, and every device without a table, stays on NCCL.
 """
@@ -25,6 +25,7 @@ import torch
 from sglang.kernels.ops.communication import sp_collective
 from sglang.srt.distributed.device_communicators.custom_all_reduce_v2 import (
     CustomAllReduceV2,
+    default_max_push_size,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,15 +35,18 @@ logger = logging.getLogger(__name__)
 PUSH_SLOT_BYTES = 2 * 1024 * 1024
 
 
-def custom_all_reduce_kwargs(ca_class: type) -> dict:
+def custom_all_reduce_kwargs(ca_class: type, world_size: int) -> dict:
     """Constructor arguments that let a group's communicator carry this path.
 
     The push all-gather / reduce-scatter stage a rank's whole shard through the
-    communicator's push slot.
+    communicator's push slot. The slot is only ever enlarged: a smaller one
+    would lower the all-reduce's one-shot push threshold with it.
     """
-    if issubclass(ca_class, CustomAllReduceV2):
-        return {"max_push_size": PUSH_SLOT_BYTES}
-    return {}
+    if not issubclass(ca_class, CustomAllReduceV2):
+        return {}
+    if default_max_push_size(world_size) >= PUSH_SLOT_BYTES:
+        return {}
+    return {"max_push_size": PUSH_SLOT_BYTES}
 
 
 def create(comm: Optional[object]) -> Optional["PushAllGatherReduceScatter"]:

@@ -9,6 +9,9 @@ import torch.distributed as dist
 from sglang.kernels.jit.utils import cache_once
 from sglang.kernels.ops.communication import sp_collective
 from sglang.srt.distributed import init_distributed_environment
+from sglang.srt.distributed.device_communicators.custom_all_reduce_v2 import (
+    CustomAllReduceV2,
+)
 from sglang.srt.distributed.parallel_state import (
     graph_capture,
     initialize_model_parallel,
@@ -168,6 +171,16 @@ def test_shared_communicator_still_all_reduces(tokens):
     torch.testing.assert_close(
         group.all_reduce(input.clone()), expected, rtol=0, atol=0
     )
+
+
+def test_switch_leaves_all_reduce_config_unchanged():
+    """Enlarging the shared push slot must not move any all-reduce threshold."""
+    group = _tp_group()
+    stock = CustomAllReduceV2(group=group.cpu_group, device=group.device)
+    try:
+        assert group.ca_comm.config == stock.config
+    finally:
+        stock.close()
 
 
 def test_device_table_routes_decode_sizes():

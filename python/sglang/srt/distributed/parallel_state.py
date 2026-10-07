@@ -528,7 +528,9 @@ class GroupCoordinator:
                         push_ag_rs,
                     )
 
-                    ca_kwargs = push_ag_rs.custom_all_reduce_kwargs(CAClass)
+                    ca_kwargs = push_ag_rs.custom_all_reduce_kwargs(
+                        CAClass, self.world_size
+                    )
                 self.ca_comm = CAClass(
                     group=self.cpu_group,
                     device=self.device,
