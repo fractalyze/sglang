@@ -441,6 +441,9 @@ class GroupCoordinator:
         from sglang.srt.distributed.device_communicators.custom_all_reduce import (
             dispatch_custom_allreduce,
         )
+        from sglang.srt.distributed.device_communicators.push_ag_rs import (
+            PushAllGatherReduceScatter,
+        )
         from sglang.srt.distributed.device_communicators.pymscclpp import (
             PyMscclppCommunicator,
         )
@@ -538,6 +541,19 @@ class GroupCoordinator:
                     logger.warning(f"Failed to initialize QuickAllReduce: {e}")
         elif self.world_size > 1 and is_hip():
             logger.info("[AR] All-reduce call path: NCCL (custom AR disabled)")
+
+        self.push_ag_rs: Optional[PushAllGatherReduceScatter] = None
+        if (
+            envs.SGLANG_OPT_USE_PUSH_AG_RS.get()
+            and is_cuda()
+            and group_name == "tp"
+            and self.world_size > 1
+        ):
+            # sp_collective keeps one communicator per world size, so only the
+            # TP group, which carries the DP-attention gather, gets one.
+            self.push_ag_rs = PushAllGatherReduceScatter(
+                group=self.cpu_group, device=self.device
+            )
 
         self.torch_symm_mem_comm: Optional[TorchSymmMemCommunicator] = None
         if self.use_torch_symm_mem_all_reduce and self.world_size > 1:
@@ -1121,6 +1137,10 @@ class GroupCoordinator:
         output: torch.Tensor,
         input: torch.Tensor,
     ) -> torch.Tensor:
+        if self.push_ag_rs is not None and self.push_ag_rs.reduce_scatter(
+            output, input
+        ):
+            return output
         pynccl_comm = self.pynccl_comm
         if pynccl_comm is not None and (
             not pynccl_comm.disabled or self.is_symmetric_memory_enabled()
@@ -1322,6 +1342,9 @@ class GroupCoordinator:
             else:
                 ca_comm.all_gather_unreg(input, out=output, dim=0)
                 return
+
+        if self.push_ag_rs is not None and self.push_ag_rs.all_gather(output, input):
+            return
 
         pymscclpp_comm = self.pymscclpp_comm
         if pymscclpp_comm is not None and pymscclpp_comm.should_mscclpp_allgather(
@@ -2098,6 +2121,9 @@ class GroupCoordinator:
         if self.pcie_ipc_comm is not None:
             self.pcie_ipc_comm.destroy()
             self.pcie_ipc_comm = None
+        if self.push_ag_rs is not None:
+            self.push_ag_rs.close()
+            self.push_ag_rs = None
         if self.device_group is not None:
             torch.distributed.destroy_process_group(self.device_group)
             self.device_group = None
