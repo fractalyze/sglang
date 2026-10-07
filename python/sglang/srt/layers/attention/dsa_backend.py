@@ -3015,7 +3015,7 @@ class DeepseekSparseAttnBackend(
         if num_q_rows < num_metadata_rows:
             fitted_cache_seqlens = cache_seqlens[:num_q_rows]
         else:
-            # Zero-length KV for the bucket padding rows, as DP padding does.
+            # Zero-length KV for the extra q rows, as DP padding does.
             fitted_cache_seqlens = torch.cat(
                 [
                     cache_seqlens,
