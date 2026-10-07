@@ -2994,8 +2994,8 @@ class DeepseekSparseAttnBackend(
     def _fit_flashmla_kv_metadata_to_q_rows(
         self, metadata: DSAMetadata, num_q_rows: int
     ) -> DSAMetadata:
-        # FlashMLA needs num_splits of q rows + 1, but the seqlens are padded to
-        # the DP-attention token count while prefill-graph replay narrows q.
+        # FlashMLA needs num_splits of q rows + 1; prefill-graph replay can hand q
+        # more or fewer rows than the DP-padded seqlens.
         num_metadata_rows = metadata.dsa_cache_seqlens_int32.shape[0]
         if num_metadata_rows == num_q_rows:
             return metadata
