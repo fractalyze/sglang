@@ -29,6 +29,8 @@ read -r ARM MODE CAP GSM8K REST <<< "$SPEC"
 EXTRA=${EXTRA:-}
 export ARM MODE GSM8K
 export BENCH_CS=${REST%%/*} PROFILE_CS=${REST#*/}
+# PROFILE_ONLY=1 re-records a session's profiles without its GSM8K and benches.
+[ "${PROFILE_ONLY:-0}" = 1 ] && GSM8K=0 BENCH_CS=""
 export OUT=$W/results/$RUN/$SESSION S3=$S3_ROOT/$RUN/$SESSION
 export B=$W/baseline-current SRC=$W/src-$RUN
 mkdir -p $OUT $B $SRC
@@ -105,17 +107,19 @@ session() {
   for c in $PROFILE_CS; do profile $c; done
 }
 
-# Decode-stage traces of one wave of <c> requests (1024 in / 1024 out), 20 steps recorded
-# once every request is admitted and prefill has drained.
+# Decode-stage traces of a wave of <c> concurrent requests (1024 in / 1024 out), 20 steps
+# recorded once every request is admitted and prefill has drained. An EAGLE wave decodes in
+# about 10 s, under the admission margin, so EAGLE sends four waves' worth of prompts.
 profile() {
-  local c=$1 dir=$OUT/profile-c$1
+  local c=$1 dir=$OUT/profile-c$1 prompts=$1
+  [ $MODE = eagle ] && prompts=$((4 * c))
   mkdir -p $dir
   curl -sf 127.0.0.1:30000/health_generate >/dev/null || { echo "server down" > $dir/skipped.txt; return; }
   docker run --rm --network host -v /opt/dlami/nvme:/opt/dlami/nvme -e HF_HUB_OFFLINE=0 $IMG \
     python3 -m sglang.bench_serving --backend sglang --host 127.0.0.1 --port 30000 \
       --model deepseek-ai/DeepSeek-V3.2 --tokenizer $MODEL --dataset-name random \
       --random-input-len 1024 --random-output-len 1024 --random-range-ratio 1 \
-      --num-prompts $c --max-concurrency $c --seed 1 --warmup-requests 4 \
+      --num-prompts $prompts --max-concurrency $c --seed 1 --warmup-requests 4 \
       --output-file $dir/bench_c$c.jsonl > $dir/bench.log 2>&1 &
   local bench=$!
   # Every request running and none queued (summed over the DP ranks), then a margin for the
