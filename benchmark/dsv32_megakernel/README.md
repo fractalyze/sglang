@@ -14,6 +14,8 @@ profiles alone. Two scripts answer it:
   - overlap: every collective hidden.
 - `trace_split.py` books every microsecond of measured decode steps to an op
   class or to idle (no kernel running), then sets each class beside its floor.
+- `grid_barrier.py` times one grid barrier of a persistent kernel on the local
+  GPU, the cost slice 1 pays per launch it removes.
 
 ## The recipe the model assumes
 
@@ -56,10 +58,16 @@ python benchmark/dsv32_megakernel/decode_floor.py \
   --hbm-gbps <GB/s> --comm-jsonl dp_attn_ag_rs.jsonl \
   --measured-ms 128:<ms> 256:<ms> 512:<ms>
 
+# One grid barrier at one CTA per SM, on one GPU of the node.
+python benchmark/dsv32_megakernel/grid_barrier.py
+
 # Split a profiled run's decode steps (one *-DECODE.trace.json.gz per rank).
 python benchmark/dsv32_megakernel/trace_split.py <trace dir> --concurrency 512 \
-  --hbm-gbps <GB/s> --comm-jsonl dp_attn_ag_rs.jsonl
+  --hbm-gbps <GB/s> --comm-jsonl dp_attn_ag_rs.jsonl --grid-barrier-us <us>
 ```
+
+`--grid-barrier-us` takes the cheaper of `grid_barrier.py`'s two barriers at
+the thread count the megakernel would run.
 
 The default `--context-tokens 1536` is the mean KV length of a request while
 it decodes in `python -m sglang.bench_serving --dataset-name random
@@ -92,4 +100,6 @@ It then prints a ceiling for each megakernel slice:
 
 Both ceilings are upper bounds. A persistent kernel pays a grid barrier
 wherever the unfused path launches a kernel, so the idle bucket turns into
-barrier waits instead of disappearing.
+barrier waits instead of disappearing. The split therefore also reports slice 1
+net of one `--grid-barrier-us` per kernel the step launches. Slice 2 stays
+gross, because its overlap waits on flags, not grid barriers.
