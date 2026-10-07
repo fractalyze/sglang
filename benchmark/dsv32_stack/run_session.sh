@@ -60,7 +60,8 @@ SERVER_FLAGS=$EXTRA
 [ $CAP != - ] && SERVER_FLAGS="--max-running-requests $CAP $SERVER_FLAGS"
 LAUNCH_STACK=$OUT/launch_stack.sh
 cp "$HERE/launch_stack.sh" $LAUNCH_STACK
-export LEVERS SERVER_FLAGS LAUNCH_STACK DERIVED=$OUT/launch_$ARM.sh
+# Not launch_$ARM.sh: for the stack arm that is launch_stack.sh, overwritten while it runs.
+export LEVERS SERVER_FLAGS LAUNCH_STACK DERIVED=$OUT/launch_derived_$ARM.sh
 export CACHE=$W/cache-$ARM CONTAINER=stack-zgvm6q-$ARM
 
 # Inside a GPU lease: run the session, then stop the server.
