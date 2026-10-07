@@ -56,7 +56,8 @@ SHAPES = [
     (7168, 2304),  # dense MLP down (layers 0-2)
 ]
 # The attention side runs at M = 48 (c128 EAGLE), 64 (c512) and 96 (c256
-# EAGLE); the MLP side after the DP all-gather at 8x that, up to 1024 (c1024).
+# EAGLE); the MLP side, after the DP all-gather, at that summed over the DP
+# ranks, up to MAX_M (c1024).
 M_VALUES = [1, 3, 8, 16, 17, 33, 48, 64, 96, 100, 128, 192, 193, 256, 384, 500]
 M_VALUES += [512, 768, MAX_M]
 

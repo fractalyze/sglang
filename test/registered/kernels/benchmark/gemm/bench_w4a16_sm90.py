@@ -8,7 +8,8 @@ tensor argument is cloned per replay, so weights are read L2-cold as in serving.
 GEMM (`--moe-runner-backend w4a16_sm90`), the alternative of folding the shared
 expert into the routed experts' launch.
 The attention side runs at M = 48 (c128 EAGLE), 64 (c512) and 96 (c256 EAGLE);
-the MLP side after the DP all-gather at 8x that, up to 1024 (c1024).
+the MLP side, after the DP all-gather, at that summed over the DP ranks, up to
+1024 (c1024).
 
 Run on a Hopper (SM90) GPU:
     python test/registered/kernels/benchmark/gemm/bench_w4a16_sm90.py
