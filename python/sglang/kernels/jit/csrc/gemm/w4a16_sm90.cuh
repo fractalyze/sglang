@@ -1,5 +1,5 @@
 /// \file w4a16_sm90.cuh
-/// \brief W4A16 GEMM for M <= 192 over Marlin-repacked AWQ weights (4-bit,
+/// \brief W4A16 GEMM for decode-sized M over Marlin-repacked AWQ weights (4-bit,
 /// group 128, zero point): `out[m, n] = sum_k a[m, k] * dequant(w)[k, n]`, SM90.
 ///
 /// It reads the tensors `AWQMarlinLinearKernel` already holds -- the
@@ -15,9 +15,11 @@
 /// slice of the wgmma m64k16 register-A fragment of warp j. So warp j of a
 /// warpgroup takes word j and issues the warpgroup's MMA with no shuffle.
 ///
-/// Schedules, chosen per shape by kClusterK. The work is (column unit,
-/// quantization group) pairs, a column unit being kTiles Marlin tiles that share
-/// one activation tile.
+/// Schedules, chosen per shape by kClusterK. The work is (unit, quantization
+/// group) pairs, a unit being kTiles Marlin column tiles over one token block of
+/// the token tile's width; they share that block's activation tile. M wider than
+/// the token tile runs several token blocks per column unit, each dequantizing
+/// the unit's weights again.
 ///   - Unsplit (1): one CTA per unit, in as many waves as it takes.
 ///   - Cluster (2-8): one cluster per unit; its CTAs split the groups and reduce
 ///     through distributed shared memory, each rank owning a slice of columns.
@@ -148,6 +150,10 @@ struct Trait {
 
   static_assert(kN % 8 == 0 && kN <= 192);
   static_assert(kPing == 1 || kPing == 2);
+  // Stage s must feed the same warpgroup every time round the ring. Otherwise a
+  // warpgroup can wait on a stage's full barrier a phase ahead of the load still
+  // in flight there, and the parity wait passes on the previous phase.
+  static_assert(kStages % kPing == 0, "the stage ring must be a multiple of the ping warpgroups");
   static_assert(kClusterK >= 0 && kClusterK <= 8 && kOwnedCols % 8 == 0 && kCtaN % kClusterDim == 0);
   static_assert(kThreads <= 1024);
   // Accumulators plus one group's A fragments and addressing per thread; the
@@ -175,8 +181,7 @@ struct Params {
   uint32_t k;
 };
 
-/// \brief One CTA's work: units [begin, end) of the unit-major (column unit,
-/// group) order, where a column unit is kTiles Marlin tiles.
+/// \brief One CTA's work: [begin, end) of the unit-major (unit, group) order.
 struct WorkRange {
   uint32_t begin;
   uint32_t end;
@@ -188,7 +193,7 @@ struct WorkRange {
   }
 };
 
-/// \brief A run of groups [first, last) of one column unit, inside one CTA's range.
+/// \brief A run of groups [first, last) of one unit, inside one CTA's range.
 struct Segment {
   uint32_t unit;
   uint32_t first;
@@ -202,6 +207,19 @@ SGL_DEVICE Segment segment_ending_at(uint32_t end, uint32_t range_begin, uint32_
   const uint32_t unit_begin = unit * num_groups;
   return {unit, max(range_begin, unit_begin) - unit_begin, end - unit_begin};
 }
+
+/// \brief Where a unit sits: its column unit and its token block's first token.
+/// Token blocks are the minor index, so the CTAs that share a column unit's
+/// weights run side by side and all but the first read them from L2.
+struct UnitOrigin {
+  uint32_t column_unit;
+  uint32_t token;
+
+  template <int kN>
+  SGL_DEVICE static UnitOrigin of(uint32_t unit, uint32_t token_blocks) {
+    return {unit / token_blocks, unit % token_blocks * kN};
+  }
+};
 
 // PTX matrix descriptor for a K-major tile in 128B-swizzle atoms (8 rows x
 // 128 B, 1024 B apart). A k16 step inside an atom advances the start address by
@@ -284,7 +302,8 @@ __global__ void __launch_bounds__(T::kThreads, T::kMinBlocksPerSm)
   const uint32_t lane = threadIdx.x % kWarpThreads;
   const uint32_t num_groups = params.k / kGroupSize;
   const uint32_t n_tiles = params.n / kTileN;
-  const uint32_t num_units = params.n / T::kCtaN * num_groups;
+  const uint32_t token_blocks = (params.m + kN - 1) / kN;
+  const uint32_t num_units = params.n / T::kCtaN * token_blocks * num_groups;
   // Unsplit and cluster modes: cluster c is unit c, and rank r takes its r-th
   // share of groups.
   const uint32_t rank = T::kClusterReduce ? ptx::cluster_ctarank() : 0;
@@ -327,6 +346,7 @@ __global__ void __launch_bounds__(T::kThreads, T::kMinBlocksPerSm)
       uint32_t i = 0;
       for (uint32_t end = range.end; end > range.begin;) {
         const Segment seg = segment_ending_at(end, range.begin, num_groups);
+        const UnitOrigin origin = UnitOrigin::of<kN>(seg.unit, token_blocks);
         for (uint32_t g = seg.first; g < seg.last; ++g, ++i) {
           const uint32_t s = i % kStages;
           ptx::mbar_wait_parity(&empty[s], ((i / kStages) & 1) ^ 1);
@@ -335,18 +355,18 @@ __global__ void __launch_bounds__(T::kThreads, T::kMinBlocksPerSm)
 #pragma unroll
           for (int kt = 0; kt < kGroupKTiles; ++kt) {
             const int4* src =
-                params.b + (static_cast<size_t>(g * kGroupKTiles + kt) * n_tiles + seg.unit * T::kTiles) * 32;
+                params.b + (static_cast<size_t>(g * kGroupKTiles + kt) * n_tiles + origin.column_unit * T::kTiles) * 32;
             ptx::cp_async_bulk(
                 base + T::kWeightOffset + kt * T::kTiles * kTileBytes, src, T::kTiles * kTileBytes, &full[s]);
           }
           ptx::cp_async_bulk(
               base + T::kScaleOffset,
-              params.scales + static_cast<size_t>(g) * params.n + seg.unit * T::kCtaN,
+              params.scales + static_cast<size_t>(g) * params.n + origin.column_unit * T::kCtaN,
               T::kScaleBytes,
               &full[s]);
           ptx::cp_async_bulk(
               base + T::kZeroOffset,
-              params.zeros + static_cast<size_t>(g) * (params.n / 8) + seg.unit * (T::kCtaN / 8),
+              params.zeros + static_cast<size_t>(g) * (params.n / 8) + origin.column_unit * (T::kCtaN / 8),
               T::kZeroBytes,
               &full[s]);
           // The weights are not the producer kernel's output, so the first
@@ -355,7 +375,7 @@ __global__ void __launch_bounds__(T::kThreads, T::kMinBlocksPerSm)
 #pragma unroll
           for (uint32_t c = 0; c < kGroupSize / T::kActAtomK; ++c) {
             ptx::cp_async_bulk_tensor_2d(
-                base + c * T::kActAtomBytes, &act_map, g * kGroupSize + c * T::kActAtomK, 0, &full[s]);
+                base + c * T::kActAtomBytes, &act_map, g * kGroupSize + c * T::kActAtomK, origin.token, &full[s]);
           }
         }
         end -= seg.last - seg.first;
@@ -439,13 +459,14 @@ __global__ void __launch_bounds__(T::kThreads, T::kMinBlocksPerSm)
   // Accumulator (wgmma m64nN): acc[4j + {0, 1}] is row 16 wi + g, tokens
   // 8j + 2t + {0, 1}; acc[4j + {2, 3}] is row 16 wi + g + 8, same tokens.
   auto store_unit = [&](uint32_t unit) {
-    const uint32_t col = unit * T::kCtaN + slot * kTileN + wi * 16 + frag_g;
+    const UnitOrigin origin = UnitOrigin::of<kN>(unit, token_blocks);
+    const uint32_t col = origin.column_unit * T::kCtaN + slot * kTileN + wi * 16 + frag_g;
     auto store = [&](uint32_t tok, uint32_t c, float v) {
       if (tok < params.m) params.out[static_cast<size_t>(tok) * params.n + c] = __float2bfloat16_rn(v);
     };
 #pragma unroll
     for (int j = 0; j < kN / 8; ++j) {
-      const uint32_t tok = 8 * j + 2 * frag_t;
+      const uint32_t tok = origin.token + 8 * j + 2 * frag_t;
       store(tok, col, acc[4 * j + 0]);
       store(tok + 1, col, acc[4 * j + 1]);
       store(tok, col + 8, acc[4 * j + 2]);
@@ -456,6 +477,7 @@ __global__ void __launch_bounds__(T::kThreads, T::kMinBlocksPerSm)
   // Cluster mode: push this rank's partial rows to their owners, then sum the
   // rows this rank owns over all ranks in rank order, so the result is fixed.
   auto reduce_in_cluster = [&](uint32_t unit) {
+    const UnitOrigin origin = UnitOrigin::of<kN>(unit, token_blocks);
     ptx::cluster_wait_acquire();
     const uint32_t inbox_addr = ptx::to_shared(inbox);
     const uint32_t bar_addr = ptx::to_shared(inbox_bar);
@@ -478,15 +500,16 @@ __global__ void __launch_bounds__(T::kThreads, T::kMinBlocksPerSm)
     constexpr uint32_t kPairs = T::kOwnedCols * kN / 2;
     for (uint32_t p = slot * kWarpGroupThreads + tid; p < kPairs; p += T::kFinisherThreads) {
       const uint32_t local = p / (kN / 2);
-      const uint32_t tok = (p % (kN / 2)) * 2;
+      const uint32_t block_tok = (p % (kN / 2)) * 2;
+      const uint32_t tok = origin.token + block_tok;
       float2 sum = {0.0f, 0.0f};
 #pragma unroll
       for (int r = 0; r < T::kClusterK; ++r) {
-        const auto v = *reinterpret_cast<const float2*>(&inbox[(r * T::kOwnedCols + local) * kN + tok]);
+        const auto v = *reinterpret_cast<const float2*>(&inbox[(r * T::kOwnedCols + local) * kN + block_tok]);
         sum.x += v.x;
         sum.y += v.y;
       }
-      const uint32_t col = unit * T::kCtaN + rank * T::kOwnedCols + local;
+      const uint32_t col = origin.column_unit * T::kCtaN + rank * T::kOwnedCols + local;
       if (tok < params.m) params.out[static_cast<size_t>(tok) * params.n + col] = __float2bfloat16_rn(sum.x);
       if (tok + 1 < params.m) params.out[static_cast<size_t>(tok + 1) * params.n + col] = __float2bfloat16_rn(sum.y);
     }
@@ -583,7 +606,7 @@ namespace sglang {
 /**
  * \brief Validate the Marlin-layout AWQ operands and launch the W4A16 GEMM.
  *
- * \tparam kN        token tile (wgmma N), at least M
+ * \tparam kN        token tile (wgmma N); M runs in ceil(M / kN) token blocks
  * \tparam kTiles    Marlin column tiles per work unit
  * \tparam kPing     consumer warpgroups per column tile
  * \tparam kClusterK 0: stream-K; 1: one CTA per unit; above 1: cluster split-K
@@ -666,8 +689,7 @@ void w4a16_sm90_gemm(
   CHECK_HOST(N2.unwrap() == 2 * n) << "w4a16_sm90: b_q_weight inner dim must be 2 * N";
   CHECK_HOST(G.unwrap() * kGroupSize == k) << "w4a16_sm90: expected group size " << kGroupSize;
   CHECK_HOST(N8.unwrap() * 8 == n) << "w4a16_sm90: b_zeros inner dim must be N / 8";
-  CHECK_HOST(m <= kN) << "w4a16_sm90: token tile " << kN << " is smaller than M = " << m;
-  CHECK_HOST(n <= UINT32_MAX && k <= UINT32_MAX) << "w4a16_sm90: dims exceed 32 bits";
+  CHECK_HOST(m <= UINT32_MAX && n <= UINT32_MAX && k <= UINT32_MAX) << "w4a16_sm90: dims exceed 32 bits";
   if (m == 0) return;
 
   constexpr auto kernel = w4a16_sm90::w4a16_sm90_kernel<T, kUsePDL>;
@@ -681,17 +703,16 @@ void w4a16_sm90_gemm(
   // groups per CTA bounds how many partials a finisher sums.
   const DLDevice device = device_.unwrap();
   const uint32_t num_groups = static_cast<uint32_t>(k / kGroupSize);
-  const uint32_t num_column_units = static_cast<uint32_t>(n / T::kCtaN);
+  const uint32_t num_units = static_cast<uint32_t>(n / T::kCtaN * ((m + kN - 1) / kN));
   uint32_t grid;
   if constexpr (!T::kStreamK) {
     CHECK_HOST(num_groups >= kClusterK) << "w4a16_sm90: " << kClusterK << " K splits for " << num_groups << " groups";
-    grid = num_column_units * kClusterK;
+    grid = num_units * kClusterK;
   } else {
     static const uint32_t blocks_per_sm = runtime::get_blocks_per_sm(kernel, T::kThreads, T::kSmemBytes);
     const uint32_t resident = runtime::get_sm_count(device.device_id) * blocks_per_sm;
-    const uint32_t num_units = num_column_units * num_groups;
     const uint32_t min_groups = static_cast<uint32_t>(std::max<int64_t>(min_groups_per_cta, kPing));
-    grid = std::max(1u, std::min(resident, num_units / min_groups));
+    grid = std::max(1u, std::min(resident, num_units * num_groups / min_groups));
     CHECK_HOST(F.unwrap() >= grid) << "w4a16_sm90: " << F.unwrap() << " flags for a grid of " << grid;
   }
 
