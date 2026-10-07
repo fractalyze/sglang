@@ -14,6 +14,7 @@ from sglang.kernels.ops.moe.w4a16_moe_sm90 import (
     pack_codes,
     repack_awq_moe_weights,
     select_token_block,
+    stream_k_workspace,
     unpack_awq_codes,
     w4a16_moe_sm90_gemm,
 )
@@ -180,7 +181,8 @@ _TOKENS_PER_EXPERT = [1, 4, 8, 16, 32, 64, 128]
 @pytest.mark.parametrize("k,n", _SHAPES)
 @pytest.mark.parametrize("tokens_per_expert", _TOKENS_PER_EXPERT)
 @pytest.mark.parametrize("weighted", [False, True])
-def test_routed_gemm_matches_reference(k, n, tokens_per_expert, weighted):
+@pytest.mark.parametrize("stream_k", [False, True])
+def test_routed_gemm_matches_reference(k, n, tokens_per_expert, weighted, stream_k):
     num_experts, top_k = 16, 4
     num_tokens = max(1, tokens_per_expert * num_experts // top_k)
     weights = repack_awq_moe_weights(*_random_awq(num_experts, k, n, "cuda"), _GROUP)
@@ -210,6 +212,7 @@ def test_routed_gemm_matches_reference(k, n, tokens_per_expert, weighted):
         topk_weights=topk_weights.view(-1) if weighted else None,
         token_block=token_block,
         a_row_divisor=a_row_divisor,
+        stream_k=stream_k,
     )
     expected = _routed_reference(
         a, dense, topk_ids, topk_weights if weighted else None, a_row_divisor
@@ -233,7 +236,8 @@ def _masked_routing(num_tokens, top_k, num_experts, seed):
 @pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
 @pytest.mark.parametrize("tokens_per_expert", [1, 4, 16, 32, 128])
 @pytest.mark.parametrize("masked", [False, True])
-def test_zero_unrouted_matches_zero_fill_bitwise(tokens_per_expert, masked):
+@pytest.mark.parametrize("stream_k", [False, True])
+def test_zero_unrouted_matches_zero_fill_bitwise(tokens_per_expert, masked, stream_k):
     """zero_unrouted writes every listed row, so an unfilled buffer ends as a zeroed one."""
     num_experts, top_k, k, n = 16, 8, 256, 7168
     num_tokens = max(2, tokens_per_expert * num_experts // top_k)
@@ -263,6 +267,7 @@ def test_zero_unrouted_matches_zero_fill_bitwise(tokens_per_expert, masked):
             token_block=token_block,
             a_row_divisor=1,
             zero_unrouted=zero_unrouted,
+            stream_k=stream_k,
         )
         return out
 
@@ -271,6 +276,61 @@ def test_zero_unrouted_matches_zero_fill_bitwise(tokens_per_expert, masked):
     # NaN-filled, so a row the kernel skips shows up.
     unfilled = torch.full(rows, float("nan"), device="cuda").to(torch.bfloat16)
     assert torch.equal(run(unfilled, True), zero_filled)
+
+
+@pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
+@pytest.mark.parametrize("masked", [False, True])
+def test_stream_k_is_bitwise_repeatable_under_graph_replay(masked):
+    """Skewed routing gives a tile count off a multiple of the grid, so tiles split
+    across CTAs; replays agree bitwise and leave the shared ready flags zeroed."""
+    num_experts, top_k, k, n, num_tokens = 64, 8, 7168, 512, 512
+    torch.manual_seed(7)
+    gen = torch.Generator(device="cpu").manual_seed(7)
+    popularity = torch.distributions.Gamma(2.0, 1.0).sample((num_experts,))
+    topk_ids = torch.multinomial(
+        popularity.expand(num_tokens, num_experts), top_k, generator=gen
+    ).to(torch.int32)
+    if masked:
+        topk_ids[-num_tokens // 8 :] = -1
+    topk_ids = topk_ids.cuda()
+    weights = repack_awq_moe_weights(*_random_awq(num_experts, k, n, "cuda"), _GROUP)
+    a = (torch.randn(num_tokens, k, generator=gen) * 0.5).to(torch.bfloat16).cuda()
+    sorted_ids, expert_ids, num_post_padded = moe_align_block_size(
+        topk_ids, 32, num_experts
+    )
+
+    def run(out, stream_k):
+        w4a16_moe_sm90_gemm(
+            a=a,
+            out=out,
+            weights=weights,
+            sorted_token_ids=sorted_ids,
+            expert_ids=expert_ids,
+            num_tokens_post_padded=num_post_padded,
+            topk_weights=None,
+            token_block=32,
+            a_row_divisor=top_k,
+            stream_k=stream_k,
+        )
+
+    rows = (num_tokens * top_k, n)
+    persistent = torch.zeros(rows, dtype=torch.bfloat16, device="cuda")
+    run(persistent, stream_k=False)
+    out = torch.zeros(rows, dtype=torch.bfloat16, device="cuda")
+    run(out, stream_k=True)
+    torch.cuda.synchronize()
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        run(out, stream_k=True)
+    replays = []
+    for _ in range(3):
+        out.zero_()
+        graph.replay()
+        replays.append(out.clone())
+    for replay in replays:
+        assert torch.equal(replay, replays[0])
+    assert stream_k_workspace(out.device)[1].count_nonzero().item() == 0
+    torch.testing.assert_close(replays[0], persistent, rtol=1e-2, atol=1e-2)
 
 
 def _awq_layer(num_experts, hidden, intermediate, device):

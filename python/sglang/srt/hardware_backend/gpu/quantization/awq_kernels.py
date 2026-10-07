@@ -208,7 +208,10 @@ class AWQMoEKernel:
         return self.runner is not None and self.runner.runner_backend.is_w4a16_sm90()
 
     def _repack_for_w4a16_sm90(self, layer: torch.nn.Module) -> None:
-        from sglang.kernels.ops.moe.w4a16_moe_sm90 import repack_awq_moe_weights
+        from sglang.kernels.ops.moe.w4a16_moe_sm90 import (
+            repack_awq_moe_weights,
+            stream_k_workspace,
+        )
 
         if layer.w13_scales.dtype != torch.bfloat16:
             raise ValueError(
@@ -225,6 +228,9 @@ class AWQMoEKernel:
             replace_parameter(layer, f"{proj}_qweight", repacked.qweight)
             replace_parameter(layer, f"{proj}_scales", repacked.scales)
             replace_parameter(layer, f"{proj}_qzeros", repacked.zeros)
+        # The gate-up GEMM runs stream-K; its shared workspace must exist before
+        # CUDA graph capture.
+        stream_k_workspace(layer.w13_qweight.device)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         if self._uses_w4a16_sm90():

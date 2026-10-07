@@ -187,10 +187,32 @@ def select_token_block(num_tokens: int, top_k: int, num_experts: int) -> int:
 
 
 @cache_once
-def _jit_w4a16_moe_sm90_module(token_block: int, zero_unrouted: bool) -> Module:
+def stream_k_workspace(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    """fp32 partials and zeroed ready flags shared by every stream-K launch on ``device``.
+
+    Launches that share it must be stream-ordered; each leaves the flags zeroed.
+    The first call zeroes the flags, so it must not run under CUDA graph capture.
+    """
+    if torch.cuda.is_current_stream_capturing():
+        raise RuntimeError(
+            "create the w4a16_moe_sm90 stream-K workspace before CUDA graph capture"
+        )
+    sms = torch.cuda.get_device_properties(device).multi_processor_count
+    # Sized for the widest token block; one partial and two flags per CTA.
+    partials = torch.empty(
+        sms * CTA_ROWS * TOKEN_BLOCKS[-1], dtype=torch.float32, device=device
+    )
+    partial_ready = torch.zeros(sms * 2, dtype=torch.int32, device=device)
+    return partials, partial_ready
+
+
+@cache_once
+def _jit_w4a16_moe_sm90_module(
+    token_block: int, zero_unrouted: bool, stream_k: bool
+) -> Module:
     if torch.cuda.get_device_capability()[0] != 9:
         raise RuntimeError("w4a16_moe_sm90 requires an SM90 (Hopper) GPU")
-    args = make_cpp_args(token_block, zero_unrouted)
+    args = make_cpp_args(token_block, zero_unrouted, stream_k)
     return load_jit(
         "w4a16_moe_sm90",
         *args,
@@ -218,6 +240,7 @@ def w4a16_moe_sm90_gemm(
     token_block: int,
     a_row_divisor: int,
     zero_unrouted: bool = False,
+    stream_k: bool = False,
 ) -> None:
     """out[r] = W[expert(r)] @ a[r / a_row_divisor] for every routed row r.
 
@@ -231,6 +254,10 @@ def w4a16_moe_sm90_gemm(
     With ``zero_unrouted``, rows of blocks routed to no local expert (expert id
     -1) are written as zeros instead of skipped, so ``out`` needs no zero fill
     when every row is listed.
+
+    With ``stream_k``, every CTA takes an equal share of the (tile, k-tile) work
+    instead of whole tiles, so a launch whose tile count is not a multiple of the
+    SM count leaves no SMs idle at its end; it uses ``stream_k_workspace``.
     """
     qweight, scales, zeros = weights
     if a.dtype != torch.bfloat16 or scales.dtype != torch.bfloat16:
@@ -244,7 +271,12 @@ def w4a16_moe_sm90_gemm(
     if topk_weights is not None:
         assert topk_weights.dtype == torch.float32 and topk_weights.is_contiguous()
         assert topk_weights.numel() == out.shape[0]
-    module = _jit_w4a16_moe_sm90_module(token_block, zero_unrouted)
+    module = _jit_w4a16_moe_sm90_module(token_block, zero_unrouted, stream_k)
+    if stream_k:
+        partials, partial_ready = stream_k_workspace(out.device)
+    else:
+        partials = torch.empty(0, dtype=torch.float32, device=out.device)
+        partial_ready = torch.empty(0, dtype=torch.int32, device=out.device)
     module.run(
         a,
         out,
@@ -259,5 +291,7 @@ def w4a16_moe_sm90_gemm(
             if topk_weights is not None
             else torch.empty(0, dtype=torch.float32, device=out.device)
         ),
+        partials,
+        partial_ready,
         a_row_divisor,
     )

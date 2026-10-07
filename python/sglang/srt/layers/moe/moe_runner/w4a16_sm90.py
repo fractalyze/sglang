@@ -85,6 +85,9 @@ def fused_experts_none_to_w4a16_sm90(
         weights=quant_info.w13,
         topk_weights=None,
         a_row_divisor=top_k,
+        # Two 256-row tiles per token block over 132 SMs end in a partial wave;
+        # down's many short tiles do not.
+        stream_k=True,
         **routing,
     )
     activated = hidden_states.new_empty((num_rows, intermediate_size))
