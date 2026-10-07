@@ -106,8 +106,6 @@ def fused_experts_none_to_w4a16_sm90(
         topk_weights=topk_weights.to(torch.float32).contiguous().view(-1),
         a_row_divisor=1,
         zero_unrouted=zero_unrouted,
-        # Down's K is two k-tiles, so a serialized epilogue is a large share of a tile.
-        ping_pong=True,
         **routing,
     )
 
