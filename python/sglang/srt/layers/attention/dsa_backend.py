@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import (
     TYPE_CHECKING,
     Dict,
@@ -379,6 +379,9 @@ class DeepseekSparseAttnBackend(
         )
         self.dsa_index_topk = get_dsa_index_topk(hf_config)
         self.dsa_index_kpool = get_dsa_index_kpool(hf_config)
+        # (forward metadata, its flashmla_kv copy fitted to the q rows), so
+        # _fit_flashmla_kv_metadata_to_q_rows rebuilds it once per forward.
+        self._flashmla_kv_q_row_fit: Optional[Tuple[DSAMetadata, DSAMetadata]] = None
         self.needs_cpu_seq_lens = self.dsa_index_kpool > 1
         self._init_kpool_metadata_fusion()
         self.max_context_len = model_runner.model_config.context_len
@@ -2937,11 +2940,13 @@ class DeepseekSparseAttnBackend(
     ) -> torch.Tensor:
         from sgl_kernel.flash_mla import flash_mla_with_kvcache
 
-        cache_seqlens = metadata.dsa_cache_seqlens_int32
-        assert metadata.flashmla_metadata is not None
-
         # TODO the 2nd dim is seq_len_q, need to be >1 when MTP
         q_all = q_all.view(-1, 1, layer.tp_q_head_num, layer.head_dim)
+        metadata = self._fit_flashmla_kv_metadata_to_q_rows(
+            metadata=metadata, num_q_rows=q_all.shape[0]
+        )
+        cache_seqlens = metadata.dsa_cache_seqlens_int32
+        assert metadata.flashmla_metadata is not None
         num_q_heads = q_all.shape[2]
         target_q_heads = self.flashmla_kv_num_q_heads
         if target_q_heads != num_q_heads:
@@ -2985,6 +2990,47 @@ class DeepseekSparseAttnBackend(
             o = o[:, :, :num_q_heads, :]
 
         return o
+
+    def _fit_flashmla_kv_metadata_to_q_rows(
+        self, metadata: DSAMetadata, num_q_rows: int
+    ) -> DSAMetadata:
+        # FlashMLA needs num_splits of q rows + 1; prefill-graph replay can hand q
+        # more or fewer rows than the DP-padded seqlens.
+        num_metadata_rows = metadata.dsa_cache_seqlens_int32.shape[0]
+        if num_metadata_rows == num_q_rows:
+            return metadata
+        assert not torch.cuda.is_current_stream_capturing(), (
+            "flashmla_kv metadata must match the q rows at CUDA graph capture"
+        )
+
+        cached = self._flashmla_kv_q_row_fit
+        if (
+            cached is not None
+            and cached[0] is metadata
+            and cached[1].dsa_cache_seqlens_int32.shape[0] == num_q_rows
+        ):
+            return cached[1]
+
+        cache_seqlens = metadata.dsa_cache_seqlens_int32
+        if num_q_rows < num_metadata_rows:
+            fitted_cache_seqlens = cache_seqlens[:num_q_rows]
+        else:
+            # Zero-length KV for the extra q rows, as DP padding does.
+            fitted_cache_seqlens = torch.cat(
+                [
+                    cache_seqlens,
+                    cache_seqlens.new_zeros(num_q_rows - num_metadata_rows),
+                ]
+            )
+        fitted = replace(
+            metadata,
+            dsa_cache_seqlens_int32=fitted_cache_seqlens,
+            flashmla_metadata=self._compute_flashmla_metadata(
+                cache_seqlens=fitted_cache_seqlens, seq_len_q=1
+            ),
+        )
+        self._flashmla_kv_q_row_fit = (metadata, fitted)
+        return fitted
 
     def _forward_standard_mha(
         self,
