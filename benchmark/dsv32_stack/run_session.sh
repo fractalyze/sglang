@@ -21,9 +21,12 @@ case $SESSION in
   stack-eagle) SPEC="stack eagle - 1 128 256 / 128 256" ;;
   base-nospec) SPEC="base nospec 1024 0 1024 / 512 1024" ;;
   base-eagle) SPEC="base eagle - 0 / 128 256" ;;
+  # A KV-capacity point: the fp8 KV cache holds more requests per rank than bf16.
+  stack-nospec-fp8kv) SPEC="stack nospec 1024 1 512 1024 /"; EXTRA="--kv-cache-dtype fp8_e4m3" ;;
   *) echo "unknown session $SESSION" >&2; exit 2 ;;
 esac
 read -r ARM MODE CAP GSM8K REST <<< "$SPEC"
+EXTRA=${EXTRA:-}
 export ARM MODE GSM8K
 export BENCH_CS=${REST%%/*} PROFILE_CS=${REST#*/}
 export OUT=$W/results/$RUN/$SESSION S3=$S3_ROOT/$RUN/$SESSION
@@ -46,15 +49,18 @@ fi
 cp "$0" "$SRC_TAR" $OUT/
 
 # The session's launcher: launch.sh, plus the stack's mount and switches for the stack arm,
-# plus the request cap. Its diff against launch.sh is saved next to the results.
+# plus the request cap and any extra server flags. Its diff against launch.sh is saved next
+# to the results.
 LAUNCHER=$OUT/launch_$ARM.sh
 SED=()
 if [ $ARM = stack ]; then
   SED+=(-e "s#-v \"\$FIX\":\$FIX_TARGET:ro#-v $SRC/python/sglang:/sgl-workspace/sglang/python/sglang:ro -v \"\$FIX\":\$FIX_TARGET:ro -e SGLANG_USE_W4A16_SM90_GEMM=1#")
   SED+=(-e 's#python3 -m sglang.launch_server $ARGS#python3 -m sglang.launch_server $ARGS --moe-runner-backend w4a16_sm90#')
 fi
-if [ $CAP != - ]; then
-  SED+=(-e "s#python3 -m sglang.launch_server \$ARGS#python3 -m sglang.launch_server \$ARGS --max-running-requests $CAP#")
+FLAGS=$EXTRA
+[ $CAP != - ] && FLAGS="--max-running-requests $CAP $FLAGS"
+if [ -n "$FLAGS" ]; then
+  SED+=(-e "s#python3 -m sglang.launch_server \$ARGS#python3 -m sglang.launch_server \$ARGS ${FLAGS% }#")
 fi
 if [ ${#SED[@]} -gt 0 ]; then sed "${SED[@]}" $B/launch.sh > $LAUNCHER; else cp $B/launch.sh $LAUNCHER; fi
 chmod +x $LAUNCHER
@@ -146,5 +152,10 @@ EOF
 export -f session profile
 gpu-lease 8 --wait 10800 -- bash -c session
 echo "session exit $?" > $OUT/session_exit.txt
+# KV capacity: the per-rank token pool and how often the scheduler retracted requests.
+{
+  grep -oE "max_total_num_tokens=[0-9]+" $OUT/server.log | sort | uniq -c
+  echo "retractions: $(grep -ciE "retract" $OUT/server.log)"
+} > $OUT/kv.txt 2>/dev/null
 aws s3 sync --only-show-errors $OUT $S3/
 echo "results: $S3/"

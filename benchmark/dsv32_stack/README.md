@@ -25,6 +25,7 @@ profile is recorded once every request is admitted and prefill has drained.
 | `stack-eagle` | stack | `eagle` | 512 (its own) | yes | c128, c256 | c128, c256 |
 | `base-nospec` | baseline | `nospec` | 1024 | no | c1024 | c512, c1024 |
 | `base-eagle` | baseline | `eagle` | 512 (its own) | no | none | c128, c256 |
+| `stack-nospec-fp8kv` | stack, `--kv-cache-dtype fp8_e4m3` | `nospec` | 1024 | yes | c512, c1024 | none |
 
 The stack arm is `launch.sh` with these changes:
 
@@ -36,7 +37,12 @@ The baseline image is release/v0.5.21 e00930c5, the commit `dsv32/base`
 branches from, so nothing else differs. A request cap of 1024 is
 `--max-running-requests 1024`. DP attention divides it across the eight ranks,
 so each rank takes 128. Each session saves its launcher's diff against
-`launch.sh` as `launch.diff`.
+`launch.sh` as `launch.diff`, and the per-rank KV pool
+(`max_total_num_tokens`) with the scheduler's retraction count as `kv.txt`.
+
+`stack-nospec-fp8kv` is a KV-capacity point, not part of the stack-vs-baseline
+comparison. With the bf16 KV cache, a rank's pool cannot hold 128 requests of
+2048 tokens, so c1024 measures retractions rather than kernels.
 
 ```sh
 git archive --format=tar.gz -o src.tar.gz HEAD python/sglang test/registered/kernels/benchmark/gemm
