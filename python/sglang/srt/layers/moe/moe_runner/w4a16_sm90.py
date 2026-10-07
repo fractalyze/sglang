@@ -90,14 +90,22 @@ def fused_experts_none_to_w4a16_sm90(
     activated = hidden_states.new_empty((num_rows, intermediate_size))
     silu_and_mul(gate_up, activated)
 
-    # Rows routed to no local expert are never written, and the top-k sum reads them.
-    down = hidden_states.new_zeros((num_rows, hidden_states.shape[1]))
+    # The top-k sum reads every routed row. moe_align_block_size lists them all, -1
+    # ones in expert -1 blocks, so with zero_unrouted the GEMM writes each one. Under
+    # EP most rows belong to other ranks; the buffer is zero-filled and they are skipped.
+    zero_unrouted = runner_config.num_local_experts == runner_config.num_experts
+    down_shape = (num_rows, hidden_states.shape[1])
+    if zero_unrouted:
+        down = hidden_states.new_empty(down_shape)
+    else:
+        down = hidden_states.new_zeros(down_shape)
     w4a16_moe_sm90_gemm(
         a=activated,
         out=down,
         weights=quant_info.w2,
         topk_weights=topk_weights.to(torch.float32).contiguous().view(-1),
         a_row_divisor=1,
+        zero_unrouted=zero_unrouted,
         **routing,
     )
 

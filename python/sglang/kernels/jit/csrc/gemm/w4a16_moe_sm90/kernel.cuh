@@ -245,7 +245,7 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   }
 }
 
-template <int kTokenBlock>
+template <int kTokenBlock, bool kZeroUnrouted>
 __device__ __forceinline__ void
 consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_t* full, uint64_t* empty) {
   using namespace cute;
@@ -339,36 +339,41 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   Meta cur = load_meta(blockIdx.x);
   for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
     const Meta next = load_meta(tile + gridDim.x);
-    if (cur.expert < 0) {
+    // The producer streams nothing for a block routed to no local expert; with
+    // kZeroUnrouted its rows are stored as zeros, so every listed row is written.
+    const bool has_expert = cur.expert >= 0;
+    if (!has_expert && !kZeroUnrouted) {
       cur = next;
       continue;
     }
     const bool row_valid = tid < kTokenBlock && cur.id < p.num_rows;
-    float row_weight = row_valid ? 1.0f : 0.0f;
-    if (p.topk_weights != nullptr && row_valid) row_weight = p.topk_weights[cur.id];
+    float row_weight = row_valid && has_expert ? 1.0f : 0.0f;
+    if (p.topk_weights != nullptr && row_valid && has_expert) row_weight = p.topk_weights[cur.id];
 
     clear(acc_lo);
     clear(acc_hi);
     warpgroup_fence_operand(acc_lo);
     warpgroup_fence_operand(acc_hi);
-    // One wgmma batch stays in flight while the next 64-row atom dequantises, so
-    // each atom has its own A fragment, and a stage is released once the
-    // following stage's first batch is issued.
-    int prev_stage = -1;
-    for (int kt = 0; kt < k_tiles; ++kt, pos.advance(Cfg::kStages)) {
-      const int s = pos.stage;
-      device::ptx::mbar_wait_parity(&full[s], pos.phase);
-      issue_atom(frag_a_lo, acc_lo, s, 0);
-      warpgroup_wait<1>();
+    if (has_expert) {
+      // One wgmma batch stays in flight while the next 64-row atom dequantises, so
+      // each atom has its own A fragment, and a stage is released once the
+      // following stage's first batch is issued.
+      int prev_stage = -1;
+      for (int kt = 0; kt < k_tiles; ++kt, pos.advance(Cfg::kStages)) {
+        const int s = pos.stage;
+        device::ptx::mbar_wait_parity(&full[s], pos.phase);
+        issue_atom(frag_a_lo, acc_lo, s, 0);
+        warpgroup_wait<1>();
+        if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
+        issue_atom(frag_a_hi, acc_hi, s, 1);
+        warpgroup_wait<1>();
+        prev_stage = s;
+      }
+      warpgroup_wait<0>();
+      warpgroup_fence_operand(acc_lo);
+      warpgroup_fence_operand(acc_hi);
       if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
-      issue_atom(frag_a_hi, acc_hi, s, 1);
-      warpgroup_wait<1>();
-      prev_stage = s;
     }
-    warpgroup_wait<0>();
-    warpgroup_fence_operand(acc_lo);
-    warpgroup_fence_operand(acc_hi);
-    if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
 
     if (tid < kTokenBlock) {
       tile_ids[tid] = row_valid ? cur.id : -1;
@@ -402,7 +407,7 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   }
 }
 
-template <int kTokenBlock>
+template <int kTokenBlock, bool kZeroUnrouted>
 __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __grid_constant__ Params p) {
   using Cfg = Config<kTokenBlock>;
   extern __shared__ uint8_t smem_raw[];
@@ -428,13 +433,13 @@ __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __gri
     produce<kTokenBlock>(p, stages, full, empty);
   } else {
     cutlass::arch::warpgroup_reg_alloc<232>();
-    consume<kTokenBlock>(p, stages, epilogue, meta, full, empty);
+    consume<kTokenBlock, kZeroUnrouted>(p, stages, epilogue, meta, full, empty);
   }
 }
 
 }  // namespace w4a16_moe_sm90
 
-template <int kTokenBlock>
+template <int kTokenBlock, bool kZeroUnrouted>
 struct W4A16MoeSm90Kernel {
   using Cfg = w4a16_moe_sm90::Config<kTokenBlock>;
 
@@ -503,7 +508,7 @@ struct W4A16MoeSm90Kernel {
     const int64_t max_tiles = sorted_token_ids.size(0) / kTokenBlock * (n_tiles.unwrap() / kTilesPerCta);
     const int grid = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(sms, max_tiles)));
 
-    constexpr auto kernel = w4a16_moe_sm90_kernel<kTokenBlock>;
+    constexpr auto kernel = w4a16_moe_sm90_kernel<kTokenBlock, kZeroUnrouted>;
     [[maybe_unused]] static const auto _ = [] {
       RuntimeDeviceCheck(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, Cfg::kSmemBytes));
       return 0;

@@ -217,6 +217,62 @@ def test_routed_gemm_matches_reference(k, n, tokens_per_expert, weighted):
     torch.testing.assert_close(out.float(), expected, rtol=2e-2, atol=2e-2)
 
 
+def _masked_routing(num_tokens, top_k, num_experts, seed):
+    """Routing with expert -1 where moe_align lists a row under no local expert.
+
+    The last tokens are CUDA-graph padding (every slot -1); scattered slots
+    stand for experts another EP rank owns.
+    """
+    topk_ids, topk_weights = _routing(num_tokens, top_k, num_experts, seed)
+    gen = torch.Generator(device="cpu").manual_seed(seed + 1)
+    masked = torch.rand(num_tokens, top_k, generator=gen) < 0.2
+    masked[-max(1, num_tokens // 8) :] = True
+    return topk_ids.masked_fill(masked.cuda(), -1), topk_weights
+
+
+@pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
+@pytest.mark.parametrize("tokens_per_expert", [1, 4, 16, 32, 128])
+@pytest.mark.parametrize("masked", [False, True])
+def test_zero_unrouted_matches_zero_fill_bitwise(tokens_per_expert, masked):
+    """zero_unrouted writes every listed row, so an unfilled buffer ends as a zeroed one."""
+    num_experts, top_k, k, n = 16, 8, 256, 7168
+    num_tokens = max(2, tokens_per_expert * num_experts // top_k)
+    route = _masked_routing if masked else _routing
+    topk_ids, topk_weights = route(num_tokens, top_k, num_experts, seed=5)
+    weights = repack_awq_moe_weights(*_random_awq(num_experts, k, n, "cuda"), _GROUP)
+    gen = torch.Generator(device="cuda").manual_seed(6)
+    a = (torch.randn(num_tokens * top_k, k, device="cuda", generator=gen) * 0.5).to(
+        torch.bfloat16
+    )
+    token_block = select_token_block(
+        num_tokens=num_tokens, top_k=top_k, num_experts=num_experts
+    )
+    sorted_ids, expert_ids, num_post_padded = moe_align_block_size(
+        topk_ids, token_block, num_experts
+    )
+
+    def run(out, zero_unrouted):
+        w4a16_moe_sm90_gemm(
+            a=a,
+            out=out,
+            weights=weights,
+            sorted_token_ids=sorted_ids,
+            expert_ids=expert_ids,
+            num_tokens_post_padded=num_post_padded,
+            topk_weights=topk_weights.view(-1),
+            token_block=token_block,
+            a_row_divisor=1,
+            zero_unrouted=zero_unrouted,
+        )
+        return out
+
+    rows = (num_tokens * top_k, n)
+    zero_filled = run(torch.zeros(rows, dtype=torch.bfloat16, device="cuda"), False)
+    # NaN-filled, so a row the kernel skips shows up.
+    unfilled = torch.full(rows, float("nan"), device="cuda").to(torch.bfloat16)
+    assert torch.equal(run(unfilled, True), zero_filled)
+
+
 def _awq_layer(num_experts, hidden, intermediate, device):
     w13 = _random_awq(num_experts, hidden, 2 * intermediate, device, seed=10)
     w2 = _random_awq(num_experts, intermediate, hidden, device, seed=11)
@@ -252,8 +308,13 @@ def _assert_close_to_moe_reference(actual, expected):
     torch.testing.assert_close(actual.float(), expected, rtol=0, atol=atol)
 
 
-def _run_awq_moe(backend, layer, hidden_states, topk_ids, topk_weights):
-    """Runs the AWQ MoE layer as served: scheme repack, runner, fused func."""
+def _run_awq_moe(
+    backend, layer, hidden_states, topk_ids, topk_weights, num_global_experts=None
+):
+    """Runs the AWQ MoE layer as served: scheme repack, runner, fused func.
+
+    num_global_experts above the layer's expert count makes the runner see EP.
+    """
     from sglang.srt.hardware_backend.gpu.quantization.awq_kernels import AWQMoEKernel
     from sglang.srt.layers.moe.moe_runner import MoeRunner, MoeRunnerConfig
     from sglang.srt.layers.moe.token_dispatcher.standard import StandardDispatchOutput
@@ -261,9 +322,14 @@ def _run_awq_moe(backend, layer, hidden_states, topk_ids, topk_weights):
 
     quant_config = SimpleNamespace(pack_factor=8, weight_bits=4, group_size=_GROUP)
     kernel = AWQMoEKernel(quant_config)
-    kernel.runner = MoeRunner(
-        backend, MoeRunnerConfig(activation="silu", is_gated=True)
+    num_local_experts = layer.w13_qweight.shape[0]
+    runner_config = MoeRunnerConfig(
+        num_experts=num_global_experts or num_local_experts,
+        num_local_experts=num_local_experts,
+        activation="silu",
+        is_gated=True,
     )
+    kernel.runner = MoeRunner(backend, runner_config)
     kernel.process_weights_after_loading(layer)
     # Marlin only checks the logits' token count; routing comes from topk_ids.
     router_logits = topk_weights.new_zeros(
@@ -311,6 +377,47 @@ def test_awq_moe_layer_matches_reference_deterministically(tokens_per_expert):
     ]
     _assert_close_to_moe_reference(outputs[0], expected)
     assert torch.equal(outputs[0], outputs[1])
+
+
+@pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
+def test_awq_moe_layer_skips_the_zero_fill_unless_ep(monkeypatch):
+    """Without EP the down GEMM writes unrouted rows itself; both paths agree."""
+    from sglang.srt.layers.moe.moe_runner import w4a16_sm90
+    from sglang.srt.layers.moe.utils import MoeRunnerBackend
+
+    num_experts, top_k, hidden, intermediate, num_tokens = 32, 8, 1024, 256, 64
+    topk_ids, topk_weights = _masked_routing(num_tokens, top_k, num_experts, seed=12)
+    gen = torch.Generator(device="cuda").manual_seed(13)
+    hidden_states = (
+        torch.randn(num_tokens, hidden, device="cuda", generator=gen) * 0.5
+    ).to(torch.bfloat16)
+
+    gemm = w4a16_sm90.w4a16_moe_sm90_gemm
+    zero_unrouted_calls = []
+
+    def recording_gemm(**kwargs):
+        zero_unrouted_calls.append(kwargs.get("zero_unrouted", False))
+        gemm(**kwargs)
+
+    monkeypatch.setattr(w4a16_sm90, "w4a16_moe_sm90_gemm", recording_gemm)
+
+    def run(num_global_experts=None):
+        zero_unrouted_calls.clear()
+        layer = _awq_layer(num_experts, hidden, intermediate, "cuda")[0]
+        out = _run_awq_moe(
+            MoeRunnerBackend.W4A16_SM90,
+            layer,
+            hidden_states,
+            topk_ids,
+            topk_weights,
+            num_global_experts,
+        )
+        return out, zero_unrouted_calls[-1]
+
+    tp, tp_zero_unrouted = run()
+    ep, ep_zero_unrouted = run(num_global_experts=2 * num_experts)
+    assert tp_zero_unrouted and not ep_zero_unrouted
+    assert torch.equal(tp, ep)
 
 
 if __name__ == "__main__":
