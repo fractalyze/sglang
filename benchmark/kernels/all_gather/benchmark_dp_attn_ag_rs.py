@@ -212,8 +212,8 @@ def _create_multimem_state(*, tp_group, device):
 
 
 def _create_push_comm(*, tp_group, device) -> CustomAllReduceV2:
-    # The tuned SM90 push slot (128 KB at world 8) is sized for all-reduce, so
-    # size one to hold a rank's shard at the largest token count instead.
+    # The tuned SM90 push slot is sized for all-reduce and cannot hold a shard,
+    # so size one to hold a rank's shard at the largest token count instead.
     max_local_tokens = max(ARGS.tokens) // tp_group.world_size
     comm = CustomAllReduceV2(
         group=tp_group.cpu_group,
