@@ -187,10 +187,12 @@ def select_token_block(num_tokens: int, top_k: int, num_experts: int) -> int:
 
 
 @cache_once
-def _jit_w4a16_moe_sm90_module(token_block: int, zero_unrouted: bool) -> Module:
+def _jit_w4a16_moe_sm90_module(
+    token_block: int, zero_unrouted: bool, half_tile_tail: bool
+) -> Module:
     if torch.cuda.get_device_capability()[0] != 9:
         raise RuntimeError("w4a16_moe_sm90 requires an SM90 (Hopper) GPU")
-    args = make_cpp_args(token_block, zero_unrouted)
+    args = make_cpp_args(token_block, zero_unrouted, half_tile_tail)
     return load_jit(
         "w4a16_moe_sm90",
         *args,
@@ -218,6 +220,7 @@ def w4a16_moe_sm90_gemm(
     token_block: int,
     a_row_divisor: int,
     zero_unrouted: bool = False,
+    half_tile_tail: bool = False,
 ) -> None:
     """out[r] = W[expert(r)] @ a[r / a_row_divisor] for every routed row r.
 
@@ -231,6 +234,10 @@ def w4a16_moe_sm90_gemm(
     With ``zero_unrouted``, rows of blocks routed to no local expert (expert id
     -1) are written as zeros instead of skipped, so ``out`` needs no zero fill
     when every row is listed.
+
+    With ``half_tile_tail``, the tiles past the last full wave of SMs run as
+    128-row halves, so a launch whose tile count just passes a multiple of the
+    SM count finishes half a tile sooner; the output is bitwise unchanged.
     """
     qweight, scales, zeros = weights
     if a.dtype != torch.bfloat16 or scales.dtype != torch.bfloat16:
@@ -244,7 +251,7 @@ def w4a16_moe_sm90_gemm(
     if topk_weights is not None:
         assert topk_weights.dtype == torch.float32 and topk_weights.is_contiguous()
         assert topk_weights.numel() == out.shape[0]
-    module = _jit_w4a16_moe_sm90_module(token_block, zero_unrouted)
+    module = _jit_w4a16_moe_sm90_module(token_block, zero_unrouted, half_tile_tail)
     module.run(
         a,
         out,
