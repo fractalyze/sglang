@@ -163,7 +163,8 @@ echo "session exit $?" > $OUT/session_exit.txt
 # KV capacity: the per-rank token pool and how often the scheduler retracted requests.
 {
   grep -oE "max_total_num_tokens=[0-9]+" $OUT/server.log | sort | uniq -c
-  echo "retractions: $(grep -ciE "retract" $OUT/server.log)"
+  grep -oE "Retract requests. #retracted_reqs: [0-9]+" $OUT/server.log \
+    | awk '{n++; r += $NF} END {print "retraction events: " n + 0 ", requests retracted: " r + 0}'
 } > $OUT/kv.txt 2>/dev/null
 aws s3 sync --only-show-errors $OUT $S3/
 echo "results: $S3/"
