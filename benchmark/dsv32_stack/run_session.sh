@@ -55,9 +55,10 @@ fi
 cp "$0" "$SRC_TAR" $OUT/
 export HERE=$(cd "$(dirname "$0")" && pwd)
 
-# The session's server: launch_stack.sh with moe and dense (plus comm for a COMM session) for
-# the stack arm and none for the baseline, plus the request cap and any extra server flags.
-LEVERS="moe dense"
+# The session's server: launch_stack.sh with moe, dense and delayer (plus comm for a COMM
+# session) for the stack arm and none for the baseline, plus the request cap and any extra
+# server flags.
+LEVERS="moe dense delayer"
 [ "${COMM:-0}" = 1 ] && LEVERS="$LEVERS comm"
 [ $ARM = base ] && LEVERS=""
 SERVER_FLAGS=$EXTRA
