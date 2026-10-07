@@ -71,6 +71,10 @@ from sglang.srt.layers.cp.cp_decode_attn_tp import get_cp_decode_attn_tp_ctx
 from sglang.srt.layers.dcp.planner import (
     prepare_decode_context_parallel_metadata,
 )
+from sglang.srt.layers.decode_weight_prefetch import (
+    DecodeWeightPrefetch,
+    attach_decode_weight_prefetch,
+)
 from sglang.srt.layers.flashinfer_comm_fusion import uses_cutedsl_ar_fusion
 from sglang.srt.layers.layer_boundary import (
     declare_attn,
@@ -2286,6 +2290,20 @@ class DeepseekV2AttentionMLA(
         else:
             state.hidden_states_after_attn = result
 
+    def decode_weights_before_core(self) -> List[torch.Tensor]:
+        """The weights a decode step reads before the attention core, in read
+        order; the core's KV reads would evict anything staged after them."""
+        if self.q_lora_rank is not None:
+            projections = [self.fused_qkv_a_proj_with_mqa, self.q_b_proj]
+        else:
+            projections = [self.kv_a_proj_with_mqa, self.q_proj]
+        if self.indexer is not None:
+            projections.append(self.indexer)
+        weights = [p for module in projections for p in module.parameters()]
+        if self.w_kc is not None:
+            weights.append(self.w_kc)
+        return weights
+
     def forward(
         self,
         positions: torch.Tensor,
@@ -2577,6 +2595,8 @@ class DeepseekV2DecoderLayer(nn.Module):
             )
 
         self.is_layer_sparse = self._is_layer_sparse(layer_id, is_nextn=is_nextn)
+        # Set by attach_decode_weight_prefetch when the model enables it.
+        self.decode_weight_prefetch: Optional[DecodeWeightPrefetch] = None
         is_previous_layer_sparse = self._is_layer_sparse(layer_id - 1, is_nextn=False)
         is_next_layer_sparse = self._is_layer_sparse(layer_id + 1, is_nextn=False)
 
@@ -2775,9 +2795,20 @@ class DeepseekV2DecoderLayer(nn.Module):
                 forward_batch,
                 gemm_output_zero_allocator,
             )
-        hidden_states = ffn_exit.finish(hidden_states)
+        with self._next_weight_prefetch(forward_batch):
+            hidden_states = ffn_exit.finish(hidden_states)
 
         return (hidden_states, topk_indices)
+
+    def _next_weight_prefetch(self, forward_batch: ForwardBatch):
+        """Overlap the FFN output collective with staging the next layer's
+        weights in L2; a decode-only hint that changes no result."""
+        if (
+            self.decode_weight_prefetch is None
+            or not forward_batch.forward_mode.is_decode()
+        ):
+            return nullcontext()
+        return self.decode_weight_prefetch.overlapping()
 
     def op_comm_prepare_attn(
         self,
@@ -2921,6 +2952,11 @@ class DeepseekV2Model(nn.Module):
         self.next_full_attention_layer_id = dict(
             zip(local_layer_ids, local_layer_ids[1:])
         )
+        prefetch_mb = envs.SGLANG_OPT_DECODE_WEIGHT_PREFETCH_MB.get()
+        if prefetch_mb > 0 and _is_cuda:
+            attach_decode_weight_prefetch(
+                self.layers, local_layer_ids, budget_bytes=prefetch_mb << 20
+            )
         if self.pp_group.is_last_rank:
             self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         else:

@@ -83,3 +83,11 @@ register_kernel(
         capabilities=frozenset({CapabilityRequirement.CUDA}),
     )
 )
+register_kernel(
+    KernelSpec(
+        op="memory.l2_prefetch",
+        backend=KernelBackend.JIT,
+        target="sglang.kernels.ops.memory.l2_prefetch:l2_prefetch",
+        capabilities=frozenset({CapabilityRequirement.cuda(min_sm=(9, 0))}),
+    )
+)

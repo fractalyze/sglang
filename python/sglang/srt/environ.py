@@ -1710,6 +1710,9 @@ class Envs:
     # "cuda" = the hand-written SM90 WGMMA kernel (bitwise identical to the
     # Triton two_dot variant, 1.16-1.38x faster across GLM/DS shapes).
     SGLANG_OPT_Q8KV8_QPREP_VARIANT = EnvStr("auto")
+    # MiB of the next layer's pre-attention weights each MoE layer stages in L2
+    # while its FFN output is reduce-scattered, in decode on SM90+; 0 turns it off.
+    SGLANG_OPT_DECODE_WEIGHT_PREFETCH_MB = EnvInt(0)
 
     # ===================================================================
     # MiniMax M3
