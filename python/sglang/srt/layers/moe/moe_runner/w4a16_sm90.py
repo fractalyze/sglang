@@ -85,8 +85,8 @@ def fused_experts_none_to_w4a16_sm90(
         weights=quant_info.w13,
         topk_weights=None,
         a_row_divisor=top_k,
-        # Gate-up runs a few waves of tiles, so a partial last wave is a large
-        # share of its time; down runs dozens, where the same tail barely matters.
+        # Two 256-row tiles per token block often land just past a full wave of
+        # SMs; down's many short tiles do not.
         half_tile_tail=True,
         **routing,
     )
