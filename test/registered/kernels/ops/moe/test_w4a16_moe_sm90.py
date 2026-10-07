@@ -1,3 +1,4 @@
+import functools
 import pathlib
 import sys
 from types import SimpleNamespace
@@ -217,6 +218,123 @@ def test_routed_gemm_matches_reference(k, n, tokens_per_expert, weighted):
     torch.testing.assert_close(out.float(), expected, rtol=2e-2, atol=2e-2)
 
 
+def _masked_routing(num_tokens, top_k, num_experts, seed):
+    """Routing with expert -1 where moe_align lists a row under no local expert.
+
+    The last tokens are CUDA-graph padding (every slot -1); scattered slots
+    stand for experts another EP rank owns.
+    """
+    topk_ids, topk_weights = _routing(num_tokens, top_k, num_experts, seed)
+    gen = torch.Generator(device="cpu").manual_seed(seed + 1)
+    masked = torch.rand(num_tokens, top_k, generator=gen) < 0.2
+    masked[-max(1, num_tokens // 8) :] = True
+    return topk_ids.masked_fill(masked.cuda(), -1), topk_weights
+
+
+def _down_gemm_and_sum(a, weights, topk_ids, topk_weights, scale, fused, arrivals):
+    """Down GEMM plus top-k sum, fused into the epilogue or as served before it."""
+    from sgl_kernel import moe_sum_reduce
+
+    num_tokens, top_k = topk_ids.shape
+    num_experts = weights.qweight.shape[0]
+    n = weights.qweight.shape[1] * TILE_N
+    token_block = select_token_block(
+        num_tokens=num_tokens, top_k=top_k, num_experts=num_experts
+    )
+    sorted_ids, expert_ids, num_post_padded = moe_align_block_size(
+        topk_ids, token_block, num_experts
+    )
+    routing = dict(
+        a=a,
+        weights=weights,
+        sorted_token_ids=sorted_ids,
+        expert_ids=expert_ids,
+        num_tokens_post_padded=num_post_padded,
+        topk_weights=topk_weights.view(-1),
+        token_block=token_block,
+        a_row_divisor=1,
+    )
+    total = torch.empty(num_tokens, n, dtype=torch.bfloat16, device="cuda")
+    if fused:
+        # NaN-filled, so a routed row the epilogue skips shows up in the sum.
+        down = torch.full((num_tokens * top_k, n), float("nan"), device="cuda")
+        down = down.to(torch.bfloat16)
+        w4a16_moe_sm90_gemm(
+            out=down, sum_out=total, arrivals=arrivals, sum_scale=scale, **routing
+        )
+    else:
+        down = torch.zeros(num_tokens * top_k, n, dtype=torch.bfloat16, device="cuda")
+        w4a16_moe_sm90_gemm(out=down, **routing)
+        moe_sum_reduce(down.view(num_tokens, top_k, n), total, scale)
+    return down, total
+
+
+def _arrivals(num_tokens, n):
+    return torch.zeros(num_tokens * n // TILE_N, dtype=torch.int32, device="cuda")
+
+
+@pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
+@pytest.mark.parametrize("tokens_per_expert", [1, 4, 16, 32, 128])
+@pytest.mark.parametrize("masked", [False, True])
+def test_topk_sum_matches_separate_reduce_bitwise(tokens_per_expert, masked):
+    """The epilogue's top-k sum equals zero-fill + GEMM + moe_sum_reduce bit for bit.
+
+    It also leaves its arrival counters zero, which the next launch relies on.
+    """
+    num_experts, top_k, k, n = 16, 8, 256, 7168
+    num_tokens = max(2, tokens_per_expert * num_experts // top_k)
+    route = _masked_routing if masked else _routing
+    topk_ids, topk_weights = route(num_tokens, top_k, num_experts, seed=5)
+    weights = repack_awq_moe_weights(*_random_awq(num_experts, k, n, "cuda"), _GROUP)
+    gen = torch.Generator(device="cuda").manual_seed(6)
+    a = (torch.randn(num_tokens * top_k, k, device="cuda", generator=gen) * 0.5).to(
+        torch.bfloat16
+    )
+    arrivals = _arrivals(num_tokens, n)
+    run = functools.partial(_down_gemm_and_sum, a, weights, topk_ids, topk_weights, 2.5)
+
+    expected_down, expected = run(fused=False, arrivals=None)
+    for _ in range(2):
+        down, total = run(fused=True, arrivals=arrivals)
+        assert torch.equal(down, expected_down)
+        assert torch.equal(total, expected)
+        assert not arrivals.any()
+
+
+@pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
+def test_topk_sum_replays_in_a_cuda_graph():
+    """A captured fused launch stays exact across replays with new routings."""
+    num_experts, top_k, k, n, num_tokens = 16, 8, 256, 7168, 64
+    weights = repack_awq_moe_weights(*_random_awq(num_experts, k, n, "cuda"), _GROUP)
+    gen = torch.Generator(device="cuda").manual_seed(7)
+    a = (torch.randn(num_tokens * top_k, k, device="cuda", generator=gen) * 0.5).to(
+        torch.bfloat16
+    )
+    topk_ids, topk_weights = _masked_routing(num_tokens, top_k, num_experts, seed=8)
+    arrivals = _arrivals(num_tokens, n)
+
+    def fused():
+        return _down_gemm_and_sum(
+            a, weights, topk_ids, topk_weights, 1.0, fused=True, arrivals=arrivals
+        )[1]
+
+    fused()  # compiles the kernel outside the capture
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        total = fused()
+
+    for seed in (9, 10, 11):
+        new_ids, new_weights = _masked_routing(num_tokens, top_k, num_experts, seed)
+        topk_ids.copy_(new_ids)
+        topk_weights.copy_(new_weights)
+        graph.replay()
+        _, expected = _down_gemm_and_sum(
+            a, weights, topk_ids, topk_weights, 1.0, fused=False, arrivals=None
+        )
+        assert torch.equal(total, expected)
+        assert not arrivals.any()
+
+
 def _awq_layer(num_experts, hidden, intermediate, device):
     w13 = _random_awq(num_experts, hidden, 2 * intermediate, device, seed=10)
     w2 = _random_awq(num_experts, intermediate, hidden, device, seed=11)
@@ -311,6 +429,30 @@ def test_awq_moe_layer_matches_reference_deterministically(tokens_per_expert):
     ]
     _assert_close_to_moe_reference(outputs[0], expected)
     assert torch.equal(outputs[0], outputs[1])
+
+
+@pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
+def test_awq_moe_layer_fused_sum_matches_separate_reduce(monkeypatch):
+    """Batches over the fused-sum token cap take moe_sum_reduce, with equal output."""
+    from sglang.srt.layers.moe.moe_runner import w4a16_sm90
+    from sglang.srt.layers.moe.utils import MoeRunnerBackend
+
+    num_experts, top_k, hidden, intermediate, num_tokens = 32, 8, 1024, 256, 64
+    topk_ids, topk_weights = _routing(num_tokens, top_k, num_experts, seed=12)
+    gen = torch.Generator(device="cuda").manual_seed(13)
+    hidden_states = (
+        torch.randn(num_tokens, hidden, device="cuda", generator=gen) * 0.5
+    ).to(torch.bfloat16)
+
+    def run():
+        layer = _awq_layer(num_experts, hidden, intermediate, "cuda")[0]
+        return _run_awq_moe(
+            MoeRunnerBackend.W4A16_SM90, layer, hidden_states, topk_ids, topk_weights
+        )
+
+    fused = run()
+    monkeypatch.setattr(w4a16_sm90, "_TOPK_SUM_MAX_TOKENS", num_tokens - 1)
+    assert torch.equal(fused, run())
 
 
 if __name__ == "__main__":
