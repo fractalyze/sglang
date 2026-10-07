@@ -24,6 +24,9 @@ case $SESSION in
   # A KV-capacity point: the fp8 KV cache holds more requests per rank than bf16.
   stack-nospec-fp8kv)
     SPEC="stack nospec 1536 1 512 1024 1536 / 512 1024 1536"; EXTRA="--kv-cache-dtype fp8_e4m3" ;;
+  # The push AG/RS lever's A/B: the stack without and with it, on one commit.
+  stack-nospec-ab) SPEC="stack nospec 1024 0 256 512 / 512" ;;
+  stack-nospec-comm) SPEC="stack nospec 1024 1 256 512 / 512"; COMM=1 ;;
   *) echo "unknown session $SESSION" >&2; exit 2 ;;
 esac
 read -r ARM MODE CAP GSM8K REST <<< "$SPEC"
@@ -52,9 +55,10 @@ fi
 cp "$0" "$SRC_TAR" $OUT/
 export HERE=$(cd "$(dirname "$0")" && pwd)
 
-# The session's server: launch_stack.sh with every lever for the stack arm and none for the
-# baseline, plus the request cap and any extra server flags.
+# The session's server: launch_stack.sh with moe and dense (plus comm for a COMM session) for
+# the stack arm and none for the baseline, plus the request cap and any extra server flags.
 LEVERS="moe dense"
+[ "${COMM:-0}" = 1 ] && LEVERS="$LEVERS comm"
 [ $ARM = base ] && LEVERS=""
 SERVER_FLAGS=$EXTRA
 [ $CAP != - ] && SERVER_FLAGS="--max-running-requests $CAP $SERVER_FLAGS"

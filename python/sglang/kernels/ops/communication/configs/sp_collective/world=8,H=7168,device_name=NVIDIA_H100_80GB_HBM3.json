@@ -1,0 +1,114 @@
+{
+  "source": {
+    "code_commits": [
+      "6c0a351e1",
+      "a9ce9566e"
+    ],
+    "date": "2026-10-07",
+    "device": "NVIDIA H100 80GB HBM3",
+    "nodes": 1,
+    "gpus_per_node": 8,
+    "push_slot_bytes": 2097152,
+    "raw_results": [
+      "s3://fractalyze-dsv32-use2/runs/fqu4-agrs/r1/push.jsonl",
+      "s3://fractalyze-dsv32-use2/runs/fqu4-agrs/r2/push_small.jsonl"
+    ]
+  },
+  "selection": {
+    "rule": "nearest global-token bucket at or below the workload",
+    "fallback": "nccl",
+    "note": "benchmark_dp_attn_ag_rs.py --push at T=8..2048, grids 16x256..128x512. Push AG and RS win through T=1024. At T=2048 NCCL wins RS, and a rank's shard no longer fits the 2 MiB push slot, so both fall back."
+  },
+  "configs": {
+    "reduce_scatter": {
+      "8": {
+        "strategy": "push",
+        "num_blocks": 16,
+        "block_size": 256
+      },
+      "16": {
+        "strategy": "push",
+        "num_blocks": 16,
+        "block_size": 256
+      },
+      "32": {
+        "strategy": "push",
+        "num_blocks": 16,
+        "block_size": 256
+      },
+      "64": {
+        "strategy": "push",
+        "num_blocks": 32,
+        "block_size": 512
+      },
+      "128": {
+        "strategy": "push",
+        "num_blocks": 64,
+        "block_size": 512
+      },
+      "256": {
+        "strategy": "push",
+        "num_blocks": 128,
+        "block_size": 512
+      },
+      "512": {
+        "strategy": "push",
+        "num_blocks": 64,
+        "block_size": 512
+      },
+      "1024": {
+        "strategy": "push",
+        "num_blocks": 64,
+        "block_size": 512
+      },
+      "2048": {
+        "strategy": "nccl"
+      }
+    },
+    "all_gather": {
+      "8": {
+        "strategy": "push",
+        "num_blocks": 64,
+        "block_size": 512
+      },
+      "16": {
+        "strategy": "push",
+        "num_blocks": 32,
+        "block_size": 512
+      },
+      "32": {
+        "strategy": "push",
+        "num_blocks": 64,
+        "block_size": 512
+      },
+      "64": {
+        "strategy": "push",
+        "num_blocks": 128,
+        "block_size": 512
+      },
+      "128": {
+        "strategy": "push",
+        "num_blocks": 128,
+        "block_size": 512
+      },
+      "256": {
+        "strategy": "push",
+        "num_blocks": 128,
+        "block_size": 512
+      },
+      "512": {
+        "strategy": "push",
+        "num_blocks": 128,
+        "block_size": 512
+      },
+      "1024": {
+        "strategy": "push",
+        "num_blocks": 128,
+        "block_size": 512
+      },
+      "2048": {
+        "strategy": "nccl"
+      }
+    }
+  }
+}

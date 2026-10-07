@@ -1353,6 +1353,10 @@ class Envs:
     SGLANG_CUSTOM_ALL_REDUCE_V2_MAX_SIZE_KB = EnvInt(16 * 1024)
     SGLANG_FORCE_CUSTOM_ALL_REDUCE_V2_PULL_SIZE_KB = EnvInt(None)
     SGLANG_FORCE_CUSTOM_ALL_REDUCE_V2_PUSH_SIZE_KB = EnvInt(None)
+    # Route the TP group's equal-chunk bf16 all-gather / reduce-scatter (the
+    # DP-attention gather and combine) to the one-shot NVLink push kernels, at
+    # the sizes the device's sp_collective table assigns to push.
+    SGLANG_OPT_USE_PUSH_AG_RS = EnvBool(False)
     # See docs/references/environment_variables.
     SGLANG_ENABLE_PCIE_IPC_ALLREDUCE = EnvBool(False)
     SGLANG_PCIE_IPC_MAX_NUMEL = EnvInt(0)

@@ -507,6 +507,14 @@ class GroupCoordinator:
                 )
             except Exception as e:
                 logger.warning(f"Setup FlashInfer PCIe-IPC allreduce failed with {e}.")
+        # sp_collective keeps one communicator per world size, so only the TP
+        # group, which carries the DP-attention gather, takes the push path.
+        want_push_ag_rs = (
+            envs.SGLANG_OPT_USE_PUSH_AG_RS.get()
+            and is_cuda()
+            and group_name == "tp"
+            and self.world_size > 1
+        )
         if use_custom_allreduce and self.world_size > 1:
             # Initialize a custom fast all-reduce implementation.
             try:
@@ -514,9 +522,19 @@ class GroupCoordinator:
                     group=self.cpu_group,
                     device=self.device,
                 )
+                ca_kwargs = {}
+                if want_push_ag_rs:
+                    from sglang.srt.distributed.device_communicators import (
+                        push_ag_rs,
+                    )
+
+                    ca_kwargs = push_ag_rs.custom_all_reduce_kwargs(
+                        CAClass, self.world_size
+                    )
                 self.ca_comm = CAClass(
                     group=self.cpu_group,
                     device=self.device,
+                    **ca_kwargs,
                 )
             except Exception as e:
                 logger.warning(
@@ -538,6 +556,12 @@ class GroupCoordinator:
                     logger.warning(f"Failed to initialize QuickAllReduce: {e}")
         elif self.world_size > 1 and is_hip():
             logger.info("[AR] All-reduce call path: NCCL (custom AR disabled)")
+
+        self.push_ag_rs: Optional[Any] = None
+        if want_push_ag_rs:
+            from sglang.srt.distributed.device_communicators import push_ag_rs
+
+            self.push_ag_rs = push_ag_rs.create(self.ca_comm)
 
         self.torch_symm_mem_comm: Optional[TorchSymmMemCommunicator] = None
         if self.use_torch_symm_mem_all_reduce and self.world_size > 1:
@@ -1121,6 +1145,10 @@ class GroupCoordinator:
         output: torch.Tensor,
         input: torch.Tensor,
     ) -> torch.Tensor:
+        if self.push_ag_rs is not None and self.push_ag_rs.reduce_scatter(
+            output, input
+        ):
+            return output
         pynccl_comm = self.pynccl_comm
         if pynccl_comm is not None and (
             not pynccl_comm.disabled or self.is_symmetric_memory_enabled()
@@ -1322,6 +1350,9 @@ class GroupCoordinator:
             else:
                 ca_comm.all_gather_unreg(input, out=output, dim=0)
                 return
+
+        if self.push_ag_rs is not None and self.push_ag_rs.all_gather(output, input):
+            return
 
         pymscclpp_comm = self.pymscclpp_comm
         if pymscclpp_comm is not None and pymscclpp_comm.should_mscclpp_allgather(
@@ -2110,6 +2141,7 @@ class GroupCoordinator:
             self.pymscclpp_comm.destroy()
         if self.ca_comm is not None:
             self.ca_comm = None
+            self.push_ag_rs = None
         if self.mq_broadcaster is not None:
             self.mq_broadcaster = None
 

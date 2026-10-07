@@ -76,6 +76,11 @@ _FORCE_PULL_SIZE_KB = envs.SGLANG_FORCE_CUSTOM_ALL_REDUCE_V2_PULL_SIZE_KB.get()
 _FORCE_PUSH_SIZE_KB = envs.SGLANG_FORCE_CUSTOM_ALL_REDUCE_V2_PUSH_SIZE_KB.get()
 
 
+def default_max_push_size(world_size: int, max_size: int = _DEFAULT_MAX_SIZE) -> int:
+    """The push slot a CustomAllReduceV2 gets when no explicit size is passed."""
+    return min(get_all_reduce_config(world_size).max_push_bytes, max_size)
+
+
 def _ceil_align(nbytes: int, align: int) -> int:
     return (nbytes + align - 1) // align * align
 
@@ -145,7 +150,7 @@ class CustomAllReduceV2:
         if max_pull_size is None:
             max_pull_size = min(base_config.max_pull_bytes, max_size)
         if max_push_size is None:
-            max_push_size = min(base_config.max_push_bytes, max_size)
+            max_push_size = default_max_push_size(self.world_size, max_size)
         if _FORCE_PULL_SIZE_KB is not None:
             max_pull_size = int(_FORCE_PULL_SIZE_KB) * 1024
         if _FORCE_PUSH_SIZE_KB is not None:

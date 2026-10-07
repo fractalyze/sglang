@@ -17,8 +17,12 @@ its own process. `--config` picks the setup the server would build:
             communicator, NCCL_CUMEM_ENABLE=1, NCCL_NVLS_ENABLE=1)
 
 `--multimem` adds the in-tree multimem all-gather (`triton_symm_mem_ag`, a
-one-shot NVLS store). There is no in-tree reduce-scatter kernel on CUDA, so
-that row stays NCCL-only. Set NCCL_PROTO in the environment to pin a protocol.
+one-shot NVLS store). `--push` adds the one-shot NVLink push all-gather and
+reduce-scatter (`sp_collective`, over CustomAllReduceV2's push workspace), the
+reduce-scatter both bare and with the residual add fused into its epilogue, at
+each `--push-tuning` grid. `--no-nccl` skips the NCCL rows when only the
+in-tree kernels are of interest. Set NCCL_PROTO in the environment to pin a
+protocol.
 
 Full sweep on one 8-GPU node:
 
@@ -32,12 +36,15 @@ Full sweep on one 8-GPU node:
       benchmark/kernels/all_gather/benchmark_dp_attn_ag_rs.py \
       --config $cfg --multimem --out dp_attn_ag_rs.jsonl
   done
+  torchrun --nproc_per_node 8 \
+    benchmark/kernels/all_gather/benchmark_dp_attn_ag_rs.py \
+    --push --no-nccl --out dp_attn_ag_rs.jsonl
 """
 
 import argparse
 import json
 import os
-from typing import Callable, List
+from typing import Callable, List, Tuple
 
 _CONFIG_ENV = {
     "default": {"NCCL_CUMEM_ENABLE": "0", "NCCL_NVLS_ENABLE": "0"},
@@ -55,6 +62,22 @@ def _parse_args() -> argparse.Namespace:
         "--multimem",
         action="store_true",
         help="Also time the in-tree multimem all-gather.",
+    )
+    parser.add_argument(
+        "--push",
+        action="store_true",
+        help="Also time the one-shot NVLink push all-gather / reduce-scatter.",
+    )
+    parser.add_argument(
+        "--push-tuning",
+        nargs="+",
+        default=["16x256", "32x256", "32x512", "64x512", "128x512"],
+        help="Push launch grids as <num_blocks>x<block_size>.",
+    )
+    parser.add_argument(
+        "--no-nccl",
+        action="store_true",
+        help="Skip the NCCL rows.",
     )
     parser.add_argument(
         "--tokens",
@@ -88,9 +111,13 @@ os.environ.update(_CONFIG_ENV[ARGS.config])
 import torch  # noqa: E402
 import torch.distributed as dist  # noqa: E402
 
+from sglang.kernels.ops.communication import sp_collective  # noqa: E402
 from sglang.srt.distributed import init_distributed_environment  # noqa: E402
 from sglang.srt.distributed.device_communicators import (  # noqa: E402
     triton_symm_mem_ag,
+)
+from sglang.srt.distributed.device_communicators.custom_all_reduce_v2 import (  # noqa: E402
+    CustomAllReduceV2,
 )
 from sglang.srt.distributed.device_communicators.pynccl_allocator import (  # noqa: E402
     use_symmetric_memory,
@@ -184,6 +211,29 @@ def _create_multimem_state(*, tp_group, device):
     )
 
 
+def _create_push_comm(*, tp_group, device) -> CustomAllReduceV2:
+    # The tuned SM90 push slot is sized for all-reduce and cannot hold a shard,
+    # so size one to hold a rank's shard at the largest token count instead.
+    max_local_tokens = max(ARGS.tokens) // tp_group.world_size
+    comm = CustomAllReduceV2(
+        group=tp_group.cpu_group,
+        device=device,
+        max_push_size=max_local_tokens * ARGS.hidden_size * 2,
+        max_pull_size=0,
+    )
+    assert not comm.disabled, "CustomAllReduceV2 is unavailable on this group"
+    sp_collective.register_comm(comm.obj)
+    return comm
+
+
+def _push_tunings() -> List[Tuple[str, sp_collective.Tuning]]:
+    tunings = []
+    for spec in ARGS.push_tuning:
+        num_blocks, block_size = (int(x) for x in spec.split("x"))
+        tunings.append((spec, sp_collective.Tuning(num_blocks, block_size)))
+    return tunings
+
+
 def _time_checked(
     *, fn, out: torch.Tensor, expected: torch.Tensor, what: str
 ) -> List[float]:
@@ -194,7 +244,9 @@ def _time_checked(
     return latencies_us
 
 
-def _bench_tokens(*, tokens: int, tp_group, device, symm: bool, multimem_state):
+def _bench_tokens(
+    *, tokens: int, tp_group, device, symm: bool, multimem_state, push_comm
+):
     rank, world = tp_group.rank_in_group, tp_group.world_size
     hidden = ARGS.hidden_size
     assert tokens % world == 0, f"{tokens=} must split evenly over {world} ranks"
@@ -212,22 +264,24 @@ def _bench_tokens(*, tokens: int, tp_group, device, symm: bool, multimem_state):
         rs_in = rs_inputs[rank].clone()
         rs_out = torch.empty_like(expected_rs)
 
-    ag_latencies = _time_checked(
-        fn=lambda: tp_group.all_gather_into_tensor(ag_out, ag_in),
-        out=ag_out,
-        expected=expected_ag,
-        what=f"nccl all_gather at {tokens=}",
-    )
-    rs_latencies = _time_checked(
-        fn=lambda: tp_group.reduce_scatter_tensor(rs_out, rs_in),
-        out=rs_out,
-        expected=expected_rs,
-        what=f"nccl reduce_scatter at {tokens=}",
-    )
-    rows = [
-        _row("all_gather", "nccl", tokens, expected_ag.nbytes, ag_latencies),
-        _row("reduce_scatter", "nccl", tokens, rs_in.nbytes, rs_latencies),
-    ]
+    rows = []
+    if not ARGS.no_nccl:
+        ag_latencies = _time_checked(
+            fn=lambda: tp_group.all_gather_into_tensor(ag_out, ag_in),
+            out=ag_out,
+            expected=expected_ag,
+            what=f"nccl all_gather at {tokens=}",
+        )
+        rs_latencies = _time_checked(
+            fn=lambda: tp_group.reduce_scatter_tensor(rs_out, rs_in),
+            out=rs_out,
+            expected=expected_rs,
+            what=f"nccl reduce_scatter at {tokens=}",
+        )
+        rows += [
+            _row("all_gather", "nccl", tokens, expected_ag.nbytes, ag_latencies),
+            _row("reduce_scatter", "nccl", tokens, rs_in.nbytes, rs_latencies),
+        ]
 
     if multimem_state is not None:
         flat_in = ag_in.view(1, -1)
@@ -247,6 +301,61 @@ def _bench_tokens(*, tokens: int, tp_group, device, symm: bool, multimem_state):
         rows.append(
             _row("all_gather", "multimem", tokens, expected_ag.nbytes, mm_latencies)
         )
+
+    if push_comm is not None:
+        rows += _bench_push(
+            tokens=tokens,
+            world=world,
+            ag_in=ag_in,
+            expected_ag=expected_ag,
+            rs_in=rs_in,
+            expected_rs=expected_rs,
+        )
+    return rows
+
+
+def _bench_push(*, tokens, world, ag_in, expected_ag, rs_in, expected_rs):
+    residual = torch.full_like(expected_rs, 3)
+    expected_rs_res = expected_rs + residual
+    ag_out = torch.empty_like(expected_ag)
+    rs_out = torch.empty_like(expected_rs)
+    rows = []
+    for spec, tuning in _push_tunings():
+        cases = [
+            (
+                "all_gather",
+                f"push/{spec}",
+                expected_ag.nbytes,
+                lambda: sp_collective.all_gather(world, ag_in, ag_out, tuning=tuning),
+                ag_out,
+                expected_ag,
+            ),
+            (
+                "reduce_scatter",
+                f"push/{spec}",
+                rs_in.nbytes,
+                lambda: sp_collective.reduce_scatter_res(
+                    world, rs_in, rs_out, tuning=tuning
+                ),
+                rs_out,
+                expected_rs,
+            ),
+            (
+                "reduce_scatter",
+                f"push+residual/{spec}",
+                rs_in.nbytes,
+                lambda: sp_collective.reduce_scatter_res(
+                    world, rs_in, rs_out, residual, tuning=tuning
+                ),
+                rs_out,
+                expected_rs_res,
+            ),
+        ]
+        for op, impl, nbytes, fn, out, expected in cases:
+            latencies = _time_checked(
+                fn=fn, out=out, expected=expected, what=f"{impl} {op} at {tokens=}"
+            )
+            rows.append(_row(op, impl, tokens, nbytes, latencies))
     return rows
 
 
@@ -270,6 +379,9 @@ def main() -> None:
         if ARGS.multimem
         else None
     )
+    push_comm = (
+        _create_push_comm(tp_group=tp_group, device=device) if ARGS.push else None
+    )
     rows = []
     for tokens in ARGS.tokens:
         rows += _bench_tokens(
@@ -278,6 +390,7 @@ def main() -> None:
             device=device,
             symm=symm,
             multimem_state=multimem_state,
+            push_comm=push_comm,
         )
     if tp_group.rank_in_group == 0:
         print("All results match the expected gather / sum.")
