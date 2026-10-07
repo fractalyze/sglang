@@ -187,10 +187,10 @@ def select_token_block(num_tokens: int, top_k: int, num_experts: int) -> int:
 
 
 @cache_once
-def _jit_w4a16_moe_sm90_module(token_block: int, topk_sum: bool) -> Module:
+def _jit_w4a16_moe_sm90_module(token_block: int, zero_unrouted: bool) -> Module:
     if torch.cuda.get_device_capability()[0] != 9:
         raise RuntimeError("w4a16_moe_sm90 requires an SM90 (Hopper) GPU")
-    args = make_cpp_args(token_block, topk_sum)
+    args = make_cpp_args(token_block, zero_unrouted)
     return load_jit(
         "w4a16_moe_sm90",
         *args,
@@ -217,9 +217,7 @@ def w4a16_moe_sm90_gemm(
     topk_weights: torch.Tensor | None,
     token_block: int,
     a_row_divisor: int,
-    sum_out: torch.Tensor | None = None,
-    arrivals: torch.Tensor | None = None,
-    sum_scale: float = 1.0,
+    zero_unrouted: bool = False,
 ) -> None:
     """out[r] = W[expert(r)] @ a[r / a_row_divisor] for every routed row r.
 
@@ -230,13 +228,9 @@ def w4a16_moe_sm90_gemm(
     topk_weights.view(-1)[r]. ``a_row_divisor`` is top_k when ``a`` holds one
     row per token, 1 when it holds one row per routed row.
 
-    With ``sum_out`` [tokens, N], the kernel also writes
-    sum_out[t] = sum_scale * sum(out[t * top_k + slot] for slot in range(top_k)),
-    summed in fp32 in slot order like ``moe_sum_reduce``, and rows of blocks
-    routed to no local expert (expert id -1) are written as zeros instead of
-    skipped. Every routed row must then be listed. ``arrivals`` is an int32
-    workspace of at least tokens * N / TILE_N elements, all zero; the kernel
-    leaves it all zero again.
+    With ``zero_unrouted``, rows of blocks routed to no local expert (expert id
+    -1) are written as zeros instead of skipped, so ``out`` needs no zero fill
+    when every row is listed.
     """
     qweight, scales, zeros = weights
     if a.dtype != torch.bfloat16 or scales.dtype != torch.bfloat16:
@@ -250,11 +244,7 @@ def w4a16_moe_sm90_gemm(
     if topk_weights is not None:
         assert topk_weights.dtype == torch.float32 and topk_weights.is_contiguous()
         assert topk_weights.numel() == out.shape[0]
-    topk_sum = sum_out is not None
-    if topk_sum:
-        assert arrivals is not None and arrivals.dtype == torch.int32
-        assert sum_out.is_contiguous() and sum_out.shape[1] == out.shape[1]
-    module = _jit_w4a16_moe_sm90_module(token_block, topk_sum)
+    module = _jit_w4a16_moe_sm90_module(token_block, zero_unrouted)
     module.run(
         a,
         out,
@@ -270,7 +260,4 @@ def w4a16_moe_sm90_gemm(
             else torch.empty(0, dtype=torch.float32, device=out.device)
         ),
         a_row_divisor,
-        sum_out if topk_sum else out.new_empty(0),
-        arrivals if topk_sum else torch.empty(0, dtype=torch.int32, device=out.device),
-        sum_scale,
     )

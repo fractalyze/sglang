@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import functools
 from typing import TYPE_CHECKING
 
 import torch
 
 from sglang.kernels.ops.moe.w4a16_moe_sm90 import (
     TILE_K,
-    TILE_N,
     W4A16MoeWeights,
     select_token_block,
     w4a16_moe_sm90_gemm,
@@ -31,25 +29,6 @@ class W4A16Sm90MoeQuantInfo(MoeQuantInfo):
     def __init__(self, *, w13: W4A16MoeWeights, w2: W4A16MoeWeights):
         self.w13 = w13
         self.w2 = w2
-
-
-# Tokens per forward the down GEMM's fused top-k sum covers; larger batches
-# (prefill) take the separate moe_sum_reduce. Arbitrary: covers decode at any
-# served concurrency; the workspace holds max_tokens * hidden / TILE_N int32.
-_TOPK_SUM_MAX_TOKENS = 16384
-
-
-@functools.cache
-def _topk_sum_arrivals(device: torch.device, hidden_size: int) -> torch.Tensor:
-    """Zeroed once; every fused launch leaves it zero, so graph replays share it."""
-    if torch.cuda.is_current_stream_capturing():
-        raise RuntimeError(
-            "w4a16_sm90 must run eagerly once before CUDA graph capture, "
-            "so its top-k sum workspace is not allocated from a graph pool"
-        )
-    return torch.zeros(
-        _TOPK_SUM_MAX_TOKENS * (hidden_size // TILE_N), dtype=torch.int32, device=device
-    )
 
 
 def _standard_topk(topk_output):
@@ -111,39 +90,30 @@ def fused_experts_none_to_w4a16_sm90(
     activated = hidden_states.new_empty((num_rows, intermediate_size))
     silu_and_mul(gate_up, activated)
 
-    output = torch.empty_like(hidden_states)
-    routed_scaling_factor = runner_config.routed_scaling_factor
-    sum_scale = 1.0 if routed_scaling_factor is None else routed_scaling_factor
-    down_weights = topk_weights.to(torch.float32).contiguous().view(-1)
-    # Under EP most routed rows belong to other ranks, and the fused sum would store
-    # a zero partial for each of them, so EP keeps the separate reduce.
-    experts_all_local = runner_config.num_local_experts == runner_config.num_experts
-    if experts_all_local and num_tokens <= _TOPK_SUM_MAX_TOKENS:
-        # The epilogue writes every routed row, zeros for no local expert, and sums them.
-        # moe_align_block_size lists every row, -1 ones included (ignore_invalid_expert
-        # off); an unlisted row would leave its counter non-zero for later launches.
-        w4a16_moe_sm90_gemm(
-            a=activated,
-            out=hidden_states.new_empty((num_rows, hidden_states.shape[1])),
-            weights=quant_info.w2,
-            topk_weights=down_weights,
-            a_row_divisor=1,
-            sum_out=output,
-            arrivals=_topk_sum_arrivals(output.device, output.shape[1]),
-            sum_scale=sum_scale,
-            **routing,
-        )
-        return StandardCombineInput(hidden_states=output)
-
-    # Rows routed to no local expert are never written, and the top-k sum reads them.
-    down = hidden_states.new_zeros((num_rows, hidden_states.shape[1]))
+    # The top-k sum reads every routed row. moe_align_block_size lists them all, -1
+    # ones in expert -1 blocks, so with zero_unrouted the GEMM writes each one. Under
+    # EP most rows belong to other ranks; the buffer is zero-filled and they are skipped.
+    zero_unrouted = runner_config.num_local_experts == runner_config.num_experts
+    down_shape = (num_rows, hidden_states.shape[1])
+    if zero_unrouted:
+        down = hidden_states.new_empty(down_shape)
+    else:
+        down = hidden_states.new_zeros(down_shape)
     w4a16_moe_sm90_gemm(
         a=activated,
         out=down,
         weights=quant_info.w2,
-        topk_weights=down_weights,
+        topk_weights=topk_weights.to(torch.float32).contiguous().view(-1),
         a_row_divisor=1,
+        zero_unrouted=zero_unrouted,
         **routing,
     )
-    moe_sum_reduce(down.view(num_tokens, top_k, -1), output, sum_scale)
+
+    output = torch.empty_like(hidden_states)
+    routed_scaling_factor = runner_config.routed_scaling_factor
+    moe_sum_reduce(
+        down.view(num_tokens, top_k, -1),
+        output,
+        1.0 if routed_scaling_factor is None else routed_scaling_factor,
+    )
     return StandardCombineInput(hidden_states=output)

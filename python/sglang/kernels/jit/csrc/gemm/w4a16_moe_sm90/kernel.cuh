@@ -22,8 +22,7 @@ limitations under the License.
 // producer warpgroup streams weights, scales and zeros with bulk async copies and
 // gathers tokens with cp.async; consumers dequantise in registers. Work is
 // persistent over (token block, 256-row tile) pairs, rows fastest so concurrent
-// CTAs share the block's tokens in L2. With kTopKSum the epilogue also sums each
-// token's top_k rows into a second output (sum_completed_tokens), with no float atomics.
+// CTAs share the block's tokens in L2.
 //
 // The weight layout is produced by sglang/kernels/ops/moe/w4a16_moe_sm90.py.
 
@@ -126,11 +125,6 @@ struct Params {
   int a_row_divisor;
   int k;
   int n;
-  // Fused top-k sum only: sum_out[t] = sum_scale * sum over slots of out[t * top_k + slot].
-  bf16* sum_out;
-  int32_t* arrivals;  // [tokens, n / kTileN] written partials, all zero between launches
-  int top_k;
-  float sum_scale;
 };
 
 __device__ __forceinline__ void bulk_copy_g2s(void* dst, const void* src, int bytes, uint64_t* bar) {
@@ -251,58 +245,7 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   }
 }
 
-// Counts the partials this warpgroup just stored in column tile `col` toward their
-// tokens. The warpgroup storing a token's last partial sums all top_k of them in
-// slot order and scales once, as moe_sum_reduce does, so the result does not depend
-// on which CTA arrives last; it resets the counter for the next launch.
-template <int kTokenBlock>
-__device__ __forceinline__ void sum_completed_tokens(const Params& p, int32_t* tile_ids, int col, int wg, int tid) {
-  // Release: every thread's partial stores are visible before its tile's arrival.
-  __threadfence();
-  named_barrier_sync(1 + wg, 128);
-  if (tid < kTokenBlock) {
-    const int id = tile_ids[tid];
-    int completed = -1;
-    if (id >= 0) {
-      const int token = id / p.top_k;
-      int32_t* arrivals = p.arrivals + int64_t(token) * (p.n / kTileN) + col / kTileN;
-      if (atomicAdd(arrivals, 1) == p.top_k - 1) {
-        *arrivals = 0;
-        completed = token;
-      }
-    }
-    tile_ids[tid] = completed;
-  }
-  // Acquire: the other CTAs' partials are read only after their arrivals.
-  __threadfence();
-  named_barrier_sync(1 + wg, 128);
-
-  for (int ci = tid; ci < kTokenBlock * kTileN / 8; ci += 128) {
-    const int token = tile_ids[ci / (kTileN / 8)];
-    if (token < 0) continue;
-    const int column = col + ci % (kTileN / 8) * 8;
-    const bf16* partials = p.out + int64_t(token) * p.top_k * p.n + column;
-    float acc[8] = {};
-    for (int slot = 0; slot < p.top_k; ++slot) {
-      // L2, not L1: the partials were stored by other SMs.
-      const uint4 packed = __ldcg(reinterpret_cast<const uint4*>(partials + int64_t(slot) * p.n));
-      const bf16* values = reinterpret_cast<const bf16*>(&packed);
-#pragma unroll
-      for (int i = 0; i < 8; ++i) {
-        acc[i] += float(values[i]);
-      }
-    }
-    uint4 packed;
-    bf16* values = reinterpret_cast<bf16*>(&packed);
-#pragma unroll
-    for (int i = 0; i < 8; ++i) {
-      values[i] = bf16(acc[i] * p.sum_scale);
-    }
-    *reinterpret_cast<uint4*>(p.sum_out + int64_t(token) * p.n + column) = packed;
-  }
-}
-
-template <int kTokenBlock, bool kTopKSum>
+template <int kTokenBlock, bool kZeroUnrouted>
 __device__ __forceinline__ void
 consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_t* full, uint64_t* empty) {
   using namespace cute;
@@ -396,10 +339,10 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   Meta cur = load_meta(blockIdx.x);
   for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
     const Meta next = load_meta(tile + gridDim.x);
-    // The producer streams nothing for a block routed to no local expert. Under the
-    // top-k sum its rows still store zero partials, so every routed row arrives.
+    // The producer streams nothing for a block routed to no local expert; with
+    // kZeroUnrouted its rows are stored as zeros, so every listed row is written.
     const bool has_expert = cur.expert >= 0;
-    if (!has_expert && !kTopKSum) {
+    if (!has_expert && !kZeroUnrouted) {
       cur = next;
       continue;
     }
@@ -459,13 +402,12 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
             *reinterpret_cast<const uint4*>(staging + token * Cfg::kEpilogueStride + part * 8);
       }
     }
-    if constexpr (kTopKSum) sum_completed_tokens<kTokenBlock>(p, tile_ids, col, wg, tid);
     named_barrier_sync(1 + wg, 128);
     cur = next;
   }
 }
 
-template <int kTokenBlock, bool kTopKSum>
+template <int kTokenBlock, bool kZeroUnrouted>
 __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __grid_constant__ Params p) {
   using Cfg = Config<kTokenBlock>;
   extern __shared__ uint8_t smem_raw[];
@@ -491,13 +433,13 @@ __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __gri
     produce<kTokenBlock>(p, stages, full, empty);
   } else {
     cutlass::arch::warpgroup_reg_alloc<232>();
-    consume<kTokenBlock, kTopKSum>(p, stages, epilogue, meta, full, empty);
+    consume<kTokenBlock, kZeroUnrouted>(p, stages, epilogue, meta, full, empty);
   }
 }
 
 }  // namespace w4a16_moe_sm90
 
-template <int kTokenBlock, bool kTopKSum>
+template <int kTokenBlock, bool kZeroUnrouted>
 struct W4A16MoeSm90Kernel {
   using Cfg = w4a16_moe_sm90::Config<kTokenBlock>;
 
@@ -511,10 +453,7 @@ struct W4A16MoeSm90Kernel {
       const tvm::ffi::TensorView expert_ids,
       const tvm::ffi::TensorView num_tokens_post_padded,
       const tvm::ffi::TensorView topk_weights,
-      int64_t a_row_divisor,
-      const tvm::ffi::TensorView sum_out,
-      const tvm::ffi::TensorView arrivals,
-      double sum_scale) {
+      int64_t a_row_divisor) {
     using namespace host;
     using namespace w4a16_moe_sm90;
 
@@ -545,17 +484,6 @@ struct W4A16MoeSm90Kernel {
     CHECK_HOST(topk_weights.size(0) == 0 || topk_weights.size(0) == num_rows)
         << "topk_weights must be empty or hold one weight per routed row";
     CHECK_HOST(a_row_divisor >= 1) << "a_row_divisor must be positive, got " << a_row_divisor;
-    int64_t top_k = 0;
-    if constexpr (kTopKSum) {
-      auto num_tokens = SymbolicSize{"num_tokens"};
-      TensorMatcher({num_tokens, n}).with_dtype<bf16_t>().with_device(device).verify(sum_out);
-      TensorMatcher({-1}).with_dtype<int32_t>().with_device(device).verify(arrivals);
-      CHECK_HOST(num_tokens.unwrap() > 0 && num_rows % num_tokens.unwrap() == 0)
-          << "out must hold top_k rows per sum_out row, got " << num_rows << " and " << num_tokens.unwrap();
-      top_k = num_rows / num_tokens.unwrap();
-      CHECK_HOST(arrivals.size(0) >= num_tokens.unwrap() * n_tiles.unwrap())
-          << "arrivals must hold one counter per (token, " << kTileN << "-column tile)";
-    }
 
     const Params params{
         static_cast<const bf16*>(a.data_ptr()),
@@ -571,10 +499,6 @@ struct W4A16MoeSm90Kernel {
         static_cast<int>(a_row_divisor),
         static_cast<int>(k),
         static_cast<int>(n),
-        kTopKSum ? static_cast<bf16*>(sum_out.data_ptr()) : nullptr,
-        kTopKSum ? static_cast<int32_t*>(arrivals.data_ptr()) : nullptr,
-        static_cast<int>(top_k),
-        static_cast<float>(sum_scale),
     };
 
     const DLDevice dev = device.unwrap();
@@ -584,7 +508,7 @@ struct W4A16MoeSm90Kernel {
     const int64_t max_tiles = sorted_token_ids.size(0) / kTokenBlock * (n_tiles.unwrap() / kTilesPerCta);
     const int grid = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(sms, max_tiles)));
 
-    constexpr auto kernel = w4a16_moe_sm90_kernel<kTokenBlock, kTopKSum>;
+    constexpr auto kernel = w4a16_moe_sm90_kernel<kTokenBlock, kZeroUnrouted>;
     [[maybe_unused]] static const auto _ = [] {
       RuntimeDeviceCheck(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, Cfg::kSmemBytes));
       return 0;
