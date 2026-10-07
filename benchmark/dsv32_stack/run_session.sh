@@ -107,9 +107,9 @@ session() {
   for c in $PROFILE_CS; do profile $c; done
 }
 
-# Decode-stage traces of a wave of <c> concurrent requests (1024 in / 1024 out), 20 steps
-# recorded once every request is admitted and prefill has drained. An EAGLE wave decodes in
-# about 10 s, under the admission margin, so EAGLE sends four waves' worth of prompts.
+# Decode-stage traces of a wave of <c> concurrent requests shaped like bench.sh's, 20 steps
+# recorded once every request is admitted and prefill has drained. A single EAGLE wave
+# finishes decoding within the admission margin, so EAGLE sends four waves of prompts.
 profile() {
   local c=$1 dir=$OUT/profile-c$1 prompts=$1
   [ $MODE = eagle ] && prompts=$((4 * c))
@@ -123,10 +123,11 @@ profile() {
       --output-file $dir/bench_c$c.jsonl > $dir/bench.log 2>&1 &
   local bench=$!
   # Every request running and none queued (summed over the DP ranks), then a margin for the
-  # last chunked prefills. A rank prefills its c / 8 prompts one 1024-token chunk at a time,
-  # about 0.4 s each, after they count as running. When the KV pool cannot hold them all,
-  # the running count stays flat instead; prefill is done by then and the wave is draining,
-  # so the profile starts at once.
+  # last chunked prefills: a rank prefills its c / 8 prompts one chunk at a time after they
+  # count as running. The margin is sized from observed chunk times on H100; re-tune it if
+  # prefill speed changes. When the KV pool cannot hold every request, the running count
+  # stays flat instead; prefill is done by then and the wave is draining, so the profile
+  # starts at once.
   local waited=0 running last=-1 flat=0 margin=$((10 + c / 16))
   while :; do
     running=$(python3 - $c <<'EOF'

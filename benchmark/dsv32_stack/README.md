@@ -15,11 +15,11 @@ every server here, unmodified.
 ## Sessions
 
 `run_session.sh` runs one session under `gpu-lease 8`. It starts a server, then
-runs GSM8K, benches with `bench.sh` (1024 in / 1024 out, 2 x c prompts), and
-records decode-stage torch-profiler traces of a wave of c concurrent requests.
-Each profile starts once every request is admitted and prefill has drained, or
-at once when the KV pool cannot hold every request. An EAGLE wave sends 4 x c
-prompts, since a single wave decodes before the profiler arms.
+runs GSM8K, benches with `bench.sh`, and records decode-stage torch-profiler
+traces of a wave of c concurrent requests shaped like `bench.sh`'s. Each profile
+starts once every request is admitted and prefill has drained, or at once when
+the KV pool cannot hold every request. An EAGLE profile sends four waves of
+prompts, since a single EAGLE wave finishes decoding before the profiler arms.
 `PROFILE_ONLY=1` re-records a session's profiles without GSM8K and the benches.
 
 | session | arm | `launch.sh` mode | request cap | GSM8K | bench | profile |
