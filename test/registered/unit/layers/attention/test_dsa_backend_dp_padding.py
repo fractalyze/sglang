@@ -185,7 +185,14 @@ class TestDSABackendDPPadding(unittest.TestCase):
         self.assertTrue(torch.all(output[2:] == 0))
 
     def _flashmla_kv_backend(self):
-        backend = SimpleNamespace(_flashmla_kv_q_row_padding=None)
+        backend = SimpleNamespace(
+            _flashmla_kv_q_row_fit=None,
+            flashmla_kv_num_q_heads=2,
+            real_page_size=64,
+            kv_cache_dim=3,
+            dsa_kv_cache_store_fp8=True,
+            dsa_index_topk=4,
+        )
         metadata_rows = []
 
         def fake_compute_flashmla_metadata(*, cache_seqlens, seq_len_q):
@@ -197,8 +204,8 @@ class TestDSABackendDPPadding(unittest.TestCase):
             )
 
         backend._compute_flashmla_metadata = fake_compute_flashmla_metadata
-        backend._pad_flashmla_kv_metadata_to_q_rows = MethodType(
-            DeepseekSparseAttnBackend._pad_flashmla_kv_metadata_to_q_rows, backend
+        backend._fit_flashmla_kv_metadata_to_q_rows = MethodType(
+            DeepseekSparseAttnBackend._fit_flashmla_kv_metadata_to_q_rows, backend
         )
         return backend, metadata_rows
 
@@ -227,16 +234,10 @@ class TestDSABackendDPPadding(unittest.TestCase):
             ),
         )
 
-    def test_flashmla_kv_sizes_num_splits_to_prefill_graph_bucket(self):
-        """A breakable prefill graph replays q at its capture bucket, longer
-        than the DP-padded seqlens; FlashMLA must still get q rows + 1 splits."""
+    def _run_flashmla_kv_layers(self, *, dsa_cache_seqlens, num_q_rows):
+        """Two layers of one forward through _forward_flashmla_kv with q of
+        num_q_rows; returns the seqlens FlashMLA got and the metadata rebuilds."""
         backend, metadata_rows = self._flashmla_kv_backend()
-        backend.flashmla_kv_num_q_heads = 2
-        backend.real_page_size = 64
-        backend.kv_cache_dim = 3
-        backend.dsa_kv_cache_store_fp8 = True
-        backend.dsa_index_topk = 4
-        dsa_cache_seqlens = torch.tensor([1, 2, 3, 4, 0, 0], dtype=torch.int32)
         metadata = self._flashmla_kv_metadata(dsa_cache_seqlens)
         layer = SimpleNamespace(tp_q_head_num=2, head_dim=3)
 
@@ -244,9 +245,10 @@ class TestDSABackendDPPadding(unittest.TestCase):
         kernel_calls = []
 
         def fake_flash_mla_with_kvcache(*, q, cache_seqlens, num_splits, **_):
-            kernel_calls.append((cache_seqlens, num_splits))
+            # The check that raised "num_splits must have shape (b+1)".
             self.assertEqual(num_splits.shape[0], q.shape[0] + 1)
             self.assertEqual(cache_seqlens.shape[0], q.shape[0])
+            kernel_calls.append((cache_seqlens, num_splits))
             return torch.zeros((q.shape[0], 1, 2, 2)), None
 
         flash_mla.flash_mla_with_kvcache = fake_flash_mla_with_kvcache
@@ -254,37 +256,52 @@ class TestDSABackendDPPadding(unittest.TestCase):
             patch.dict("sys.modules", {"sgl_kernel.flash_mla": flash_mla}),
             patch.object(torch.cuda, "is_current_stream_capturing", return_value=False),
         ):
-            for _ in range(2):  # two layers of one forward
+            for _ in range(2):
                 output = DeepseekSparseAttnBackend._forward_flashmla_kv(
                     backend,
-                    q_all=torch.zeros((8, 2, 3)),
+                    q_all=torch.zeros((num_q_rows, 2, 3)),
                     kv_cache=torch.zeros((64, 3)),
                     v_head_dim=2,
                     sm_scale=1.0,
                     layer=layer,
                     metadata=metadata,
-                    page_table_1=torch.zeros((8, 4), dtype=torch.int32),
+                    page_table_1=torch.zeros((num_q_rows, 4), dtype=torch.int32),
                 )
 
-        self.assertEqual(output.shape, (8, 1, 2, 2))
-        # The metadata is rebuilt once per forward, not per layer.
-        self.assertEqual(metadata_rows, [8])
+        self.assertEqual(output.shape, (num_q_rows, 1, 2, 2))
+        # Rebuilt once per forward, not per layer.
         self.assertIs(kernel_calls[0][1], kernel_calls[1][1])
-        self.assertTrue(
-            torch.equal(
-                kernel_calls[0][0],
-                torch.tensor([1, 2, 3, 4, 0, 0, 0, 0], dtype=torch.int32),
-            )
-        )
         # The shared forward metadata the indexer reads is left untouched.
         self.assertIs(metadata.dsa_cache_seqlens_int32, dsa_cache_seqlens)
+        return kernel_calls[0][0], metadata_rows
+
+    def test_flashmla_kv_fits_metadata_to_narrowed_prefill_graph_q(self):
+        """Prefill-graph replay narrows q to the rank's real tokens, fewer than
+        the DP-padded seqlens; FlashMLA must still get q rows + 1 splits."""
+        cache_seqlens, metadata_rows = self._run_flashmla_kv_layers(
+            dsa_cache_seqlens=torch.tensor([1, 2, 3, 4, 0, 0, 0, 0], dtype=torch.int32),
+            num_q_rows=4,
+        )
+        self.assertEqual(metadata_rows, [4])
+        self.assertEqual(cache_seqlens.tolist(), [1, 2, 3, 4])
+
+    def test_flashmla_kv_pads_metadata_to_longer_q_with_empty_rows(self):
+        cache_seqlens, metadata_rows = self._run_flashmla_kv_layers(
+            dsa_cache_seqlens=torch.tensor([1, 2, 3, 4, 0, 0], dtype=torch.int32),
+            num_q_rows=8,
+        )
+        self.assertEqual(metadata_rows, [8])
+        self.assertEqual(cache_seqlens.tolist(), [1, 2, 3, 4, 0, 0, 0, 0])
 
     def test_flashmla_kv_metadata_matching_q_rows_is_unchanged(self):
         backend, metadata_rows = self._flashmla_kv_backend()
         metadata = self._flashmla_kv_metadata(torch.ones(4, dtype=torch.int32))
 
         self.assertIs(
-            backend._pad_flashmla_kv_metadata_to_q_rows(metadata, 4), metadata
+            backend._fit_flashmla_kv_metadata_to_q_rows(
+                metadata=metadata, num_q_rows=4
+            ),
+            metadata,
         )
         self.assertEqual(metadata_rows, [])
 
@@ -296,7 +313,7 @@ class TestDSABackendDPPadding(unittest.TestCase):
             patch.object(torch.cuda, "is_current_stream_capturing", return_value=True),
             self.assertRaisesRegex(AssertionError, "CUDA graph capture"),
         ):
-            backend._pad_flashmla_kv_metadata_to_q_rows(metadata, 8)
+            backend._fit_flashmla_kv_metadata_to_q_rows(metadata=metadata, num_q_rows=8)
 
 
 if __name__ == "__main__":
