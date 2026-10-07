@@ -218,6 +218,10 @@ class TestTraceSplit(CustomTestCase):
                 "attention"
             ),
             "void sglang::act_and_mul_kernel<__nv_bfloat16>": "small",
+            "void w4a16_moe_sm90_kernel<Trait<32>>(Params)": "moe",
+            "void w4a16_sm90_kernel<Trait<2112, 7168>, true>(CUtensorMap, Params)": (
+                "dense"
+            ),
         }
         for name, expected in cases.items():
             self.assertEqual(trace_split.classify(name), expected, name)
@@ -267,10 +271,12 @@ class TestTraceSplit(CustomTestCase):
                 json.dump({"traceEvents": events}, f)
             steps = trace_split.load_steps(path)
         self.assertEqual(len(steps), 2)
-        self.assertAlmostEqual(steps[0]["comm"], 40)
-        self.assertAlmostEqual(steps[0]["idle"], 10)
-        self.assertAlmostEqual(steps[0]["moe"], 50)
-        self.assertAlmostEqual(steps[1]["small"], 50)
+        self.assertAlmostEqual(steps[0].class_us["comm"], 40)
+        self.assertAlmostEqual(steps[0].class_us["idle"], 10)
+        self.assertAlmostEqual(steps[0].class_us["moe"], 50)
+        self.assertAlmostEqual(steps[1].class_us["small"], 50)
+        self.assertEqual([s.launches for s in steps], [2, 1])
+        self.assertAlmostEqual(trace_split.mean_launches(steps), 1.5)
 
     _MEASURED = {
         "comm": 6.0,
@@ -282,7 +288,7 @@ class TestTraceSplit(CustomTestCase):
         "idle": 1.5,
     }
 
-    def _split(self, measured, prefetch_bytes=decode_floor.H100_L2_BYTES):
+    def _split(self, measured, prefetch_bytes=decode_floor.H100_L2_BYTES, **kwargs):
         return trace_split.split_gap(
             measured,
             shape=decode_floor.ModelShape(),
@@ -290,6 +296,7 @@ class TestTraceSplit(CustomTestCase):
             hbm_gbps=_HBM_GBPS,
             comm=_COMM,
             prefetch_bytes=prefetch_bytes,
+            **kwargs,
         )
 
     def test_split_gap_slices(self):
@@ -301,10 +308,22 @@ class TestTraceSplit(CustomTestCase):
         self.assertAlmostEqual(gap.comm_symm_saving_ms, 6.0 - comm_floor)
         self.assertAlmostEqual(gap.baseline_ms, 61.0 - (6.0 - comm_floor))
         self.assertAlmostEqual(gap.slice1_ms, 1.5 + 3.0 + 0.5)
+        self.assertAlmostEqual(gap.slice1_net_ms, gap.slice1_ms)
         self.assertGreater(gap.slice2_ms, 0.0)
         self.assertLessEqual(
             gap.slice2_ms, comm_floor + gap.inefficiency_ms["attention"]
         )
+
+    def test_slice1_net_pays_one_barrier_per_launch(self):
+        gap = self._split(self._MEASURED, launches=1000, grid_barrier_us=2.0)
+        self.assertAlmostEqual(gap.barrier_ms, 2.0)
+        self.assertAlmostEqual(gap.slice1_net_ms, 5.0 - 2.0)
+        # Slice 2 hides work behind prefetch with flags, not grid barriers.
+        self.assertAlmostEqual(gap.slice2_ms, self._split(self._MEASURED).slice2_ms)
+
+    def test_slice1_net_is_zero_when_barriers_cost_more(self):
+        gap = self._split(self._MEASURED, launches=1000, grid_barrier_us=10.0)
+        self.assertAlmostEqual(gap.slice1_net_ms, 0.0)
 
     def test_attention_under_its_floor_hides_nothing(self):
         fast_attention = dict(self._MEASURED, attention=0.0)
