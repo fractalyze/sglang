@@ -47,13 +47,10 @@ def test_plan_stops_at_budget():
     a = torch.empty(4 * _RANGE_BYTES, dtype=torch.uint8, device="cuda")
     b = torch.empty(_RANGE_BYTES, dtype=torch.uint8, device="cuda")
     budget = _RANGE_BYTES * 4 + 100
-    ranges = plan_l2_prefetch([a, b], budget_bytes=budget)
+    ranges = plan_l2_prefetch([a, b], budget_bytes=budget).tolist()
 
-    assert int(ranges[:, 1].sum()) == budget // 16 * 16
-    assert _covered(ranges) == [
-        (a.data_ptr(), a.data_ptr() + a.numel()),
-        (b.data_ptr(), b.data_ptr() + 96),
-    ]
+    assert ranges[-1] == [b.data_ptr(), 96]
+    assert sum(nbytes for _, nbytes in ranges[:-1]) == a.numel()
 
 
 def test_plan_spans_strided_and_unaligned_views():

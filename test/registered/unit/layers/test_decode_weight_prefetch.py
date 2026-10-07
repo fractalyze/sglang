@@ -30,6 +30,7 @@ def _prefetch(weights):
 def test_first_call_inside_capture_skips_and_leaves_no_plan():
     weight = torch.randn(1024, 1024, device="cuda", dtype=torch.bfloat16)
     x = torch.randn(16, 1024, device="cuda", dtype=torch.bfloat16)
+    expected = x @ weight
     prefetch = _prefetch([weight])
 
     graph = torch.cuda.CUDAGraph()
@@ -40,7 +41,7 @@ def test_first_call_inside_capture_skips_and_leaves_no_plan():
     torch.cuda.synchronize()
 
     assert prefetch._ranges is None
-    assert torch.equal(out, x @ weight)
+    assert torch.equal(out, expected)
 
 
 def test_planned_prefetch_replays_in_graph_with_unchanged_result():

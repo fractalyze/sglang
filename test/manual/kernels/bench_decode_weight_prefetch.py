@@ -2,13 +2,15 @@
 pre-attention weights in L2 during a collective saves the GEMMs that read them.
 
 Each row flushes L2, holds HBM idle for `window_us` (a sleep standing in for
-the reduce-scatter, which moves activations over NVLink), then times the chain
-of reads the next DeepSeek V3.2 layer issues before its attention core at
-M = 64 tokens per rank (c512 over DP8): the W4A16 projections and the bf16
-w_kc absorb. With prefetch, a side stream issues the L2 prefetch as the window
-opens. `saved_us` is the chain's cold time minus its prefetched time; the
-slice-2 model caps it at one L2 of weights per window. Each time is the
-median of `--repeats` runs.
+the reduce-scatter, which moves activations over NVLink) while a side stream
+stages the weights, then runs the chain of reads the next DeepSeek V3.2 layer
+issues before its attention core at M = 64 tokens per rank (c512 over DP8):
+the W4A16 projections and the bf16 w_kc absorb. Stages: the L2 bulk prefetch
+at a byte budget, and `touch`, a full-GPU read of every byte. Every sequence
+is a CUDA graph, timed as the median replay, so host launch gaps stay out;
+the chain's time is a replay minus the same replay without it. `staged_us`
+also carries any staging that outlasts the window. `hot_us` is the chain with
+nothing flushed, the floor a stage could reach.
 
     python test/manual/kernels/bench_decode_weight_prefetch.py --out results.jsonl
 """
@@ -86,31 +88,55 @@ def _sleep_cycles_per_us() -> float:
     return cycles / (start.elapsed_time(end) * 1e3)
 
 
-def _time_chain(layer, flush, ranges, side, window_cycles, evict_last) -> float:
-    main = torch.cuda.current_stream()
-    chain_start, chain_end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
-    flush.zero_()
-    if ranges is not None:
-        side.wait_stream(main)
-        with torch.cuda.stream(side):
-            l2_prefetch(ranges, evict_last=evict_last)
-    if window_cycles:
-        torch.cuda._sleep(window_cycles)
-    chain_start.record()
-    layer.run()
-    chain_end.record()
-    main.wait_stream(side)
+def _touch(weights):
+    # A full-GPU read of every byte: the load-based way to put weights in L2.
+    for w in weights:
+        w.view(-1).view(torch.uint8).max()
+
+
+def _graph(fn) -> torch.cuda.CUDAGraph:
     torch.cuda.synchronize()
-    return chain_start.elapsed_time(chain_end) * 1e3
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        fn()
+    return graph
+
+
+def _median_us(graph, repeats) -> float:
+    times = []
+    for _ in range(repeats):
+        start, end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
+        start.record()
+        graph.replay()
+        end.record()
+        torch.cuda.synchronize()
+        times.append(start.elapsed_time(end) * 1e3)
+    return statistics.median(times)
+
+
+def _step(layer, flush, side, cycles, stage, chain):
+    """flush L2 (or not), open the window with `stage` on the side stream,
+    hold HBM idle for `cycles`, join, then run the chain if asked."""
+    main = torch.cuda.current_stream()
+    if flush is not None:
+        flush.zero_()
+    side.wait_stream(main)
+    with torch.cuda.stream(side):
+        stage()
+    if cycles:
+        torch.cuda._sleep(cycles)
+    main.wait_stream(side)
+    if chain:
+        layer.run()
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
-        "--windows-us", type=float, nargs="+", default=[0, 10, 17, 25, 45, 100]
+        "--windows-us", type=float, nargs="+", default=[0, 17, 25, 45, 100, 200]
     )
-    parser.add_argument("--budgets-mb", type=int, nargs="+", default=[16, 32, 48])
-    parser.add_argument("--repeats", type=int, default=21)
+    parser.add_argument("--budgets-mb", type=int, nargs="+", default=[24, 48])
+    parser.add_argument("--repeats", type=int, default=51)
     parser.add_argument("--out")
     args = parser.parse_args()
     if torch.cuda.get_device_capability() != (9, 0):
@@ -120,36 +146,53 @@ def main():
     flush = torch.empty(_FLUSH_BYTES, dtype=torch.uint8, device="cuda")
     side = torch.cuda.Stream()
     cycles_per_us = _sleep_cycles_per_us()
-    total_mb = sum(t.nbytes for t in layer.weights()) / 2**20
+    weights = layer.weights()
+    total_mb = sum(t.nbytes for t in weights) / 2**20
     print(f"pre-core weights {total_mb:.1f} MiB, M = {M}")
-    for _ in range(3):
-        layer.run()
+    layer.run()
+    _touch(weights)
 
+    stages = {"none": lambda: None}
+    for budget_mb in args.budgets_mb:
+        ranges = plan_l2_prefetch(weights, budget_bytes=budget_mb << 20)
+        stages[f"bulk{budget_mb}"] = lambda r=ranges: l2_prefetch(r)
+        stages[f"bulk{budget_mb}_evict_last"] = lambda r=ranges: l2_prefetch(
+            r, evict_last=True
+        )
+    stages["touch"] = lambda: _touch(weights)
+
+    def chain_us(flushed, cycles, stage):
+        f = flush if flushed else None
+        with_chain = _graph(lambda: _step(layer, f, side, cycles, stage, True))
+        without = _graph(lambda: _step(layer, f, side, cycles, stage, False))
+        return _median_us(with_chain, args.repeats) - _median_us(without, args.repeats)
+
+    hot_us = chain_us(False, 0, stages["none"])
+    print(f"hot-L2 chain {hot_us:.2f} us")
     rows = []
     for window_us in args.windows_us:
         cycles = int(window_us * cycles_per_us)
-
-        def median(ranges, evict_last=False):
-            return statistics.median(
-                _time_chain(layer, flush, ranges, side, cycles, evict_last)
-                for _ in range(args.repeats)
+        cold_us = chain_us(True, cycles, stages["none"])
+        for name, stage in stages.items():
+            if name == "none":
+                continue
+            # The window plus the chain, against the window plus the cold chain:
+            # a stage that outlasts the window delays the chain by the excess.
+            f = lambda: _step(layer, flush, side, cycles, stage, True)
+            base = lambda: _step(layer, flush, side, cycles, stages["none"], False)
+            staged_us = _median_us(_graph(f), args.repeats) - _median_us(
+                _graph(base), args.repeats
             )
-
-        cold_us = median(None)
-        for budget_mb in args.budgets_mb:
-            ranges = plan_l2_prefetch(layer.weights(), budget_bytes=budget_mb << 20)
-            for evict_last in (False, True):
-                warm_us = median(ranges, evict_last)
-                row = dict(
-                    window_us=window_us,
-                    budget_mb=budget_mb,
-                    evict_last=evict_last,
-                    cold_us=round(cold_us, 2),
-                    prefetched_us=round(warm_us, 2),
-                    saved_us=round(cold_us - warm_us, 2),
-                )
-                rows.append(row)
-                print(json.dumps(row))
+            row = dict(
+                window_us=window_us,
+                stage=name,
+                hot_us=round(hot_us, 2),
+                cold_us=round(cold_us, 2),
+                staged_us=round(staged_us, 2),
+                saved_us=round(cold_us - staged_us, 2),
+            )
+            rows.append(row)
+            print(json.dumps(row))
     if args.out:
         with open(args.out, "w") as f:
             f.writelines(json.dumps(r) + "\n" for r in rows)
