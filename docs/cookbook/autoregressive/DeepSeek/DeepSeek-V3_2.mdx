@@ -74,6 +74,7 @@ import { DeepSeekV32Deployment } from "/src/snippets/autoregressive/deepseek-v32
     --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3
   ```
 - **AWQ int4 experts on Hopper:** For an AWQ checkpoint on H100/H200, `--moe-runner-backend w4a16_sm90` runs the routed experts with a Hopper W4A16 grouped GEMM instead of Marlin. It needs bf16 weights, AWQ group size 128, and per-GPU MoE widths divisible by 256 (DeepSeek-V3.2 at TP8 qualifies); other layouts fail at load.
+- **AWQ int4 dense layers on Hopper:** With an AWQ checkpoint on H100/H200, set `SGLANG_USE_W4A16_SM90_GEMM=1` alongside `--moe-runner-backend w4a16_sm90`. The MLA and indexer projections then run on a Hopper W4A16 GEMM instead of Marlin whenever a rank's step has at most 192 tokens. Under DP attention the shared expert runs on the gathered batch, which is usually larger, so it stays on Marlin.
 - **NCCL timeout:** Slow model loading → add `--dist-timeout 3600`.
 
 ## 4. Model Invocation
