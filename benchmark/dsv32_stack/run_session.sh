@@ -118,10 +118,12 @@ profile() {
       --num-prompts $c --max-concurrency $c --seed 1 --warmup-requests 4 \
       --output-file $dir/bench_c$c.jsonl > $dir/bench.log 2>&1 &
   local bench=$!
-  # Every request running and none queued (summed over the DP ranks), or the running count
-  # flat for 30 s when the KV pool cannot hold them all; then a margin for the last
-  # chunked prefills.
-  local waited=0 running last=-1 flat=0
+  # Every request running and none queued (summed over the DP ranks), then a margin for the
+  # last chunked prefills. A rank prefills its c / 8 prompts one 1024-token chunk at a time,
+  # about 0.4 s each, after they count as running. When the KV pool cannot hold them all,
+  # the running count stays flat instead; prefill is done by then and the wave is draining,
+  # so the profile starts at once.
+  local waited=0 running last=-1 flat=0 margin=$((10 + c / 16))
   while :; do
     running=$(python3 - $c <<'EOF'
 import re, sys, urllib.request
@@ -134,14 +136,16 @@ EOF
 )
     [ "$running" = all ] && break
     if [ "$running" = "$last" ] && [ "$running" -gt 0 ]; then flat=$((flat + 2)); else flat=0; fi
-    [ $flat -ge 30 ] && { echo "running flat at $running" > $dir/admission_plateau.txt; break; }
+    if [ $flat -ge 20 ]; then
+      echo "running flat at $running" > $dir/admission_plateau.txt
+      margin=0
+      break
+    fi
     last=$running
     sleep 2; waited=$((waited + 2))
     [ $waited -ge 900 ] && { echo "admission wait timed out" > $dir/admission_timeout.txt; break; }
   done
-  # A rank prefills its c / 8 prompts one 1024-token chunk at a time, about 0.4 s each,
-  # after they count as running.
-  sleep $((10 + c / 16))
+  sleep $margin
   echo "admitted after ${waited}s" > $dir/admitted.txt
   curl -s -X POST 127.0.0.1:30000/start_profile -H 'Content-Type: application/json' \
     -d "{\"output_dir\": \"$dir/trace\", \"num_steps\": 20, \"activities\": [\"CPU\", \"GPU\"], \"profile_by_stage\": true, \"with_stack\": false, \"record_shapes\": false}" \
