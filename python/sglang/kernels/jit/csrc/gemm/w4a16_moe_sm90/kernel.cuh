@@ -24,6 +24,12 @@ limitations under the License.
 // persistent over (token block, 256-row tile) pairs, rows fastest so concurrent
 // CTAs share the block's tokens in L2.
 //
+// With kPingPong, the consumer warpgroups instead take whole pairs in turn, each
+// running all four atoms, so one warpgroup's epilogue runs under the other's
+// mainloop. That pays off when a pair has few k-tiles, as in the down projection.
+// Every output element still comes from one wgmma chain over K, so the result is
+// bitwise the same as the cooperative split.
+//
 // The weight layout is produced by sglang/kernels/ops/moe/w4a16_moe_sm90.py.
 
 #pragma once
@@ -74,7 +80,7 @@ constexpr int round_up(int x, int m) {
   return (x + m - 1) / m * m;
 }
 
-template <int kTokenBlock>
+template <int kTokenBlock, bool kPingPong>
 struct Config {
   static_assert(kTokenBlock % 8 == 0 && kTokenBlock <= 256, "wgmma N must be a multiple of 8 up to 256");
 
@@ -86,8 +92,12 @@ struct Config {
   static constexpr int kZeroOffset = kScaleOffset + kTilesPerCta * kScaleBytes;
   static constexpr int kStageBytes = round_up(kZeroOffset + kTilesPerCta * kZeroBytes, 1024);
 
+  static_assert(!kPingPong || kTokenBlock <= 32, "ping-pong accumulators spill past 32 tokens");
+  // Output rows one consumer warpgroup computes per tile: its own weight tile, or
+  // with kPingPong the whole pair.
+  static constexpr int kWarpgroupRows = kPingPong ? kTilesPerCta * kTileN : kTileN;
   // Padded so a warp's column-wise accumulator stores spread over banks.
-  static constexpr int kEpilogueStride = kTileN + 8;
+  static constexpr int kEpilogueStride = kWarpgroupRows + 8;
   static constexpr int kEpilogueBytes = 2 * kTokenBlock * kEpilogueStride * 2;
   // Per consumer warpgroup: the tile's routed row ids, then their top-k weights.
   static constexpr int kMetaBytes = 2 * kTokenBlock * 8;
@@ -164,9 +174,9 @@ struct RingPos {
   }
 };
 
-template <int kTokenBlock>
+template <int kTokenBlock, bool kPingPong>
 __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64_t* full, uint64_t* empty) {
-  using Cfg = Config<kTokenBlock>;
+  using Cfg = Config<kTokenBlock, kPingPong>;
   constexpr int kRowsPerThread = kTokenBlock * kChunksPerTokenRow / kProducerThreads;
   static_assert(kRowsPerThread >= 1, "every producer thread gathers at least one chunk");
 
@@ -245,11 +255,11 @@ __device__ __forceinline__ void produce(const Params& p, uint8_t* stages, uint64
   }
 }
 
-template <int kTokenBlock, bool kZeroUnrouted>
+template <int kTokenBlock, bool kZeroUnrouted, bool kPingPong>
 __device__ __forceinline__ void
 consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_t* full, uint64_t* empty) {
   using namespace cute;
-  using Cfg = Config<kTokenBlock>;
+  using Cfg = Config<kTokenBlock, kPingPong>;
 
   const int wg = threadIdx.x / 128 - 1;
   const int tid = threadIdx.x % 128;
@@ -266,6 +276,9 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   Tensor frag_a_hi = thr_mma.partition_fragment_A(a_shape);
   Tensor acc_lo = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
   Tensor acc_hi = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
+  // The pair's second weight tile, which only a ping-pong warpgroup computes.
+  Tensor acc_lo2 = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
+  Tensor acc_hi2 = partition_fragment_C(tiled_mma, Shape<_64, Int<kTokenBlock>>{});
   Tensor acc_coord = thr_mma.partition_C(make_identity_tensor(Shape<_64, Int<kTokenBlock>>{}));
 
   bf16* staging = epilogue + wg * kTokenBlock * Cfg::kEpilogueStride;
@@ -293,20 +306,21 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
     return m;
   };
 
-  // Dequantises 64-row atom `atom` of this warpgroup's weight tile in stage `s`
+  // Dequantises 64-row atom `atom` of the weight tile in slot `slot` of stage `s`
   // into `frag_a` and issues its wgmma batch into `acc` without waiting on it.
-  auto issue_atom = [&](auto& frag_a, auto& acc, int s, int atom) {
+  auto issue_atom = [&](auto& frag_a, auto& acc, int s, int slot, int atom) {
     const uint8_t* stage = stages + s * Cfg::kStageBytes;
     const int row = atom * kAtomRows + row_lo;
-    const __nv_bfloat16* scales = reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset + wg * kScaleBytes);
-    const uint8_t* zeros = stage + Cfg::kZeroOffset + wg * kZeroBytes;
+    const __nv_bfloat16* scales =
+        reinterpret_cast<const __nv_bfloat16*>(stage + Cfg::kScaleOffset + slot * kScaleBytes);
+    const uint8_t* zeros = stage + Cfg::kZeroOffset + slot * kZeroBytes;
     const nv_bfloat162 scale_lo = __bfloat162bfloat162(scales[row]);
     const nv_bfloat162 scale_hi = __bfloat162bfloat162(scales[row + 8]);
     const nv_bfloat162 zero_lo = biased_zero(zeros[row]);
     const nv_bfloat162 zero_hi = biased_zero(zeros[row + 8]);
 
     Tensor frag_a_words = recast<uint32_t>(frag_a);
-    const uint4* words = reinterpret_cast<const uint4*>(stage + wg * kWeightBytes) + atom * 2 * 128 + tid;
+    const uint4* words = reinterpret_cast<const uint4*>(stage + slot * kWeightBytes) + atom * 2 * 128 + tid;
 #pragma unroll
     for (int half = 0; half < 2; ++half) {
       const uint4 q = words[half * 128];
@@ -337,12 +351,22 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
 
   RingPos pos;
   Meta cur = load_meta(blockIdx.x);
-  for (int tile = blockIdx.x; tile < num_tiles; tile += gridDim.x) {
+  for (int tile = blockIdx.x, item = 0; tile < num_tiles; tile += gridDim.x, ++item) {
     const Meta next = load_meta(tile + gridDim.x);
     // The producer streams nothing for a block routed to no local expert; with
     // kZeroUnrouted its rows are stored as zeros, so every listed row is written.
     const bool has_expert = cur.expert >= 0;
     if (!has_expert && !kZeroUnrouted) {
+      cur = next;
+      continue;
+    }
+    // A ping-pong warpgroup takes every other pair; it still steps the stage ring
+    // past the other warpgroup's stages.
+    if (kPingPong && item % 2 != wg) {
+      if (has_expert) {
+        for (int kt = 0; kt < k_tiles; ++kt)
+          pos.advance(Cfg::kStages);
+      }
       cur = next;
       continue;
     }
@@ -354,6 +378,12 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
     clear(acc_hi);
     warpgroup_fence_operand(acc_lo);
     warpgroup_fence_operand(acc_hi);
+    if constexpr (kPingPong) {
+      clear(acc_lo2);
+      clear(acc_hi2);
+      warpgroup_fence_operand(acc_lo2);
+      warpgroup_fence_operand(acc_hi2);
+    }
     if (has_expert) {
       // One wgmma batch stays in flight while the next 64-row atom dequantises, so
       // each atom has its own A fragment, and a stage is released once the
@@ -362,16 +392,32 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
       for (int kt = 0; kt < k_tiles; ++kt, pos.advance(Cfg::kStages)) {
         const int s = pos.stage;
         device::ptx::mbar_wait_parity(&full[s], pos.phase);
-        issue_atom(frag_a_lo, acc_lo, s, 0);
-        warpgroup_wait<1>();
-        if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
-        issue_atom(frag_a_hi, acc_hi, s, 1);
-        warpgroup_wait<1>();
+        if constexpr (kPingPong) {
+          issue_atom(frag_a_lo, acc_lo, s, 0, 0);
+          warpgroup_wait<1>();
+          if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
+          issue_atom(frag_a_hi, acc_hi, s, 0, 1);
+          warpgroup_wait<1>();
+          issue_atom(frag_a_lo, acc_lo2, s, 1, 0);
+          warpgroup_wait<1>();
+          issue_atom(frag_a_hi, acc_hi2, s, 1, 1);
+          warpgroup_wait<1>();
+        } else {
+          issue_atom(frag_a_lo, acc_lo, s, wg, 0);
+          warpgroup_wait<1>();
+          if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
+          issue_atom(frag_a_hi, acc_hi, s, wg, 1);
+          warpgroup_wait<1>();
+        }
         prev_stage = s;
       }
       warpgroup_wait<0>();
       warpgroup_fence_operand(acc_lo);
       warpgroup_fence_operand(acc_hi);
+      if constexpr (kPingPong) {
+        warpgroup_fence_operand(acc_lo2);
+        warpgroup_fence_operand(acc_hi2);
+      }
       if (prev_stage >= 0) device::ptx::mbar_arrive(&empty[prev_stage]);
     }
 
@@ -387,15 +433,21 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
       const int row = get<0>(acc_coord(i));
       const int token = get<1>(acc_coord(i));
       const float weight = tile_weights[token];
-      staging[token * Cfg::kEpilogueStride + row] = bf16(acc_lo(i) * weight);
-      staging[token * Cfg::kEpilogueStride + kAtomRows + row] = bf16(acc_hi(i) * weight);
+      bf16* staged = staging + token * Cfg::kEpilogueStride + row;
+      staged[0] = bf16(acc_lo(i) * weight);
+      staged[kAtomRows] = bf16(acc_hi(i) * weight);
+      if constexpr (kPingPong) {
+        staged[kTileN] = bf16(acc_lo2(i) * weight);
+        staged[kTileN + kAtomRows] = bf16(acc_hi2(i) * weight);
+      }
     }
     named_barrier_sync(1 + wg, 128);
 
-    const int col = ((tile % n_pairs) * kTilesPerCta + wg) * kTileN;
-    for (int ci = tid; ci < kTokenBlock * kTileN / 8; ci += 128) {
-      const int token = ci / (kTileN / 8);
-      const int part = ci % (kTileN / 8);
+    const int col = (tile % n_pairs) * kTilesPerCta * kTileN + (kPingPong ? 0 : wg * kTileN);
+    constexpr int kParts = Cfg::kWarpgroupRows / 8;
+    for (int ci = tid; ci < kTokenBlock * kParts; ci += 128) {
+      const int token = ci / kParts;
+      const int part = ci % kParts;
       const int id = tile_ids[token];
       if (id >= 0) {
         *reinterpret_cast<uint4*>(p.out + int64_t(id) * p.n + col + part * 8) =
@@ -407,9 +459,9 @@ consume(const Params& p, uint8_t* stages, bf16* epilogue, uint8_t* meta, uint64_
   }
 }
 
-template <int kTokenBlock, bool kZeroUnrouted>
+template <int kTokenBlock, bool kZeroUnrouted, bool kPingPong>
 __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __grid_constant__ Params p) {
-  using Cfg = Config<kTokenBlock>;
+  using Cfg = Config<kTokenBlock, kPingPong>;
   extern __shared__ uint8_t smem_raw[];
   // Offset from smem_raw rather than a rebuilt integer address, so the compiler
   // keeps these pointers in the shared window and emits LDS, not generic loads.
@@ -422,7 +474,8 @@ __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __gri
   if (threadIdx.x == 0) {
     for (int s = 0; s < Cfg::kStages; ++s) {
       device::ptx::mbar_init(&full[s], Cfg::kFullArrivals);
-      device::ptx::mbar_init(&empty[s], kConsumerThreads);
+      // Only the warpgroup that owns a stage releases it under kPingPong.
+      device::ptx::mbar_init(&empty[s], kPingPong ? kConsumerThreads / 2 : kConsumerThreads);
     }
     cutlass::arch::fence_barrier_init();
   }
@@ -430,18 +483,18 @@ __global__ void __launch_bounds__(kThreads, 1) w4a16_moe_sm90_kernel(const __gri
 
   if (threadIdx.x < kProducerThreads) {
     cutlass::arch::warpgroup_reg_dealloc<40>();
-    produce<kTokenBlock>(p, stages, full, empty);
+    produce<kTokenBlock, kPingPong>(p, stages, full, empty);
   } else {
     cutlass::arch::warpgroup_reg_alloc<232>();
-    consume<kTokenBlock, kZeroUnrouted>(p, stages, epilogue, meta, full, empty);
+    consume<kTokenBlock, kZeroUnrouted, kPingPong>(p, stages, epilogue, meta, full, empty);
   }
 }
 
 }  // namespace w4a16_moe_sm90
 
-template <int kTokenBlock, bool kZeroUnrouted>
+template <int kTokenBlock, bool kZeroUnrouted, bool kPingPong>
 struct W4A16MoeSm90Kernel {
-  using Cfg = w4a16_moe_sm90::Config<kTokenBlock>;
+  using Cfg = w4a16_moe_sm90::Config<kTokenBlock, kPingPong>;
 
   static void
   run(const tvm::ffi::TensorView a,
@@ -508,7 +561,7 @@ struct W4A16MoeSm90Kernel {
     const int64_t max_tiles = sorted_token_ids.size(0) / kTokenBlock * (n_tiles.unwrap() / kTilesPerCta);
     const int grid = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(sms, max_tiles)));
 
-    constexpr auto kernel = w4a16_moe_sm90_kernel<kTokenBlock, kZeroUnrouted>;
+    constexpr auto kernel = w4a16_moe_sm90_kernel<kTokenBlock, kZeroUnrouted, kPingPong>;
     [[maybe_unused]] static const auto _ = [] {
       RuntimeDeviceCheck(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, Cfg::kSmemBytes));
       return 0;

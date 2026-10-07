@@ -167,6 +167,8 @@ def dequantize_reference(weights: W4A16MoeWeights) -> torch.Tensor:
 # Token-block widths the kernel is instantiated for (wgmma N, a multiple of 8).
 # No 128-token block: it spills registers and fits only four pipeline stages.
 TOKEN_BLOCKS = (8, 16, 32, 64)
+# Widest token block the ping-pong schedule runs; past it its accumulators spill.
+PING_PONG_MAX_TOKEN_BLOCK = 32
 
 
 def select_token_block(num_tokens: int, top_k: int, num_experts: int) -> int:
@@ -187,10 +189,12 @@ def select_token_block(num_tokens: int, top_k: int, num_experts: int) -> int:
 
 
 @cache_once
-def _jit_w4a16_moe_sm90_module(token_block: int, zero_unrouted: bool) -> Module:
+def _jit_w4a16_moe_sm90_module(
+    token_block: int, zero_unrouted: bool, ping_pong: bool
+) -> Module:
     if torch.cuda.get_device_capability()[0] != 9:
         raise RuntimeError("w4a16_moe_sm90 requires an SM90 (Hopper) GPU")
-    args = make_cpp_args(token_block, zero_unrouted)
+    args = make_cpp_args(token_block, zero_unrouted, ping_pong)
     return load_jit(
         "w4a16_moe_sm90",
         *args,
@@ -218,6 +222,7 @@ def w4a16_moe_sm90_gemm(
     token_block: int,
     a_row_divisor: int,
     zero_unrouted: bool = False,
+    ping_pong: bool = False,
 ) -> None:
     """out[r] = W[expert(r)] @ a[r / a_row_divisor] for every routed row r.
 
@@ -231,6 +236,11 @@ def w4a16_moe_sm90_gemm(
     With ``zero_unrouted``, rows of blocks routed to no local expert (expert id
     -1) are written as zeros instead of skipped, so ``out`` needs no zero fill
     when every row is listed.
+
+    With ``ping_pong``, the two consumer warpgroups take whole 256-row tiles in
+    turn, so one's epilogue runs under the other's mainloop; it pays off when K
+    is a few k-tiles, and the output is bitwise unchanged. Token blocks wider
+    than ``PING_PONG_MAX_TOKEN_BLOCK`` keep the cooperative schedule.
     """
     qweight, scales, zeros = weights
     if a.dtype != torch.bfloat16 or scales.dtype != torch.bfloat16:
@@ -244,7 +254,8 @@ def w4a16_moe_sm90_gemm(
     if topk_weights is not None:
         assert topk_weights.dtype == torch.float32 and topk_weights.is_contiguous()
         assert topk_weights.numel() == out.shape[0]
-    module = _jit_w4a16_moe_sm90_module(token_block, zero_unrouted)
+    ping_pong = ping_pong and token_block <= PING_PONG_MAX_TOKEN_BLOCK
+    module = _jit_w4a16_moe_sm90_module(token_block, zero_unrouted, ping_pong)
     module.run(
         a,
         out,
