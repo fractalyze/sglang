@@ -35,7 +35,7 @@ class W4A16Sm90MoeQuantInfo(MoeQuantInfo):
 
 # Tokens per forward the down GEMM's fused top-k sum covers; larger batches
 # (prefill) take the separate moe_sum_reduce. Arbitrary: covers decode at any
-# served concurrency for a few MB of counters.
+# served concurrency; the workspace holds max_tokens * hidden / TILE_N int32.
 _TOPK_SUM_MAX_TOKENS = 16384
 
 
@@ -115,8 +115,13 @@ def fused_experts_none_to_w4a16_sm90(
     routed_scaling_factor = runner_config.routed_scaling_factor
     sum_scale = 1.0 if routed_scaling_factor is None else routed_scaling_factor
     down_weights = topk_weights.to(torch.float32).contiguous().view(-1)
-    if num_tokens <= _TOPK_SUM_MAX_TOKENS:
+    # Under EP most routed rows belong to other ranks, and the fused sum would store
+    # a zero partial for each of them, so EP keeps the separate reduce.
+    experts_all_local = runner_config.num_local_experts == runner_config.num_experts
+    if experts_all_local and num_tokens <= _TOPK_SUM_MAX_TOKENS:
         # The epilogue writes every routed row, zeros for no local expert, and sums them.
+        # moe_align_block_size lists every row, -1 ones included (ignore_invalid_expert
+        # off); an unlisted row would leave its counter non-zero for later launches.
         w4a16_moe_sm90_gemm(
             a=activated,
             out=hidden_states.new_empty((num_rows, hidden_states.shape[1])),

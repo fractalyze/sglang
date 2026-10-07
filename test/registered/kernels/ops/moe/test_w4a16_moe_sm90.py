@@ -232,7 +232,7 @@ def _masked_routing(num_tokens, top_k, num_experts, seed):
 
 
 def _down_gemm_and_sum(a, weights, topk_ids, topk_weights, scale, fused, arrivals):
-    """Down GEMM plus top-k sum, fused into the epilogue or as served before it."""
+    """Down GEMM plus top-k sum: fused, or zero-fill + GEMM + moe_sum_reduce."""
     from sgl_kernel import moe_sum_reduce
 
     num_tokens, top_k = topk_ids.shape
@@ -370,8 +370,13 @@ def _assert_close_to_moe_reference(actual, expected):
     torch.testing.assert_close(actual.float(), expected, rtol=0, atol=atol)
 
 
-def _run_awq_moe(backend, layer, hidden_states, topk_ids, topk_weights):
-    """Runs the AWQ MoE layer as served: scheme repack, runner, fused func."""
+def _run_awq_moe(
+    backend, layer, hidden_states, topk_ids, topk_weights, num_global_experts=None
+):
+    """Runs the AWQ MoE layer as served: scheme repack, runner, fused func.
+
+    num_global_experts above the layer's expert count makes the runner see EP.
+    """
     from sglang.srt.hardware_backend.gpu.quantization.awq_kernels import AWQMoEKernel
     from sglang.srt.layers.moe.moe_runner import MoeRunner, MoeRunnerConfig
     from sglang.srt.layers.moe.token_dispatcher.standard import StandardDispatchOutput
@@ -379,9 +384,14 @@ def _run_awq_moe(backend, layer, hidden_states, topk_ids, topk_weights):
 
     quant_config = SimpleNamespace(pack_factor=8, weight_bits=4, group_size=_GROUP)
     kernel = AWQMoEKernel(quant_config)
-    kernel.runner = MoeRunner(
-        backend, MoeRunnerConfig(activation="silu", is_gated=True)
+    num_local_experts = layer.w13_qweight.shape[0]
+    runner_config = MoeRunnerConfig(
+        num_experts=num_global_experts or num_local_experts,
+        num_local_experts=num_local_experts,
+        activation="silu",
+        is_gated=True,
     )
+    kernel.runner = MoeRunner(backend, runner_config)
     kernel.process_weights_after_loading(layer)
     # Marlin only checks the logits' token count; routing comes from topk_ids.
     router_logits = topk_weights.new_zeros(
@@ -432,27 +442,47 @@ def test_awq_moe_layer_matches_reference_deterministically(tokens_per_expert):
 
 
 @pytest.mark.skipif(not _is_sm90(), reason="needs an SM90 (Hopper) GPU")
-def test_awq_moe_layer_fused_sum_matches_separate_reduce(monkeypatch):
-    """Batches over the fused-sum token cap take moe_sum_reduce, with equal output."""
+def test_awq_moe_layer_sums_in_the_epilogue_unless_ep_or_over_cap(monkeypatch):
+    """EP and batches over the token cap take moe_sum_reduce, with equal output."""
     from sglang.srt.layers.moe.moe_runner import w4a16_sm90
     from sglang.srt.layers.moe.utils import MoeRunnerBackend
 
     num_experts, top_k, hidden, intermediate, num_tokens = 32, 8, 1024, 256, 64
-    topk_ids, topk_weights = _routing(num_tokens, top_k, num_experts, seed=12)
+    topk_ids, topk_weights = _masked_routing(num_tokens, top_k, num_experts, seed=12)
     gen = torch.Generator(device="cuda").manual_seed(13)
     hidden_states = (
         torch.randn(num_tokens, hidden, device="cuda", generator=gen) * 0.5
     ).to(torch.bfloat16)
 
-    def run():
-        layer = _awq_layer(num_experts, hidden, intermediate, "cuda")[0]
-        return _run_awq_moe(
-            MoeRunnerBackend.W4A16_SM90, layer, hidden_states, topk_ids, topk_weights
-        )
+    gemm = w4a16_sm90.w4a16_moe_sm90_gemm
+    fused_calls = []
 
-    fused = run()
+    def recording_gemm(**kwargs):
+        fused_calls.append(kwargs.get("sum_out") is not None)
+        gemm(**kwargs)
+
+    monkeypatch.setattr(w4a16_sm90, "w4a16_moe_sm90_gemm", recording_gemm)
+
+    def run(num_global_experts=None):
+        fused_calls.clear()
+        layer = _awq_layer(num_experts, hidden, intermediate, "cuda")[0]
+        out = _run_awq_moe(
+            MoeRunnerBackend.W4A16_SM90,
+            layer,
+            hidden_states,
+            topk_ids,
+            topk_weights,
+            num_global_experts,
+        )
+        return out, fused_calls[-1]
+
+    fused, used_fused_sum = run()
+    assert used_fused_sum
+    ep, used_fused_sum = run(num_global_experts=2 * num_experts)
+    assert not used_fused_sum and torch.equal(fused, ep)
     monkeypatch.setattr(w4a16_sm90, "_TOPK_SUM_MAX_TOKENS", num_tokens - 1)
-    assert torch.equal(fused, run())
+    over_cap, used_fused_sum = run()
+    assert not used_fused_sum and torch.equal(fused, over_cap)
 
 
 if __name__ == "__main__":
