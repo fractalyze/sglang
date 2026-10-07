@@ -46,7 +46,9 @@ _CLASS_PATTERNS: Sequence[Tuple[str, str]] = (
 _COMPILED = [(name, re.compile(pat)) for name, pat in _CLASS_PATTERNS]
 CLASSES = tuple(name for name, _ in _CLASS_PATTERNS) + ("idle",)
 
-_STEP_PREFIX = "step[DECODE"
+# The stage a decode step is annotated with: DECODE, or VERIFY for the target-model
+# forward of a speculative step.
+STAGES = ("DECODE", "VERIFY")
 
 
 def classify(kernel_name: str) -> str:
@@ -98,14 +100,15 @@ class StepSplit(msgspec.Struct, frozen=True):
     launches: int  # kernels the step runs
 
 
-def load_steps(trace_path: str) -> List[StepSplit]:
+def load_steps(trace_path: str, stage: str = "DECODE") -> List[StepSplit]:
     """Per-class microseconds and launch count for every decode step in one rank's trace."""
     with gzip.open(trace_path) as f:
         events = json.load(f)["traceEvents"]
     steps = _outer_ranges(
         (e["ts"], e["ts"] + e["dur"])
         for e in events
-        if e.get("cat") == "gpu_user_annotation" and e["name"].startswith(_STEP_PREFIX)
+        if e.get("cat") == "gpu_user_annotation"
+        and e["name"].startswith(f"step[{stage} ")
     )
     kernels = [
         Kernel(
@@ -229,6 +232,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("trace_dir")
     parser.add_argument("--concurrency", type=int, required=True)
+    parser.add_argument("--stage", choices=STAGES, default="DECODE")
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--grid-barrier-us",
@@ -245,7 +249,7 @@ def main() -> None:
         for name in os.listdir(args.trace_dir)
         if name.endswith("-DECODE.trace.json.gz")
     )
-    steps = [s for p in paths for s in load_steps(p)]
+    steps = [s for p in paths for s in load_steps(p, stage=args.stage)]
     measured = mean_step_ms(steps)
     launches = mean_launches(steps)
     gap = split_gap(

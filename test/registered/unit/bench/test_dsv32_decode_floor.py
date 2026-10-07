@@ -280,6 +280,32 @@ class TestTraceSplit(CustomTestCase):
         self.assertEqual([s.launches for s in steps], [2, 1])
         self.assertAlmostEqual(trace_split.mean_launches(steps), 1.5)
 
+    def test_load_steps_reads_only_the_requested_stage(self):
+        events = [
+            {
+                "cat": "gpu_user_annotation",
+                "name": "step[DECODE bs=8]",
+                "ts": 0,
+                "dur": 10,
+            },
+            {
+                "cat": "gpu_user_annotation",
+                "name": "step[VERIFY bs=8]",
+                "ts": 20,
+                "dur": 10,
+            },
+            {"cat": "kernel", "name": "marlin_moe", "ts": 0, "dur": 10},
+            {"cat": "kernel", "name": "nccl_AllGather", "ts": 20, "dur": 10},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "0-TP-0-DP-0-DECODE.trace.json.gz")
+            with gzip.open(path, "wt") as f:
+                json.dump({"traceEvents": events}, f)
+            decode = trace_split.load_steps(path)
+            verify = trace_split.load_steps(path, stage="VERIFY")
+        self.assertEqual([s.class_us["moe"] for s in decode], [10])
+        self.assertEqual([s.class_us["comm"] for s in verify], [10])
+
     _MEASURED = {
         "comm": 6.0,
         "small": 3.0,
@@ -387,14 +413,9 @@ class TestDenseDispatch(CustomTestCase):
         ]
         self.assertEqual(names, one_layer + one_layer)
 
-    def test_tally_uses_own_batch_for_attention_and_padded_gather_for_mlp(self):
+    def _ranks(self, step_name):
         events = [
-            {
-                "cat": "gpu_user_annotation",
-                "name": "step[DECODE bs=64]",
-                "ts": 0,
-                "dur": 1000,
-            }
+            {"cat": "gpu_user_annotation", "name": step_name, "ts": 0, "dur": 1000}
         ]
         ts = 1
         for name, dur in _LAYER:
@@ -407,6 +428,10 @@ class TestDenseDispatch(CustomTestCase):
                 with gzip.open(path, "wt") as f:
                     json.dump({"traceEvents": events}, f)
                 ranks[path] = dense_dispatch.load_steps(path)
+        return ranks
+
+    def test_tally_uses_own_batch_for_attention_and_padded_gather_for_mlp(self):
+        ranks = self._ranks("step[DECODE bs=64]")
         rows = {(r.projection, r.m): r for r in dense_dispatch.tally(ranks, dp_size=8)}
         q_b = rows[("q_b", "64 (own)")]
         self.assertEqual((q_b.sm90_calls, q_b.marlin_calls), (2, 0))
@@ -414,6 +439,17 @@ class TestDenseDispatch(CustomTestCase):
         gate_up = rows[("gate_up", "512 (gathered)")]
         self.assertEqual((gate_up.sm90_calls, gate_up.marlin_calls), (0, 2))
         self.assertAlmostEqual(gate_up.marlin_us, 50.0)
+
+    def test_verify_step_runs_draft_tokens_per_request(self):
+        ranks = self._ranks("step[VERIFY bs=16]")
+        self.assertEqual(
+            {s.stage for steps in ranks.values() for s in steps}, {"VERIFY"}
+        )
+        rows = dense_dispatch.tally(ranks, dp_size=8, tokens_per_request=3)
+        self.assertEqual(
+            {(r.projection, r.m) for r in rows if r.projection in ("q_b", "gate_up")},
+            {("q_b", "48 (own)"), ("gate_up", "384 (gathered)")},
+        )
 
 
 if __name__ == "__main__":

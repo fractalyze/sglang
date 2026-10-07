@@ -16,6 +16,7 @@ reduce-scatter are the MLP. Within a side, the n-th AWQ GEMM is the n-th
 projection that side runs.
 
     python benchmark/dsv32_stack/dense_dispatch.py <trace dir> [--json]
+    python benchmark/dsv32_stack/dense_dispatch.py <trace dir> --stage VERIFY --tokens-per-request 3
 """
 
 import argparse
@@ -39,7 +40,7 @@ _SM90 = re.compile(r"w4a16_sm90_kernel")
 _MARLIN = re.compile(r"marlin::Marlin<")
 _ALL_GATHER = re.compile(r"AllGather|all_gather")
 _REDUCE_SCATTER = re.compile(r"ReduceScatter|reduce_scatter")
-_STEP = re.compile(r"^step\[DECODE bs=(\d+)\]")
+_STEP = re.compile(r"^step\[(DECODE|VERIFY) bs=(\d+)\]")
 
 
 def kernel_family(name: str) -> Optional[str]:
@@ -59,7 +60,8 @@ class Call(msgspec.Struct, frozen=True):
 
 
 class Step(msgspec.Struct, frozen=True):
-    bs: int  # the rank's own decode batch, from the step annotation
+    stage: str  # DECODE, or VERIFY for a speculative step's target forward
+    bs: int  # the rank's own requests, from the step annotation
     layers: int  # all-gathers seen in the step
     calls: List[Call]
 
@@ -111,8 +113,14 @@ def load_steps(trace_path: str) -> List[Step]:
     for start, end, name in ranges:
         in_step = [(n, d) for ts, n, d in kernels if start <= ts < end]
         layers, calls = split_layers(in_step)
+        match = _STEP.match(name)
         steps.append(
-            Step(bs=int(_STEP.match(name).group(1)), layers=layers, calls=calls)
+            Step(
+                stage=match.group(1),
+                bs=int(match.group(2)),
+                layers=layers,
+                calls=calls,
+            )
         )
     return steps
 
@@ -132,18 +140,23 @@ class Row(msgspec.Struct, frozen=True):
     marlin_us: float
 
 
-def tally(ranks: Dict[str, List[Step]], dp_size: int) -> List[Row]:
+def tally(
+    ranks: Dict[str, List[Step]], *, dp_size: int, tokens_per_request: int = 1
+) -> List[Row]:
     """One row per (projection, M), summed over every rank and step.
 
-    M on the attention side is the rank's own batch. On the MLP side it is that
-    batch times `dp_size`: a CUDA-graph decode step gathers in DP attention's
+    M on the attention side is the rank's own tokens: its requests times
+    `tokens_per_request` (the draft tokens plus one on a VERIFY step). On the MLP
+    side it is that times `dp_size`: a CUDA-graph step gathers in DP attention's
     max-len padding mode, which pads every rank to the largest batch.
     """
     durs: Dict[Tuple[str, str, int, str], List[float]] = collections.defaultdict(list)
     for steps in ranks.values():
         for step in steps:
             for call in step.calls:
-                m = step.bs if call.side == "attention" else step.bs * dp_size
+                m = step.bs * tokens_per_request
+                if call.side == "mlp":
+                    m *= dp_size
                 durs[
                     (call.side, projection(call.side, call.index), m, call.family)
                 ].append(call.dur_us)
@@ -171,14 +184,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("trace_dir")
     parser.add_argument("--dp-size", type=int, default=8)
+    parser.add_argument("--stage", choices=("DECODE", "VERIFY"), default="DECODE")
+    # The tokens a step runs per request: 1 for DECODE, draft tokens plus one for VERIFY.
+    parser.add_argument("--tokens-per-request", type=int, default=1)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     ranks = {
-        name: load_steps(os.path.join(args.trace_dir, name))
+        name: [
+            s
+            for s in load_steps(os.path.join(args.trace_dir, name))
+            if s.stage == args.stage
+        ]
         for name in sorted(os.listdir(args.trace_dir))
         if name.endswith("-DECODE.trace.json.gz")
     }
-    rows = tally(ranks, dp_size=args.dp_size)
+    rows = tally(
+        ranks, dp_size=args.dp_size, tokens_per_request=args.tokens_per_request
+    )
     if args.json:
         print(msgspec.json.encode(rows).decode())
         return
