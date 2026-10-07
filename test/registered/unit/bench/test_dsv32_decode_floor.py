@@ -1,4 +1,4 @@
-"""Unit tests for the DeepSeek V3.2 decode floor and trace split, CPU only."""
+"""Unit tests for the DeepSeek V3.2 decode floor, trace split and dense dispatch, CPU only."""
 
 import gzip
 import json
@@ -14,9 +14,11 @@ register_cpu_ci(est_time=2, suite="base-a-test-cpu")
 
 from sglang.test.test_utils import CustomTestCase
 
-BENCHMARK_DIR = Path(__file__).parents[4] / "benchmark" / "dsv32_megakernel"
-sys.path.insert(0, str(BENCHMARK_DIR))
+BENCHMARK_DIR = Path(__file__).parents[4] / "benchmark"
+sys.path.insert(0, str(BENCHMARK_DIR / "dsv32_megakernel"))
+sys.path.insert(0, str(BENCHMARK_DIR / "dsv32_stack"))
 import decode_floor  # noqa: E402
+import dense_dispatch  # noqa: E402
 import trace_split  # noqa: E402
 
 # `metadata.total_size` of QuantTrio/DeepSeek-V3.2-AWQ's
@@ -333,6 +335,85 @@ class TestTraceSplit(CustomTestCase):
             dict(fast_attention, attention=gap.floor_ms["attention"])
         )
         self.assertAlmostEqual(gap.slice2_ms, comm_only.slice2_ms)
+
+
+_SM90 = "void sglang::w4a16_sm90::w4a16_sm90_kernel<sglang::w4a16_sm90::Trait<64, 4, 1, 0, 4>, true>"
+_MOE_SM90 = "void sglang::w4a16_moe_sm90::w4a16_moe_sm90_kernel<32>(sglang::w4a16_moe_sm90::Params)"
+_MARLIN = "void sglang::device::marlin::Marlin<__nv_bfloat16, 1, 256>"
+_MOE_MARLIN = "void sglang::device::marlin_moe::Marlin<__nv_bfloat16, 1>"
+_AG = "ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage<4096ul>)"
+_RS = "ncclDevKernel_ReduceScatter_Sum_bf16_RING_LL(ncclDevKernelArgsStorage<4096ul>)"
+
+# One MoE layer: four attention projections, attention, o_proj, the all-gather,
+# routed experts and the shared expert, the reduce-scatter.
+_LAYER = [
+    (_SM90, 10.0),
+    (_SM90, 11.0),
+    ("nvjet_sm90_tss_64x32_64x16_1x2_h_bz_splitK_TNT", 5.0),
+    (_SM90, 12.0),
+    (_SM90, 13.0),
+    ("void cutlass::device_kernel<flash::FlashAttnFwdSm90<>>", 40.0),
+    (_SM90, 14.0),
+    (_AG, 30.0),
+    (_MOE_SM90, 100.0),
+    (_MARLIN, 50.0),
+    ("void sglang::act_and_mul_kernel<__nv_bfloat16>", 2.0),
+    (_MOE_MARLIN, 90.0),
+    (_MARLIN, 40.0),
+    (_RS, 30.0),
+]
+
+
+class TestDenseDispatch(CustomTestCase):
+    def test_kernel_family_skips_moe_kernels(self):
+        self.assertEqual(dense_dispatch.kernel_family(_SM90), "sm90")
+        self.assertEqual(dense_dispatch.kernel_family(_MARLIN), "marlin")
+        self.assertIsNone(dense_dispatch.kernel_family(_MOE_SM90))
+        self.assertIsNone(dense_dispatch.kernel_family(_MOE_MARLIN))
+        self.assertIsNone(dense_dispatch.kernel_family(_AG))
+
+    def test_split_layers_names_projections_by_side_and_position(self):
+        layers, calls = dense_dispatch.split_layers(_LAYER + _LAYER)
+        self.assertEqual(layers, 2)
+        names = [(dense_dispatch.projection(c.side, c.index), c.family) for c in calls]
+        one_layer = [
+            ("q_a+kv_a", "sm90"),
+            ("q_b", "sm90"),
+            ("indexer wq_b", "sm90"),
+            ("indexer wk", "sm90"),
+            ("o_proj", "sm90"),
+            ("gate_up", "marlin"),
+            ("down", "marlin"),
+        ]
+        self.assertEqual(names, one_layer + one_layer)
+
+    def test_tally_uses_own_batch_for_attention_and_padded_gather_for_mlp(self):
+        events = [
+            {
+                "cat": "gpu_user_annotation",
+                "name": "step[DECODE bs=64]",
+                "ts": 0,
+                "dur": 1000,
+            }
+        ]
+        ts = 1
+        for name, dur in _LAYER:
+            events.append({"cat": "kernel", "name": name, "ts": ts, "dur": dur})
+            ts += dur + 1
+        with tempfile.TemporaryDirectory() as tmp:
+            ranks = {}
+            for rank in range(2):
+                path = os.path.join(tmp, f"0-TP-{rank}-DP-{rank}-DECODE.trace.json.gz")
+                with gzip.open(path, "wt") as f:
+                    json.dump({"traceEvents": events}, f)
+                ranks[path] = dense_dispatch.load_steps(path)
+        rows = {(r.projection, r.m): r for r in dense_dispatch.tally(ranks, dp_size=8)}
+        q_b = rows[("q_b", "64 (own)")]
+        self.assertEqual((q_b.sm90_calls, q_b.marlin_calls), (2, 0))
+        self.assertAlmostEqual(q_b.sm90_us, 11.0)
+        gate_up = rows[("gate_up", "512 (gathered)")]
+        self.assertEqual((gate_up.sm90_calls, gate_up.marlin_calls), (0, 2))
+        self.assertAlmostEqual(gate_up.marlin_us, 50.0)
 
 
 if __name__ == "__main__":
