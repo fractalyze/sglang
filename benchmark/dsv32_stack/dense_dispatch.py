@@ -13,7 +13,8 @@ A layer's dense GEMMs are told apart by position. A decode step runs one
 all-gather and one reduce-scatter per layer: the AWQ GEMMs before the
 all-gather are the attention projections, the ones between it and the
 reduce-scatter are the MLP. Within a side, the n-th AWQ GEMM is the n-th
-projection that side runs.
+projection that side runs. That holds while each projection is one kernel; Marlin
+can split a large M into several launches, which shows up as `<side> #n` rows.
 
     python benchmark/dsv32_stack/dense_dispatch.py <trace dir> [--json]
     python benchmark/dsv32_stack/dense_dispatch.py <trace dir> --stage VERIFY --tokens-per-request 3
@@ -161,9 +162,7 @@ def tally(
                     (call.side, projection(call.side, call.index), m, call.family)
                 ].append(call.dur_us)
     rows = []
-    for side, name, m in sorted(
-        {k[:3] for k in durs}, key=lambda k: (k[0], k[1], k[2])
-    ):
+    for side, name, m in sorted({k[:3] for k in durs}):
         sm90 = durs.get((side, name, m, "sm90"), [])
         marlin = durs.get((side, name, m, "marlin"), [])
         rows.append(

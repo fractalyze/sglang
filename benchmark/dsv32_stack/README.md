@@ -67,3 +67,7 @@ at the batch summed over all ranks.
 ```sh
 python benchmark/dsv32_stack/dense_dispatch.py <session>/profile-c512/trace
 ```
+
+An EAGLE server's target forward is annotated VERIFY and runs the draft tokens
+plus one per request. Pass `--stage VERIFY --tokens-per-request 3` to both
+scripts.
