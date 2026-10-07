@@ -8,6 +8,7 @@ from sgl_kernel.scalar_type import scalar_types
 from sglang.kernels.ops.gemm.gptq_marlin import gptq_marlin_gemm
 from sglang.kernels.ops.gemm.w4a16_sm90 import (
     _SMEM_LIMIT,
+    _TOKEN_TILES,
     GROUP_SIZE,
     MAX_M,
     _fits_registers,
@@ -41,7 +42,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 # (N, K) per GPU of DeepSeek V3.2's dense AWQ projections under DP-attention
-# (attention unsharded) and TP8 shared experts, plus the smallest legal shape.
+# (attention unsharded) and the TP8 MLP, plus the smallest legal shape.
 SHAPES = [
     (64, 256),
     (2112, 7168),  # fused q_a + kv_a
@@ -51,9 +52,14 @@ SHAPES = [
     (128, 7168),  # indexer wk
     (512, 7168),  # shared expert gate_up
     (7168, 256),  # shared expert down
+    (4608, 7168),  # dense MLP gate_up (layers 0-2)
+    (7168, 2304),  # dense MLP down (layers 0-2)
 ]
-# The pinned operating points are M = 48 (c128 EAGLE), 64 (c512) and 96 (c256 EAGLE).
-M_VALUES = [1, 3, 8, 16, 17, 33, 48, 64, 96, 100, 128, MAX_M]
+# The attention side runs at M = 48 (c128 EAGLE), 64 (c512) and 96 (c256
+# EAGLE); the MLP side, after the DP all-gather, at that summed over the DP
+# ranks, up to MAX_M (c1024).
+M_VALUES = [1, 3, 8, 16, 17, 33, 48, 64, 96, 100, 128, 192, 193, 256, 384, 500]
+M_VALUES += [512, 768, MAX_M]
 
 
 def _make_layer(n: int, k: int):
@@ -124,6 +130,9 @@ MODES = {
     "unsplit": (64, 2, 1, 1, 2, 0),
     "cluster": (64, 2, 1, 4, 2, 0),
     "stream_k": (64, 1, 2, 0, 2, 2),
+    "unsplit_192": (192, 1, 1, 1, 2, 0),
+    "cluster_192": (192, 1, 1, 2, 2, 0),
+    "stream_k_192": (192, 1, 2, 0, 2, 2),
 }
 
 
@@ -137,9 +146,11 @@ def _run_mode(mode, a, qweight, scales, qzeros, n):
 
 
 @pytest.mark.parametrize("mode", sorted(MODES))
-def test_reduction_mode_exact_deterministic_and_graph_safe(mode):
+# 40 fits one token block of every mode; 600 spans several, the last one partial.
+@pytest.mark.parametrize("m", [40, 600])
+def test_reduction_mode_exact_deterministic_and_graph_safe(mode, m):
     """Each split-K reduction matches the reference, repeats bit-exactly and replays in a CUDA graph."""
-    n, k, m = 1024, 7168, 40
+    n, k = 1024, 7168
     w_ref, qweight, scales, qzeros = _make_layer(n, k)
     a = torch.randn((m, k), dtype=torch.bfloat16, device="cuda")
 
@@ -213,7 +224,7 @@ def _awq_layer(n: int, k: int) -> torch.nn.Module:
     return layer
 
 
-def test_awq_marlin_linear_routes_m_up_to_192_only():
+def test_awq_marlin_linear_routes_m_up_to_max_m_only():
     n, k = 2112, 7168
     quant_config = SimpleNamespace(group_size=GROUP_SIZE, quant_type=scalar_types.uint4)
     with envs.SGLANG_USE_W4A16_SM90_GEMM.override(True):
@@ -223,16 +234,17 @@ def test_awq_marlin_linear_routes_m_up_to_192_only():
     marlin_only = AWQMarlinLinearKernel(quant_config)
     bias = torch.randn(n, dtype=torch.bfloat16, device="cuda")
 
-    small = torch.randn((2, 4, k), dtype=torch.bfloat16, device="cuda")
-    expected = (
-        w4a16_sm90_gemm(
-            small.reshape(-1, k), layer.qweight, layer.scales, layer.qzeros, n
-        ).reshape(2, 4, n)
-        + bias
-    )
-    torch.testing.assert_close(
-        kernel.apply(layer, small, bias), expected, rtol=0, atol=0
-    )
+    for tokens in (8, MAX_M):
+        x = torch.randn((2, tokens // 2, k), dtype=torch.bfloat16, device="cuda")
+        expected = (
+            w4a16_sm90_gemm(
+                x.reshape(-1, k), layer.qweight, layer.scales, layer.qzeros, n
+            ).reshape(2, tokens // 2, n)
+            + bias
+        )
+        torch.testing.assert_close(
+            kernel.apply(layer, x, bias), expected, rtol=0, atol=0
+        )
 
     large = torch.randn((MAX_M + 1, k), dtype=torch.bfloat16, device="cuda")
     torch.testing.assert_close(
@@ -243,13 +255,14 @@ def test_awq_marlin_linear_routes_m_up_to_192_only():
     )
 
 
-@pytest.mark.parametrize("n", [64, 128, 512, 2112, 7168, 8192, 24576])
-@pytest.mark.parametrize("k", [256, 1536, 7168, 16384])
+@pytest.mark.parametrize("n", [64, 128, 512, 2112, 4608, 7168, 8192, 24576])
+@pytest.mark.parametrize("k", [256, 1536, 2304, 7168, 16384])
 def test_launch_config_is_launchable(n, k):
     """Every supported shape gets a config the kernel's own checks accept."""
     for m in range(1, MAX_M + 1):
         token_tile, tiles, ping, cluster_k, stages, _ = _launch_config(m, n, k, 0)
-        assert token_tile >= m
+        assert token_tile in _TOKEN_TILES
+        assert stages % ping == 0
         assert n % (64 * tiles) == 0
         assert _fits_registers(token_tile, tiles, ping)
         assert _smem_bytes(token_tile, tiles, ping, cluster_k, stages) <= _SMEM_LIMIT

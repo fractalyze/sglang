@@ -15,14 +15,17 @@ from sglang.kernels.jit.utils import (
 if TYPE_CHECKING:
     from tvm_ffi.module import Module
 
-# W4A16 GEMM for M <= 192 over Marlin-repacked AWQ weights (see
+# W4A16 GEMM for M <= 1024 over Marlin-repacked AWQ weights (see
 # csrc/gemm/w4a16_sm90.cuh). It reads the same qweight / scales / qzeros
 # tensors AWQMarlinLinearKernel prepares, so it needs no load-time work of its own.
+# The bound covers decode batches gathered across DP-attention ranks; larger M
+# (prefill) stays on Marlin.
 
 GROUP_SIZE = 128
-MAX_M = 192
+MAX_M = 1024
 _TILE_N = 64
-# wgmma N per launch; M rounds up to the next one.
+# wgmma N per launch. M up to the widest rounds up to the next one and runs as
+# one token block; larger M runs in several blocks of one tile.
 _TOKEN_TILES = (8, 16, 32, 48, 64, 96, 128, 192)
 _SMEM_LIMIT = 227 * 1024
 # Upper bound on the persistent grid (SMs x resident CTAs per SM); the launcher
@@ -75,6 +78,8 @@ def _launch_config(m: int, n: int, k: int, device_index: int) -> tuple:
     H100 sweeps over DeepSeek V3.2's dense AWQ shapes; re-tune when the kernel
     changes.
     """
+    if m > _TOKEN_TILES[-1]:
+        return _large_m_launch_config(m, n, k)
     token_tile = next(t for t in _TOKEN_TILES if t >= m)
     num_groups = k // GROUP_SIZE
     n_tiles = n // _TILE_N
@@ -114,6 +119,29 @@ def _launch_config(m: int, n: int, k: int, device_index: int) -> tuple:
     stages = 2 if token_tile >= 48 and many_ctas else 4
     if _smem_bytes(token_tile, tiles, ping, cluster_k, stages) > _SMEM_LIMIT:
         stages = 2
+    return token_tile, tiles, ping, cluster_k, stages, min_groups
+
+
+def _large_m_launch_config(m: int, n: int, k: int) -> tuple:
+    """_launch_config for M above one token block, run as several token blocks.
+
+    Fit to H100 sweeps over DeepSeek V3.2's MLP shapes at M = 256 to 1024.
+    """
+    if n // _TILE_N <= 8:
+        # Few column tiles: narrow token blocks give stream-K enough units.
+        token_tile, cluster_k, min_groups = 64, 0, 2
+    else:
+        # The tile that pads M least; on a tie, the wider one, which dequantizes
+        # each weight fewer times.
+        token_tile = min((128, 192), key=lambda t: (-m % t, -t))
+        # Short K: a unit's few groups are not worth splitting.
+        cluster_k, min_groups = (1, 0) if k // GROUP_SIZE <= 16 else (0, 2)
+    tiles, ping = 2, 1
+    while n % (_TILE_N * tiles):
+        tiles //= 2
+    stages = 4
+    while _smem_bytes(token_tile, tiles, ping, cluster_k, stages) > _SMEM_LIMIT:
+        stages -= 1
     return token_tile, tiles, ping, cluster_k, stages, min_groups
 
 
