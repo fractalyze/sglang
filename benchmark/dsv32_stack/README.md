@@ -30,16 +30,27 @@ prompts, since a single EAGLE wave finishes decoding before the profiler arms.
 | `base-eagle` | baseline | `eagle` | 512 (its own) | no | none | c128, c256 |
 | `stack-nospec-fp8kv` | stack, `--kv-cache-dtype fp8_e4m3` | `nospec` | 1024 | yes | c512, c1024 | none |
 
-The stack arm is `launch.sh` with these changes:
+`launch_stack.sh` starts the stack. It is `launch.sh` with these changes:
 
 - the `dsv32/base` `python/sglang` tree mounted over the image's;
-- `SGLANG_USE_W4A16_SM90_GEMM=1`;
-- `--moe-runner-backend w4a16_sm90`.
+- each lever in `LEVERS` switched on: `moe` adds `--moe-runner-backend
+  w4a16_sm90`, `dense` sets `SGLANG_USE_W4A16_SM90_GEMM=1`;
+- any server flags passed after the mode.
+
+`LEVERS` defaults to every lever; `LEVERS=""` is the baseline plus the passed
+flags, which is how the baseline arm adds its request cap. A new lever is one
+more `LEVERS` entry. The launcher checks that each change landed in its copy of
+`launch.sh` and fails otherwise.
+
+```sh
+# On the node, as root, under gpu-lease 8:
+./launch_stack.sh <baseline-current dir> <python/sglang tree> nospec --max-running-requests 1024
+```
 
 The baseline image is release/v0.5.21 e00930c5, the commit `dsv32/base`
 branches from, so nothing else differs. A request cap of 1024 is
 `--max-running-requests 1024`. DP attention divides it across the eight ranks,
-so each rank takes 128. Each session saves its launcher's diff against
+so each rank takes 128. Each session saves the derived launcher's diff against
 `launch.sh` as `launch.diff`, and the per-rank KV pool
 (`max_total_num_tokens`) with the scheduler's retraction count as `kv.txt`.
 
@@ -49,7 +60,7 @@ comparison. With the bf16 KV cache, a rank's pool cannot hold 128 requests of
 
 ```sh
 git archive --format=tar.gz -o src.tar.gz HEAD python/sglang test/registered/kernels/benchmark/gemm
-# On the node, as root:
+# On the node, as root, with launch_stack.sh next to run_session.sh:
 ./run_session.sh stack-nospec <run-name> src.tar.gz
 ```
 

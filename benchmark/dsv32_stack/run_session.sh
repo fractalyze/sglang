@@ -50,26 +50,16 @@ if [ ! -f $SRC/.unpacked ]; then
 fi
 cp "$0" "$SRC_TAR" $OUT/
 
-# The session's launcher: launch.sh, plus the stack's mount and switches for the stack arm,
-# plus the request cap and any extra server flags. Its diff against launch.sh is saved next
-# to the results.
-LAUNCHER=$OUT/launch_$ARM.sh
-SED=()
-if [ $ARM = stack ]; then
-  SED+=(-e "s#-v \"\$FIX\":\$FIX_TARGET:ro#-v $SRC/python/sglang:/sgl-workspace/sglang/python/sglang:ro -v \"\$FIX\":\$FIX_TARGET:ro -e SGLANG_USE_W4A16_SM90_GEMM=1#")
-  SED+=(-e 's#python3 -m sglang.launch_server $ARGS#python3 -m sglang.launch_server $ARGS --moe-runner-backend w4a16_sm90#')
-fi
-FLAGS=$EXTRA
-[ $CAP != - ] && FLAGS="--max-running-requests $CAP $FLAGS"
-if [ -n "$FLAGS" ]; then
-  SED+=(-e "s#python3 -m sglang.launch_server \$ARGS#python3 -m sglang.launch_server \$ARGS ${FLAGS% }#")
-fi
-if [ ${#SED[@]} -gt 0 ]; then sed "${SED[@]}" $B/launch.sh > $LAUNCHER; else cp $B/launch.sh $LAUNCHER; fi
-chmod +x $LAUNCHER
-sed -i "s#^HERE=.*#HERE=$B#" $LAUNCHER
-diff $B/launch.sh $LAUNCHER > $OUT/launch.diff
-cat $OUT/launch.diff
-export LAUNCHER CACHE=$W/cache-$ARM CONTAINER=stack-zgvm6q-$ARM
+# The session's server: launch_stack.sh with every lever for the stack arm and none for the
+# baseline, plus the request cap and any extra server flags.
+LEVERS="moe dense"
+[ $ARM = base ] && LEVERS=""
+SERVER_FLAGS=$EXTRA
+[ $CAP != - ] && SERVER_FLAGS="--max-running-requests $CAP $SERVER_FLAGS"
+LAUNCH_STACK=$OUT/launch_stack.sh
+cp "$(dirname "$0")/launch_stack.sh" $LAUNCH_STACK
+export LEVERS SERVER_FLAGS LAUNCH_STACK DERIVED=$OUT/launch_$ARM.sh
+export CACHE=$W/cache-$ARM CONTAINER=stack-zgvm6q-$ARM
 
 # Inside a GPU lease: run the session, then stop the server.
 session() {
@@ -85,7 +75,8 @@ session() {
       > $OUT/prewarm.log 2>&1 || { echo "prewarm failed" > $OUT/failed.txt; return 1; }
   fi
   docker rm -f $CONTAINER >/dev/null 2>&1
-  CACHE=$CACHE CONTAINER=$CONTAINER $LAUNCHER $MODE > $OUT/server.log 2>&1 &
+  # shellcheck disable=SC2086  # SERVER_FLAGS is a list of flags
+  $LAUNCH_STACK $B $SRC/python/sglang $MODE $SERVER_FLAGS > $OUT/server.log 2>&1 &
   local srv=$! up=0
   for _ in $(seq 1 180); do
     curl -sf 127.0.0.1:30000/health_generate >/dev/null && up=1 && break
@@ -94,6 +85,7 @@ session() {
   done
   if [ $up = 0 ]; then echo "server never healthy" > $OUT/failed.txt; return 1; fi
   date -u +%FT%TZ > $OUT/ready.txt
+  diff $B/launch.sh $DERIVED > $OUT/launch.diff
   if [ $GSM8K = 1 ]; then
     timeout 1800 docker run --rm --network host -v /opt/dlami/nvme:/opt/dlami/nvme $IMG \
       python3 -m sglang.test.few_shot_gsm8k --num-questions 1319 --parallel 128 \
