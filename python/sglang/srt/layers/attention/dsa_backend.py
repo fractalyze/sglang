@@ -495,6 +495,14 @@ class DeepseekSparseAttnBackend(
             self.device_capability = torch.cuda.get_device_capability()
         self.device_sm_major = self.device_capability[0]
         self.kv_cache_dtype = model_runner.kv_cache_dtype
+        # flashmla_kv schedules each row's valid top-k prefix on SM90, where the
+        # FlashMLA decode scheduling constants are known; elsewhere it keeps the
+        # full-topk schedule from get_mla_metadata.
+        self._flashmla_kv_schedules_topk_length = self.device_sm_major == 9
+        if self._flashmla_kv_schedules_topk_length:
+            self._num_sms = torch.cuda.get_device_properties(
+                self.device
+            ).multi_processor_count
 
         # `flashmla_sparse_q8` = the native FP8 SM90 sparse-prefill kernel. It always
         # runs FP8 (requires fp8_e4m3 KV) and is SM90-only, so validate both at
@@ -2938,7 +2946,7 @@ class DeepseekSparseAttnBackend(
         metadata: DSAMetadata,
         page_table_1,
     ) -> torch.Tensor:
-        from sgl_kernel.flash_mla import flash_mla_with_kvcache
+        from sgl_kernel.flash_mla import FlashMLASchedMeta, flash_mla_with_kvcache
 
         # TODO the 2nd dim is seq_len_q, need to be >1 when MTP
         q_all = q_all.view(-1, 1, layer.tp_q_head_num, layer.head_dim)
@@ -2970,13 +2978,27 @@ class DeepseekSparseAttnBackend(
             indices.shape[-1] == self.dsa_index_topk
         )  # requirement of FlashMLA decode kernel
 
+        flashmla_metadata = metadata.flashmla_metadata
+        if self._flashmla_kv_schedules_topk_length:
+            # The schedule covers only each row's valid top-k prefix, so the
+            # kernel must be told where that prefix ends.
+            schedule = dict(
+                tile_scheduler_metadata=FlashMLASchedMeta(
+                    tile_scheduler_metadata=flashmla_metadata.flashmla_metadata,
+                    num_splits=flashmla_metadata.num_splits,
+                ),
+                topk_length=self._flashmla_kv_topk_length(cache_seqlens),
+            )
+        else:
+            schedule = dict(
+                tile_scheduler_metadata=flashmla_metadata.flashmla_metadata,
+                num_splits=flashmla_metadata.num_splits,
+            )
         o, _ = flash_mla_with_kvcache(
             q=q_input,
             k_cache=kv_cache,
             cache_seqlens=cache_seqlens,
             head_dim_v=v_head_dim,
-            tile_scheduler_metadata=metadata.flashmla_metadata.flashmla_metadata,
-            num_splits=metadata.flashmla_metadata.num_splits,
             softmax_scale=sm_scale,
             indices=indices,
             # doc says it is not used, but if pass in None then error
@@ -2984,6 +3006,7 @@ class DeepseekSparseAttnBackend(
                 (q_all.shape[0], 0), dtype=torch.int32, device=q_all.device
             ),
             is_fp8_kvcache=True,
+            **schedule,
         )
 
         if target_q_heads != num_q_heads:
@@ -3737,7 +3760,18 @@ class DeepseekSparseAttnBackend(
             force_unfused_topk=force_unfused,
         )
 
+    def _flashmla_kv_topk_length(self, cache_seqlens: torch.Tensor) -> torch.Tensor:
+        # Top-k rows are valid-first: slots past dsa_cache_seqlens are -1, the
+        # prefix FA3 and flashmla_sparse attend to. A pooled index's unpooled
+        # tail can run past topk, so clamp to the row width there.
+        if self.dsa_index_kpool > 1:
+            return cache_seqlens.clamp(max=self.dsa_index_topk)
+        return cache_seqlens
+
     def _compute_flashmla_metadata(self, cache_seqlens: torch.Tensor, seq_len_q: int):
+        if self._flashmla_kv_schedules_topk_length:
+            return self._compute_flashmla_topk_length_metadata(cache_seqlens, seq_len_q)
+
         from sgl_kernel.flash_mla import get_mla_metadata
 
         num_heads_q = self.flashmla_kv_num_q_heads
@@ -3753,6 +3787,42 @@ class DeepseekSparseAttnBackend(
             topk=self.dsa_index_topk,
         )
 
+        return DSAFlashMLAMetadata(
+            flashmla_metadata=flashmla_metadata,
+            num_splits=num_splits,
+        )
+
+    def _compute_flashmla_topk_length_metadata(
+        self, cache_seqlens: torch.Tensor, seq_len_q: int
+    ) -> DSAFlashMLAMetadata:
+        """FlashMLA's SM90 split-KV schedule over each row's valid top-k prefix."""
+        from sglang.kernels.ops.attention.dsv4.flashmla_sched_meta import (
+            META_INTS,
+            flashmla_sched_meta,
+        )
+
+        device = cache_seqlens.device
+        # Decode_Sm90_Impl::get_meta's part count; FlashMLA checks the metadata
+        # shape against it.
+        num_sm_parts = max(
+            self._num_sms // seq_len_q // (self.flashmla_kv_num_q_heads // 64), 1
+        )
+        flashmla_metadata = torch.empty(
+            (num_sm_parts, META_INTS), dtype=torch.int32, device=device
+        )
+        num_splits = torch.empty(
+            (cache_seqlens.shape[0] + 1,), dtype=torch.int32, device=device
+        )
+        flashmla_sched_meta(
+            flashmla_metadata,
+            num_splits,
+            topk_length=self._flashmla_kv_topk_length(cache_seqlens),
+            # Decode_Sm90_Impl::get_meta's block_size_topk and
+            # fixed_overhead_num_blocks.
+            block_size_n=64,
+            fixed_overhead_num_blocks=5,
+            topk=self.dsa_index_topk,
+        )
         return DSAFlashMLAMetadata(
             flashmla_metadata=flashmla_metadata,
             num_splits=num_splits,

@@ -184,14 +184,19 @@ class TestDSABackendDPPadding(unittest.TestCase):
         self.assertTrue(torch.all(output[:2] == 1))
         self.assertTrue(torch.all(output[2:] == 0))
 
-    def _flashmla_kv_backend(self):
+    def _flashmla_kv_backend(self, *, schedules_topk_length=False, index_kpool=1):
         backend = SimpleNamespace(
             _flashmla_kv_q_row_fit=None,
+            _flashmla_kv_schedules_topk_length=schedules_topk_length,
             flashmla_kv_num_q_heads=2,
             real_page_size=64,
             kv_cache_dim=3,
             dsa_kv_cache_store_fp8=True,
             dsa_index_topk=4,
+            dsa_index_kpool=index_kpool,
+        )
+        backend._flashmla_kv_topk_length = MethodType(
+            DeepseekSparseAttnBackend._flashmla_kv_topk_length, backend
         )
         metadata_rows = []
 
@@ -234,23 +239,38 @@ class TestDSABackendDPPadding(unittest.TestCase):
             ),
         )
 
-    def _run_flashmla_kv_layers(self, *, dsa_cache_seqlens, num_q_rows):
+    def _run_flashmla_kv_layers(
+        self, *, dsa_cache_seqlens, num_q_rows, schedules_topk_length=False
+    ):
         """Two layers of one forward through _forward_flashmla_kv with q of
         num_q_rows; returns the seqlens FlashMLA got and the metadata rebuilds."""
-        backend, metadata_rows = self._flashmla_kv_backend()
+        backend, metadata_rows = self._flashmla_kv_backend(
+            schedules_topk_length=schedules_topk_length
+        )
         metadata = self._flashmla_kv_metadata(dsa_cache_seqlens)
         layer = SimpleNamespace(tp_q_head_num=2, head_dim=3)
 
         flash_mla = ModuleType("sgl_kernel.flash_mla")
         kernel_calls = []
 
-        def fake_flash_mla_with_kvcache(*, q, cache_seqlens, num_splits, **_):
+        def fake_flash_mla_with_kvcache(
+            *, q, cache_seqlens, tile_scheduler_metadata, num_splits=None, **kwargs
+        ):
+            if schedules_topk_length:
+                # The schedule rides in the sched-meta object, beside the
+                # topk_length it was built from.
+                self.assertIsNone(num_splits)
+                num_splits = tile_scheduler_metadata.num_splits
+                self.assertIs(kwargs["topk_length"], cache_seqlens)
+            else:
+                self.assertNotIn("topk_length", kwargs)
             # The check that raised "num_splits must have shape (b+1)".
             self.assertEqual(num_splits.shape[0], q.shape[0] + 1)
             self.assertEqual(cache_seqlens.shape[0], q.shape[0])
             kernel_calls.append((cache_seqlens, num_splits))
             return torch.zeros((q.shape[0], 1, 2, 2)), None
 
+        flash_mla.FlashMLASchedMeta = SimpleNamespace
         flash_mla.flash_mla_with_kvcache = fake_flash_mla_with_kvcache
         with (
             patch.dict("sys.modules", {"sgl_kernel.flash_mla": flash_mla}),
@@ -292,6 +312,24 @@ class TestDSABackendDPPadding(unittest.TestCase):
         )
         self.assertEqual(metadata_rows, [8])
         self.assertEqual(cache_seqlens.tolist(), [1, 2, 3, 4, 0, 0, 0, 0])
+
+    def test_flashmla_kv_topk_length_schedule_passes_valid_lengths(self):
+        """With the top-k-length schedule, FlashMLA gets each row's valid
+        top-k length alongside the schedule built from it."""
+        cache_seqlens, metadata_rows = self._run_flashmla_kv_layers(
+            dsa_cache_seqlens=torch.tensor([1, 2, 3, 4, 0, 0], dtype=torch.int32),
+            num_q_rows=8,
+            schedules_topk_length=True,
+        )
+        self.assertEqual(metadata_rows, [8])
+        self.assertEqual(cache_seqlens.tolist(), [1, 2, 3, 4, 0, 0, 0, 0])
+
+    def test_flashmla_kv_topk_length_clamps_pooled_tail_to_topk(self):
+        seqlens = torch.tensor([2, 4, 6], dtype=torch.int32)
+        backend, _ = self._flashmla_kv_backend()
+        self.assertIs(backend._flashmla_kv_topk_length(seqlens), seqlens)
+        pooled, _ = self._flashmla_kv_backend(index_kpool=4)
+        self.assertEqual(pooled._flashmla_kv_topk_length(seqlens).tolist(), [2, 4, 4])
 
     def test_flashmla_kv_metadata_matching_q_rows_is_unchanged(self):
         backend, metadata_rows = self._flashmla_kv_backend()

@@ -16,6 +16,55 @@ FetchContent_Declare(
 )
 FetchContent_Populate(repo-flashmla-cutlass)
 
+# Patch the SM90 sparse decode kernel so a DeepSeek-V3.2 row stops at its valid top-k
+# length (`topk_length`), as DeepSeek-V4 rows already do. Upstream runs every V3.2 row
+# over the full top-k, so a row with fewer valid indices than top-k still dequantizes
+# and multiplies its -1 padding slots. Each match is checked so a FlashMLA pin bump that
+# moves this code fails the configure instead of silently dropping the patch.
+set(FLASHMLA_SM90_SPARSE_DECODE "${repo-flashmla_SOURCE_DIR}/csrc/kernels/sm90/decode/sparse/splitkv_mla.cuh")
+file(READ "${FLASHMLA_SM90_SPARSE_DECODE}" FLASHMLA_SM90_SPARSE_DECODE_CONTENT)
+string(FIND "${FLASHMLA_SM90_SPARSE_DECODE_CONTENT}" "sglang: V3.2 rows stop at topk_length" V32_TOPK_LENGTH_FOUND)
+if(V32_TOPK_LENGTH_FOUND EQUAL -1)
+    foreach(EDIT RANGE 2)
+        if(EDIT EQUAL 0)
+            # The row's block range: ceil(topk_length / 64) blocks instead of topk / 64.
+            set(MATCH [=[
+        if constexpr (IS_V32_LIKE) {
+            total_topk_padded = params.topk;
+        } else {]=])
+            set(REPLACE [=[
+        if constexpr (IS_V32_LIKE) {
+            // sglang: V3.2 rows stop at topk_length, as V4 rows do.
+            int topk_length = params.topk_length ? __ldg(params.topk_length + batch_idx) : params.topk;
+            total_topk_padded = max(ku::ceil(topk_length, (int)TOPK_BLOCK_SIZE), (int)TOPK_BLOCK_SIZE);
+            args.topk_length = topk_length;
+        } else {]=])
+        elseif(EDIT EQUAL 1)
+            # Slots past topk_length in the row's last block are padding for V3.2 too.
+            set(MATCH [=[
+                    if constexpr (MODEL_TYPE == ModelType::V4) {
+                        // For DeepSeek-V4, we need to check whether the token_index is within topk_length]=])
+            set(REPLACE [=[
+                    {
+                        // Check whether the token_index is within topk_length]=])
+        else()
+            set(MATCH [=[
+        KU_ASSERT(params.topk_length == nullptr, "V3.2 does not support dynamic topk length");
+]=])
+            set(REPLACE "")
+        endif()
+        string(FIND "${FLASHMLA_SM90_SPARSE_DECODE_CONTENT}" "${MATCH}" MATCH_FOUND)
+        if(MATCH_FOUND EQUAL -1)
+            message(FATAL_ERROR "FlashMLA SM90 sparse decode topk_length patch: edit ${EDIT} does not match ${FLASHMLA_SM90_SPARSE_DECODE}")
+        endif()
+        string(REPLACE "${MATCH}" "${REPLACE}" FLASHMLA_SM90_SPARSE_DECODE_CONTENT "${FLASHMLA_SM90_SPARSE_DECODE_CONTENT}")
+    endforeach()
+    file(WRITE "${FLASHMLA_SM90_SPARSE_DECODE}" "${FLASHMLA_SM90_SPARSE_DECODE_CONTENT}")
+    message(STATUS "Patched FlashMLA SM90 sparse decode for V3.2 topk_length")
+else()
+    message(STATUS "FlashMLA SM90 sparse decode already patched for V3.2 topk_length")
+endif()
+
 set(FLASHMLA_CUDA_FLAGS
     "--expt-relaxed-constexpr"
     "--expt-extended-lambda"
