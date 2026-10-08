@@ -126,11 +126,13 @@ def moe_align_block_size(
         return sorted_ids, expert_ids, num_tokens_post_pad
 
     # ===== TO BE REFACTORED ====
-    use_jit_align = False
+    # On CUDA the JIT kernel lists each expert's entries in a fixed order, which a
+    # grouped GEMM that splits K across CTAs needs for repeatable output.
+    use_jit_align = _is_cuda and not ignore_invalid_expert
     if _SGLANG_EXPERIMENTAL_LORA_OPTI:
         from sglang.srt.lora.trtllm_lora_temp.environ import lora_envs
 
-        use_jit_align = lora_envs.SGLANG_OPT_USE_JIT_KERNEL_MOE_ALIGN.get()
+        use_jit_align |= lora_envs.SGLANG_OPT_USE_JIT_KERNEL_MOE_ALIGN.get()
     if use_jit_align:
         from sglang.kernels.ops.moe.moe_align import (
             moe_align_block_size as jit_moe_align_block_size,

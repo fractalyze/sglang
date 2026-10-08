@@ -53,9 +53,101 @@ __global__ void count_and_sort_expert_tokens_kernel(
   }
 }
 
+// Stable placement, for num_experts <= 1024: within each expert's blocks, entries of
+// topk_ids appear in ascending flat index, so the output does not depend on scheduling.
+// topk_ids is cut into contiguous chunks of chunk_size entries, one warp per chunk:
+// count_chunk_experts_kernel counts each chunk's entries per expert into chunk_counts
+// [num_chunks, num_experts], moe_align_block_size_kernel turns those counts into each
+// chunk's exclusive offset within its expert, and place_chunk_experts_kernel writes
+// every entry at cumsum[expert] + its chunk's offset + its rank within the chunk.
+constexpr int kChunkWarps = 8;
+
+// One step of a warp over 32 consecutive entries: the bucket of each lane's entry
+// (-1 past `end`), the lanes holding the same bucket, and the lane's rank among them.
+struct ChunkStep {
+  int32_t bucket;
+  uint32_t peers;
+  int32_t rank;
+};
+
+template <typename scalar_t>
+__device__ __forceinline__ ChunkStep chunk_step(const scalar_t* __restrict__ topk_ids, size_t i, size_t end) {
+  const int lane = threadIdx.x % WARP_SIZE;
+  ChunkStep step;
+  step.bucket = i < end ? static_cast<int32_t>(topk_ids[i]) + 1 : -1;
+  step.peers = __match_any_sync(0xffffffffu, step.bucket);
+  step.rank = __popc(step.peers & ((1u << lane) - 1u));
+  return step;
+}
+
+template <typename scalar_t>
+__global__ void count_chunk_experts_kernel(
+    const scalar_t* __restrict__ topk_ids,
+    int32_t* __restrict__ chunk_counts,
+    int32_t num_experts,
+    size_t numel,
+    int32_t num_chunks,
+    int32_t chunk_size) {
+  extern __shared__ int32_t smem[];
+  const int warp = threadIdx.x / WARP_SIZE;
+  const int lane = threadIdx.x % WARP_SIZE;
+  const int chunk = blockIdx.x * kChunkWarps + warp;
+  if (chunk >= num_chunks) return;
+  int32_t* counts = smem + warp * num_experts;
+  for (int e = lane; e < num_experts; e += WARP_SIZE) {
+    counts[e] = 0;
+  }
+  __syncwarp();
+
+  const size_t begin = static_cast<size_t>(chunk) * chunk_size;
+  const size_t end = std::min(begin + chunk_size, numel);
+  for (size_t base = begin; base < end; base += WARP_SIZE) {
+    const ChunkStep step = chunk_step(topk_ids, base + lane, end);
+    // The lowest lane of each bucket adds the bucket's count; buckets differ per lane.
+    if (step.bucket >= 0 && step.rank == 0) counts[step.bucket] += __popc(step.peers);
+    __syncwarp();
+  }
+
+  for (int e = lane; e < num_experts; e += WARP_SIZE) {
+    chunk_counts[static_cast<int64_t>(chunk) * num_experts + e] = counts[e];
+  }
+}
+
+template <typename scalar_t>
+__global__ void place_chunk_experts_kernel(
+    const scalar_t* __restrict__ topk_ids,
+    int32_t* __restrict__ sorted_token_ids,
+    const int32_t* __restrict__ cumsum,
+    const int32_t* __restrict__ chunk_offsets,
+    int32_t num_experts,
+    size_t numel,
+    int32_t num_chunks,
+    int32_t chunk_size) {
+  extern __shared__ int32_t smem[];
+  const int warp = threadIdx.x / WARP_SIZE;
+  const int lane = threadIdx.x % WARP_SIZE;
+  const int chunk = blockIdx.x * kChunkWarps + warp;
+  if (chunk >= num_chunks) return;
+  // The next output position of each bucket in this chunk.
+  int32_t* next = smem + warp * num_experts;
+  for (int e = lane; e < num_experts; e += WARP_SIZE) {
+    next[e] = cumsum[e] + chunk_offsets[static_cast<int64_t>(chunk) * num_experts + e];
+  }
+  __syncwarp();
+
+  const size_t begin = static_cast<size_t>(chunk) * chunk_size;
+  const size_t end = std::min(begin + chunk_size, numel);
+  for (size_t base = begin; base < end; base += WARP_SIZE) {
+    const ChunkStep step = chunk_step(topk_ids, base + lane, end);
+    if (step.bucket >= 0) sorted_token_ids[next[step.bucket] + step.rank] = base + lane;
+    __syncwarp();
+    if (step.bucket >= 0 && step.rank == 0) next[step.bucket] += __popc(step.peers);
+    __syncwarp();
+  }
+}
+
 template <typename scalar_t>
 __global__ void moe_align_block_size_kernel(
-    const scalar_t* __restrict__ topk_ids,
     int32_t* __restrict__ sorted_token_ids,
     int32_t* __restrict__ expert_ids,
     int32_t* __restrict__ total_tokens_post_pad,
@@ -63,6 +155,8 @@ __global__ void moe_align_block_size_kernel(
     int32_t block_size,
     size_t numel,
     int32_t* __restrict__ cumsum,
+    int32_t* __restrict__ chunk_counts,
+    int32_t num_chunks,
     bool pad_sorted_token_ids,
     const int32_t scan_size,
     int32_t max_num_tokens_padded) {
@@ -90,14 +184,14 @@ __global__ void moe_align_block_size_kernel(
   const size_t stride = blockDim.x;
 
   if (tid < num_experts) {
-    shared_counts[tid] = 0;
-  }
-
-  __syncthreads();
-
-  for (size_t i = tid; i < numel; i += stride) {
-    int expert_id = topk_ids[i] + 1;
-    atomicAdd(&shared_counts[expert_id], 1);
+    int32_t running = 0;
+    for (int32_t c = 0; c < num_chunks; ++c) {
+      int32_t* count = chunk_counts + static_cast<int64_t>(c) * num_experts + tid;
+      const int32_t n = *count;
+      *count = running;
+      running += n;
+    }
+    shared_counts[tid] = running;
   }
 
   __syncthreads();
@@ -448,6 +542,7 @@ struct MoeAlignBlockSizeKernel {
       tvm::ffi::TensorView expert_ids,
       tvm::ffi::TensorView num_tokens_post_pad,
       tvm::ffi::TensorView cumsum_buffer,
+      tvm::ffi::TensorView chunk_counts,
       bool pad_sorted_token_ids) {
     using namespace host;
 
@@ -492,13 +587,32 @@ struct MoeAlignBlockSizeKernel {
           pad_sorted_token_ids,
           (int32_t)max_num_tokens_padded);
     } else if (num_experts <= 1024) {
+      // chunk_counts is [num_chunks, num_experts]; the caller picks num_chunks.
+      const int32_t num_chunks = static_cast<int32_t>(chunk_counts.size(0));
+      RuntimeCheck(
+          num_chunks > 0 && chunk_counts.size(1) == num_experts,
+          "moe_align_block_size: chunk_counts must be [num_chunks > 0, num_experts]");
+      const int32_t chunk_size = static_cast<int32_t>(CEILDIV(CEILDIV(numel, num_chunks), WARP_SIZE) * WARP_SIZE);
+      int32_t* chunk_counts_ptr = static_cast<int32_t*>(chunk_counts.data_ptr());
+      const dim3 chunk_grid(CEILDIV(num_chunks, moe::kChunkWarps));
+      const dim3 chunk_block(moe::kChunkWarps * WARP_SIZE);
+      const size_t chunk_smem = moe::kChunkWarps * num_experts * sizeof(int32_t);
+
+      LaunchKernel(chunk_grid, chunk_block, stream, chunk_smem)(
+          moe::count_chunk_experts_kernel<scalar_t>,
+          topk_ids_ptr,
+          chunk_counts_ptr,
+          (int32_t)num_experts,
+          numel,
+          num_chunks,
+          chunk_size);
+
       const size_t scan_size = host::round_up_pow2(static_cast<uint32_t>(num_experts));
       const size_t shared_mem_size = (num_experts + (num_experts + 1) + scan_size + WARP_SIZE) * sizeof(int32_t);
 
       auto align_kernel = moe::moe_align_block_size_kernel<scalar_t>;
       LaunchKernel(dim3(2), dim3(threads), stream, shared_mem_size)(
           align_kernel,
-          topk_ids_ptr,
           sorted_token_ids_ptr,
           expert_ids_ptr,
           num_tokens_post_pad_ptr,
@@ -506,18 +620,22 @@ struct MoeAlignBlockSizeKernel {
           (int32_t)block_size,
           numel,
           cumsum_buffer_ptr,
+          chunk_counts_ptr,
+          num_chunks,
           pad_sorted_token_ids,
           (int32_t)scan_size,
           (int32_t)max_num_tokens_padded);
 
-      const int block_threads = std::min(256, threads);
-      const int num_blocks = (numel + block_threads - 1) / block_threads;
-      const int max_blocks = 65535;
-      const int actual_blocks = std::min(num_blocks, max_blocks);
-
-      auto sort_kernel = moe::count_and_sort_expert_tokens_kernel<scalar_t>;
-      LaunchKernel(dim3(actual_blocks), dim3(block_threads), stream)(
-          sort_kernel, topk_ids_ptr, sorted_token_ids_ptr, cumsum_buffer_ptr, numel);
+      LaunchKernel(chunk_grid, chunk_block, stream, chunk_smem)(
+          moe::place_chunk_experts_kernel<scalar_t>,
+          topk_ids_ptr,
+          sorted_token_ids_ptr,
+          cumsum_buffer_ptr,
+          chunk_counts_ptr,
+          (int32_t)num_experts,
+          numel,
+          num_chunks,
+          chunk_size);
     } else {
       // v2 path for >1024 experts: two-level warp scan with EXPERTS_PER_THREAD
       int64_t padded_num_experts = ((num_experts + WARP_SIZE - 1) / WARP_SIZE) * WARP_SIZE;

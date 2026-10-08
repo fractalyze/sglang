@@ -359,5 +359,67 @@ def test_moe_align_block_size_v2_large_num_experts(
         )
 
 
+def _stable_align_reference(topk_ids, num_buckets, block_size):
+    """sorted_token_ids up to the padded total: each bucket's entries in ascending flat index."""
+    buckets = (topk_ids.flatten().long() + 1).cpu()
+    numel = buckets.numel()
+    out = []
+    for bucket in range(num_buckets):
+        entries = torch.nonzero(buckets == bucket).flatten().tolist()
+        padded = ceil_div(len(entries), block_size) * block_size
+        out += entries + [numel] * (padded - len(entries))
+    return torch.tensor(out, dtype=torch.int32)
+
+
+@pytest.mark.parametrize(
+    "num_tokens,topk,num_experts,masked",
+    [
+        (512, 8, 256, False),  # a DeepSeek decode batch: several chunks
+        (512, 8, 256, True),  # EP-filtered (-1) entries share bucket 0
+        (37, 8, 256, False),  # a ragged last chunk
+        (16384, 8, 256, False),  # more chunks than the cap: chunks grow
+        (4096, 6, 1023, False),  # the widest expert count of this path, with bucket -1
+    ],
+)
+def test_moe_align_block_size_is_stable_in_flat_index(
+    num_tokens, topk, num_experts, masked
+):
+    """Each expert's entries are listed in ascending flat index, so a grouped GEMM
+    that splits a block's K range sees the same rows in the same tile every run."""
+    block_size = 64
+    gen = torch.Generator(device="cpu").manual_seed(num_tokens + num_experts)
+    # Skewed popularity, so some experts span several blocks and chunks.
+    popularity = torch.distributions.Gamma(0.5, 1.0).sample((num_experts,))
+    topk_ids = torch.multinomial(
+        popularity.expand(num_tokens, num_experts), topk, generator=gen
+    ).to(torch.int32)
+    if masked:
+        topk_ids[torch.rand(num_tokens, topk, generator=gen) < 0.25] = -1
+    topk_ids = topk_ids.cuda()
+
+    numel = topk_ids.numel()
+    max_num_tokens_padded = numel + (num_experts + 1) * (block_size - 1)
+    sorted_ids = torch.empty(max_num_tokens_padded, dtype=torch.int32, device="cuda")
+    expert_ids = torch.empty(
+        ceil_div(max_num_tokens_padded, block_size), dtype=torch.int32, device="cuda"
+    )
+    num_tokens_post_pad = torch.empty(1, dtype=torch.int32, device="cuda")
+    cumsum_buffer = torch.empty(num_experts + 2, dtype=torch.int32, device="cuda")
+    moe_align_block_size(
+        topk_ids,
+        num_experts + 1,
+        block_size,
+        sorted_ids,
+        expert_ids,
+        num_tokens_post_pad,
+        cumsum_buffer,
+        True,
+    )
+
+    expected = _stable_align_reference(topk_ids, num_experts + 1, block_size)
+    assert num_tokens_post_pad.item() == expected.numel()
+    assert torch.equal(sorted_ids[: expected.numel()].cpu(), expected)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__]))
