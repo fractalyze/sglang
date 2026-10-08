@@ -335,6 +335,19 @@ class TestDSABackendDPPadding(unittest.TestCase):
         )
         self.assertEqual(cache_seqlens.tolist(), [1, 2, 3, 4])
 
+    def test_flashmla_kv_skips_padding_only_where_flashmla_keeps_rows_whole(self):
+        """FlashMLA's own top-k 2048 schedule on H100's 66 parts gives each row one
+        whole part only for 56..66 rows; outside that it splits rows, so a part per
+        row would change the output and, below 56 rows, idle SMs."""
+        backend, _ = self._flashmla_kv_backend(num_sm_parts=66)
+        backend.dsa_index_topk = 2048
+        skips = {
+            n: backend._flashmla_kv_skips_padding(num_rows=n) for n in (55, 56, 66, 67)
+        }
+        self.assertEqual(skips, {55: False, 56: True, 66: True, 67: False})
+        no_parts, _ = self._flashmla_kv_backend(num_sm_parts=0)
+        self.assertFalse(no_parts._flashmla_kv_skips_padding(num_rows=1))
+
     def test_flashmla_kv_row_per_part_schedule(self):
         backend, _ = self._flashmla_kv_backend(num_sm_parts=5)
         metadata = backend._compute_flashmla_row_per_part_metadata(

@@ -3768,9 +3768,15 @@ class DeepseekSparseAttnBackend(
         return cache_seqlens
 
     def _flashmla_kv_skips_padding(self, num_rows: int) -> bool:
-        # With a row per SM part, a row's time is its own block count, so
-        # stopping at its valid top-k length cannot slow the longest row down.
-        return num_rows <= self._flashmla_kv_num_sm_parts
+        # Only where FlashMLA's own full-top-k schedule (64-token blocks, a 5-block
+        # per-row overhead) already gives every row one whole SM part: there a row
+        # stopping at its valid length keeps the output bitwise, the step no slower.
+        num_sm_parts = self._flashmla_kv_num_sm_parts
+        if not 0 < num_rows <= num_sm_parts:
+            return False
+        topk_blocks = self.dsa_index_topk // 64
+        blocks_per_part = -(-num_rows * (topk_blocks + 5) // num_sm_parts)
+        return blocks_per_part >= topk_blocks
 
     def _compute_flashmla_metadata(self, cache_seqlens: torch.Tensor, seq_len_q: int):
         if seq_len_q == 1 and self._flashmla_kv_skips_padding(
