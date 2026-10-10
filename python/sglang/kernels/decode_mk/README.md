@@ -6,7 +6,7 @@ on one RTX 5090 (`sm_120a`). They run on the int4 checkpoint
 
 - **Decode:** all 64 layers, the embedding and the LM head in one launch a
   token.
-- **Prefill:** the prompt, 64 tokens a launch.
+- **Prefill:** the prompt layer by layer, up to 8,192 tokens a launch.
 - **Speculative decoding:** a verify step that checks up to four tokens in one
   launch, and the checkpoint's MTP head drafting tokens for it.
 
@@ -19,8 +19,8 @@ Qwen3.8 model unchanged.
 | Switch | What it does |
 |---|---|
 | `SGLANG_DECODE_MK_DECODE=1` | Builds `Qwen3_5DecodeMkForConditionalGeneration` (`sglang/srt/models/qwen3_5_decode_mk.py`) in place of the stock model. The kernels read the checkpoint themselves and hold one request's states. Each decode step is one launch, and the prompt runs one token a launch. |
-| `SGLANG_DECODE_MK_PREFILL=1` | With DECODE: the prompt runs 64 tokens a launch on the prefill kernel. |
-| `SGLANG_DECODE_MK_MTP=1` | With DECODE: greedy requests decode speculatively under `--speculative-algorithm DECODE_MK_MTP` (`sglang/srt/speculative/decode_mk_mtp_worker.py`). The MTP head drafts `--speculative-num-steps` tokens a cycle, 1 to 3 (default 1), and one verify launch checks them. Every emitted token is plain greedy decoding's. Requests that sample, use a grammar or ask for logprobs decode one token a step instead. |
+| `SGLANG_DECODE_MK_PREFILL=1` | With DECODE: the prompt runs on the prefill kernel, layer by layer over the whole prompt, in the launches of at most 8,192 tokens that decode-mk's own `Qwen38Prefiller.run` makes of it. Needs `--chunked-prefill-size -1`, so SGLang hands over the whole prompt. |
+| `SGLANG_DECODE_MK_MTP=1` | With DECODE: greedy requests decode speculatively under `--speculative-algorithm DECODE_MK_MTP` (`sglang/srt/speculative/decode_mk_mtp_worker.py`). The MTP head drafts `--speculative-num-steps` tokens a cycle, 1 to 3 (default 1), and one verify launch checks them. Every emitted token is the verify step's greedy choice, the same at every draft count; it leaves plain decoding's only where the two kernels' sums break a near tie differently. Requests that sample, use a grammar or ask for logprobs decode one token a step instead. |
 
 ## Batch 1 only
 
@@ -36,6 +36,12 @@ start; it does not fall back to the stock path.** With DECODE on,
   are built from.
 - `--disable-cuda-graph`: each step is already one launch.
 - `--context-length N`: the KV caches are allocated for N positions at load.
+- With PREFILL: `--chunked-prefill-size -1`: the prefill kernel takes the whole
+  prompt and splits it into launches itself. Unchunked, SGLang reserves
+  activation memory for `--max-prefill-tokens` tokens, which the kernels do not
+  use (they allocate their workspace at load), so also pass
+  `--mem-fraction-static`: 0.92 leaves SGLang's token pool room for
+  `--context-length 16384` with MTP.
 - One GPU: tensor, pipeline and data parallel sizes of 1, and no
   disaggregation.
 - With MTP: `--speculative-algorithm DECODE_MK_MTP` and
@@ -48,7 +54,7 @@ SGLANG_DECODE_MK_DECODE=1 SGLANG_DECODE_MK_PREFILL=1 SGLANG_DECODE_MK_MTP=1 \
 python -m sglang.launch_server --model-path cyankiwi/Qwen3.8-27B-AWQ-INT4 \
   --revision 6e134bae811fb5adac50ee042ae5f029ac6779aa \
   --max-running-requests 1 --disable-radix-cache --disable-cuda-graph \
-  --context-length 16384 \
+  --context-length 16384 --chunked-prefill-size -1 --mem-fraction-static 0.92 \
   --speculative-algorithm DECODE_MK_MTP --disable-overlap-schedule
 ```
 
@@ -87,8 +93,8 @@ script's `_DROPPED_*` sets.
 - `test/registered/unit/models/test_qwen3_5_decode_mk.py` (CPU): the switches,
   the servers they refuse, the model they build, and the vendored copy.
 - `test/registered/kernels/ops/decode_mk/` (RTX 5090): the kernels against
-  PyTorch references, and the runner on random weights. Speculative replies
-  must equal plain greedy decoding's token for token.
+  PyTorch references, and the runner on random weights against decode-mk's
+  own API, token for token.
 - `test/registered/e2e/models/test_qwen3_8_decode_mk.py` (RTX 5090 and the
   checkpoint at `SGLANG_DECODE_MK_QWEN38_CHECKPOINT`): each switch set's
   served replies against decode-mk's own API on the same weights, token for

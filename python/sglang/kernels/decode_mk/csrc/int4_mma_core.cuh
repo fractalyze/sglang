@@ -110,6 +110,41 @@ struct GlobalX {
   static constexpr bool kStaged = false;
 };
 
+// Where a tile reads its B fragments: X's token rows of k bf16, one after
+// another, already in shared memory, as the verify step stages its normalized
+// inputs. A staged XSource whose groups are all there before the tile starts.
+struct SharedX {
+  static constexpr bool kStaged = true;
+
+  const uint4* x;  // [tokens][k / 8]
+  int k;
+
+  __device__ __forceinline__ void Arrive(int) const {}
+
+  // Lane (g, t) gets elements 8t .. 8t + 7 of `group` of token 8n + g.
+  __device__ __forceinline__ uint4 Fragment(int n, int group) const {
+    const int lane = threadIdx.x % 32;
+    return x[(n * kMmaTokens + lane / 4) * (k / 8) + 4 * group + lane % 4];
+  }
+};
+
+// SharedX for X's token rows in global memory that this kernel wrote in an
+// earlier phase: read through L2 (__ldcg), not the read-only path.
+struct L2X {
+  static constexpr bool kStaged = true;
+
+  const uint4* x;  // [tokens][k / 8]
+  int k;
+
+  __device__ __forceinline__ void Arrive(int) const {}
+
+  __device__ __forceinline__ uint4 Fragment(int n, int group) const {
+    const int lane = threadIdx.x % 32;
+    return __ldcg(x + (n * kMmaTokens + lane / 4) * (k / 8) + 4 * group +
+                  lane % 4);
+  }
+};
+
 // Int4MmaTiles, and with kZeros Int4ZpMmaTiles, whose `zeros` it reads only
 // then. With a staged XSource the B fragments come from `staged` instead of
 // X's rows (prefill_dense.cuh): staged.Arrive(group) before each group, then
@@ -293,34 +328,40 @@ __device__ __forceinline__ void Int4MmaRows(
       reinterpret_cast<float(&)[1][kNTiles][4]>(d));
 }
 
+// Groups Int4ZpMmaRows streams at once by default: with 8 n-tiles half as
+// many, since there a full batch's weights, scales and zero points beside the
+// fragments spill registers.
+template <int kNTiles>
+constexpr int kInt4ZpMmaDepth = kNTiles < 8 ? kMmaPrefetch : kMmaPrefetch / 2;
+
 // Int4MmaRows for an asymmetric W, whose zero points are `zeros` ([.., k /
-// 256], the whole matrix's, int4_gemv_core.cuh), k / 32 a multiple of 8.
-// With 8 n-tiles it streams half as deep: there a full batch's weights,
-// scales and zero points beside the fragments spill registers.
-// With a staged XSource, its B fragments come from `staged` (Int4MmaTilesOf).
-template <int kNTiles, typename XSource = GlobalX>
+// 256], the whole matrix's, int4_gemv_core.cuh), k / 32 a multiple of 8,
+// kDepth groups deep. With a staged XSource, its B fragments come from
+// `staged` (Int4MmaTilesOf).
+template <int kNTiles, int kDepth = kInt4ZpMmaDepth<kNTiles>,
+          typename XSource = GlobalX>
 __device__ __forceinline__ void Int4ZpMmaRows(
     const uint4* packed, const __nv_bfloat16* scales, const uint32_t* zeros,
     int groups, int row0, int rows, const __nv_bfloat16* x, int x_stride,
     int tokens, int group_begin, int group_end, float (&d)[kNTiles][4],
     const XSource& staged = {}) {
-  constexpr int kDepth = kNTiles < 8 ? kMmaPrefetch : kMmaPrefetch / 2;
   Int4MmaTilesOf<1, kNTiles, kDepth, true>(
       packed, scales, zeros, groups, row0, 0, rows, x, x_stride, nullptr,
       tokens, group_begin, group_end,
       reinterpret_cast<float(&)[1][kNTiles][4]>(d), staged);
 }
 
-// Int4ZpMmaRows for a bf16 W ([.., k], 16-byte aligned rows): the same
-// fragments, read straight from W's rows, with no scale.
-template <int kNTiles>
-__device__ __forceinline__ void Bf16MmaRows(const __nv_bfloat16* w, int k,
-                                            int row0, int rows,
-                                            const __nv_bfloat16* x,
-                                            int x_stride, int tokens,
-                                            int group_begin, int group_end,
-                                            float (&d)[kNTiles][4]) {
-  constexpr int kDepth = kMmaPrefetch / 2;
+// Int4ZpMmaRows for a bf16 W ([.., k], 16-byte aligned rows), kDepth groups
+// deep: the same fragments, read straight from W's rows, with no scale, and
+// X's from `staged` as Int4MmaTilesOf reads them.
+template <int kNTiles, int kDepth, typename XSource = GlobalX>
+__device__ __forceinline__ void Bf16MmaRowsOf(const __nv_bfloat16* w, int k,
+                                              int row0, int rows,
+                                              const __nv_bfloat16* x,
+                                              int x_stride, int tokens,
+                                              int group_begin, int group_end,
+                                              float (&d)[kNTiles][4],
+                                              const XSource& staged = {}) {
   const int lane = threadIdx.x % 32;
   const int g = lane / 4;
   const int t = lane % 4;
@@ -358,15 +399,36 @@ __device__ __forceinline__ void Bf16MmaRows(const __nv_bfloat16* w, int k,
     for (int i = 0; i < kDepth; ++i) {
       const int group = base + i;
       if (group >= group_end) break;
+      if constexpr (XSource::kStaged) staged.Arrive(group);
 #pragma unroll
       for (int n = 0; n < kNTiles; ++n) {
-        const uint4 xv =
-            x_rows[n] != nullptr ? __ldg(x_rows[n] + 4 * group) : zero;
+        uint4 xv = zero;
+        if (x_rows[n] != nullptr) {
+          if constexpr (XSource::kStaged) {
+            xv = staged.Fragment(n, group);
+          } else {
+            xv = __ldg(x_rows[n] + 4 * group);
+          }
+        }
         MmaBf16(d[n], wa[i].x, wb[i].x, wa[i].y, wb[i].y, xv.x, xv.y);
         MmaBf16(d[n], wa[i].z, wb[i].z, wa[i].w, wb[i].w, xv.z, xv.w);
       }
     }
   }
+}
+
+// Bf16MmaRowsOf, kMmaPrefetch / 2 groups deep.
+template <int kNTiles, typename XSource = GlobalX>
+__device__ __forceinline__ void Bf16MmaRows(const __nv_bfloat16* w, int k,
+                                            int row0, int rows,
+                                            const __nv_bfloat16* x,
+                                            int x_stride, int tokens,
+                                            int group_begin, int group_end,
+                                            float (&d)[kNTiles][4],
+                                            const XSource& staged = {}) {
+  Bf16MmaRowsOf<kNTiles, kMmaPrefetch / 2>(w, k, row0, rows, x, x_stride,
+                                           tokens, group_begin, group_end, d,
+                                           staged);
 }
 
 }  // namespace s2mk

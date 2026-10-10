@@ -51,6 +51,14 @@ static_assert(kQGroupsPerLane * 32 * kInt4Group == kQwen38QDim);
 static_assert(kFfnGroupsPerLane * 32 * kInt4Group == kFfn);
 static_assert(kDim <= kQwen38QDim, "AttentionShared::xs holds the residual");
 
+// Slices of k a 16-row block of a tensor-core projection (prefill_dense.cuh's
+// FixedDense) splits into, by width, in the prefill and the verify step. The
+// projections from the residual leave a CTA many blocks, and four slices a
+// block keep its warps busy; o_proj's, out_proj's and down's 5120 rows leave a
+// CTA a block or two, which take eight, so a CTA's two blocks share each
+// slice's staged x.
+constexpr int SlicesFor(int k) { return k == kDim ? 4 : 8; }
+
 // The residual's RMSNorms: Gemma's, scaling by 1 + w.
 struct NormDims {
   static constexpr int kDim = kQwen38Dim;

@@ -24,6 +24,7 @@
 #include "gemv_core.cuh"
 #include "int4_gemv_core.cuh"
 #include "int4_mma_core.cuh"
+#include "weight.h"
 
 namespace s2mk {
 namespace prefill {
@@ -36,9 +37,16 @@ constexpr int kPartStride = kMaxTokens + 8;
 // A dense GEMM's per-warp partials: kWarps slices of 16 rows × 64 tokens.
 constexpr int kDenseSmemFloats = kWarps * kBlockRows * kPartStride;
 
-// The warp's C fragments d[m][n] to part[m × kBlockRows + row][token], or
-// added to what is there with kAdd.
-template <bool kAdd, int kMTiles, int kNTiles>
+// The row stride FixedDenseRows keeps n_tiles n-tiles' partials at: the fewest
+// floats that hold their tokens and, as kPartStride, are off by 8 banks a row.
+constexpr int PartStride(int n_tiles) {
+  return (n_tiles * kMmaTokens + 23) / 32 * 32 + 8;
+}
+static_assert(PartStride(kMaxTokens / kMmaTokens) == kPartStride);
+
+// The warp's C fragments d[m][n] to part[m × kBlockRows + row][token], rows
+// kStride floats apart, or added to what is there with kAdd.
+template <bool kAdd, int kMTiles, int kNTiles, int kStride = kPartStride>
 __device__ __forceinline__ void StoreFragments(
     const float (&d)[kMTiles][kNTiles][4], float* part) {
   const int lane = threadIdx.x % 32;
@@ -48,10 +56,10 @@ __device__ __forceinline__ void StoreFragments(
   for (int m = 0; m < kMTiles; ++m) {
 #pragma unroll
     for (int n = 0; n < kNTiles; ++n) {
-      float* r = part + (m * kBlockRows + g) * kPartStride + n * kMmaTokens +
-                 2 * t;
+      float* r =
+          part + (m * kBlockRows + g) * kStride + n * kMmaTokens + 2 * t;
       float2* lo = reinterpret_cast<float2*>(r);
-      float2* hi = reinterpret_cast<float2*>(r + 8 * kPartStride);
+      float2* hi = reinterpret_cast<float2*>(r + 8 * kStride);
       if constexpr (kAdd) {
         *lo = make_float2(lo->x + d[m][n][0], lo->y + d[m][n][1]);
         *hi = make_float2(hi->x + d[m][n][2], hi->y + d[m][n][3]);
@@ -88,8 +96,10 @@ struct Int4Tile {
   }
 };
 
-// An int4 weight's tile with zero points (Int4ZpMmaRows).
-struct Int4ZpTile {
+// An int4 weight's tile with zero points (Int4ZpMmaRows), kDepth groups
+// deep, or Int4ZpMmaRows' own depth at 0.
+template <int kDepth = 0>
+struct Int4ZpTileOf {
   const int32_t* packed;
   const __nv_bfloat16* scales;
   const uint32_t* zeros;
@@ -101,11 +111,14 @@ struct Int4ZpTile {
                                              int group_end,
                                              float (&d)[kNTiles][4],
                                              const XSource& staged = {}) const {
-    Int4ZpMmaRows<kNTiles>(reinterpret_cast<const uint4*>(packed), scales,
-                           zeros, k / kInt4Group, row0, kBlockRows, x, k,
-                           tokens, group_begin, group_end, d, staged);
+    constexpr int kGroups = kDepth != 0 ? kDepth : kInt4ZpMmaDepth<kNTiles>;
+    Int4ZpMmaRows<kNTiles, kGroups>(reinterpret_cast<const uint4*>(packed),
+                                    scales, zeros, k / kInt4Group, row0,
+                                    kBlockRows, x, k, tokens, group_begin,
+                                    group_end, d, staged);
   }
 };
+using Int4ZpTile = Int4ZpTileOf<>;
 
 __device__ __forceinline__ void CpAsync16(void* dst, const void* src) {
   asm volatile("cp.async.cg.shared.global [%0], [%1], 16;" ::"r"(
@@ -171,27 +184,50 @@ struct StagedX {
   }
 };
 
+// The round's partials FixedDenseRows keeps with `slices` slices over
+// `n_tiles` n-tiles, as floats: all the shared memory it takes when it reads x
+// through its source.
+constexpr int FixedDensePartialFloats(int slices,
+                                      int n_tiles = kMaxTokens / kMmaTokens) {
+  return (kWarps / slices) * kBlockRows * PartStride(n_tiles);
+}
+
 // Shared memory FixedDenseRows takes with `slices` slices: the round's
 // partials, then StagedX's two stages.
 constexpr int FixedDenseSmemBytes(int slices) {
-  return (kWarps / slices) * kBlockRows * kPartStride * sizeof(float) +
+  return FixedDensePartialFloats(slices) * sizeof(float) +
          2 * slices * kMaxTokens * kGroupRuns * 16;
 }
 
-// A bf16 weight's tile (Bf16MmaRows).
-struct Bf16Tile {
+// A bf16 weight's tile (Bf16MmaRowsOf), kDepth groups deep.
+template <int kDepth = kMmaPrefetch / 2>
+struct Bf16TileOf {
   const __nv_bfloat16* w;
 
-  template <int kNTiles>
+  template <int kNTiles, typename XSource = GlobalX>
   __device__ __forceinline__ void operator()(int k, int row0,
                                              const __nv_bfloat16* x,
                                              int tokens, int group_begin,
                                              int group_end,
-                                             float (&d)[kNTiles][4]) const {
-    Bf16MmaRows<kNTiles>(w, k, row0, kBlockRows, x, k, tokens, group_begin,
-                         group_end, d);
+                                             float (&d)[kNTiles][4],
+                                             const XSource& staged = {}) const {
+    Bf16MmaRowsOf<kNTiles, kDepth>(w, k, row0, kBlockRows, x, k, tokens,
+                                   group_begin, group_end, d, staged);
   }
 };
+using Bf16Tile = Bf16TileOf<>;
+
+// The tile of a kInt4Zp weight.
+template <int kDepth = 0>
+__device__ __forceinline__ Int4ZpTileOf<kDepth> Int4Of(const Weight& w) {
+  return {static_cast<const int32_t*>(w.data), w.scales, w.zeros};
+}
+
+// The tile of a kBf16 weight.
+template <int kDepth = kMmaPrefetch / 2>
+__device__ __forceinline__ Bf16TileOf<kDepth> Bf16Of(const Weight& w) {
+  return {static_cast<const __nv_bfloat16*>(w.data)};
+}
 
 // Emits each row's y on its own: store(row, t, y).
 struct EachRow {
@@ -261,27 +297,30 @@ __device__ void DenseRows(const Tile& tile, int k, int n,
   __syncthreads();
 }
 
-// y[t][row] for this CTA's rows DenseBegin(n) of W · x[t]^T and every token,
-// handed to store as Emit names; W has n rows of k. Every 16-row block splits
-// k into kSlices slices, a warp each, kWarps / kSlices blocks a round, and
-// the slices add up in slice order, so a row's sum is the same at every CTA
-// count. An int4 tile over 8 n-tiles reads x through StagedX, which needs
-// k / 32 a multiple of kSlices, so every slice meets as many barriers; with
-// fewer, a group's mmas are too few to cover its barrier, and each warp reads
-// x from L2. `smem` holds FixedDenseSmemBytes(kSlices).
+// y[t][row] for the 16-row blocks of rows [begin, end) of W · x[t]^T and every
+// token, handed to store as Emit names; W has rows of k. Every 16-row block
+// splits k into kSlices slices, a warp each, kWarps / kSlices blocks a round,
+// and the slices add up in slice order, so a row's sum is the same whichever
+// CTA takes it. An int4 tile over 8 n-tiles reads x through StagedX, which
+// needs k / 32 a multiple of kSlices, so every slice meets as many barriers;
+// with fewer, a group's mmas are too few to cover its barrier, and each warp
+// reads x through `source`, from L2 by default. `smem` holds
+// FixedDenseSmemBytes(kSlices), or with `source`'s x, only
+// FixedDensePartialFloats(kSlices, kNTiles).
 template <int kNTiles, int kSlices, typename Emit, typename Tile,
-          typename Store>
-__device__ void FixedDenseRows(const Tile& tile, int k, int n,
-                               const __nv_bfloat16* x, int tokens,
-                               float* smem, const Store& store) {
+          typename Store, typename XSource = GlobalX>
+__device__ void FixedDenseRange(const Tile& tile, int k, int begin, int end,
+                                const __nv_bfloat16* x, int tokens,
+                                float* smem, const Store& store,
+                                const XSource& source = {}) {
   static_assert(kSlices > 0 && kWarps % kSlices == 0);
   constexpr int kRoundBlocks = kWarps / kSlices;
   constexpr int kEmit = Emit::kRows;
+  constexpr int kStride = PartStride(kNTiles);
   constexpr bool kStaged = std::is_same_v<Tile, Int4ZpTile> && kNTiles == 8;
   float* partials = smem;
   const int warp = threadIdx.x / 32;
-  const int begin = DenseBegin(n, blockIdx.x);
-  const int blocks = (DenseBegin(n, blockIdx.x + 1) - begin) / kBlockRows;
+  const int blocks = (end - begin) / kBlockRows;
   const int groups = k / kInt4Group;
   for (int first = 0; first < blocks; first += kRoundBlocks) {
     const int count = min(kRoundBlocks, blocks - first);
@@ -295,8 +334,8 @@ __device__ void FixedDenseRows(const Tile& tile, int k, int n,
     if constexpr (kStaged) {
       const StagedX<kSlices> staged{
           x, k, tokens, groups / kSlices, slice,
-          reinterpret_cast<uint4*>(partials + kRoundBlocks * kBlockRows *
-                                                  kPartStride)};
+          reinterpret_cast<uint4*>(partials +
+                                   kRoundBlocks * kBlockRows * kStride)};
       staged.Copy(0);
       if (live) {
         tile.template operator()<kNTiles>(k, row0, x, tokens, group_begin,
@@ -309,15 +348,15 @@ __device__ void FixedDenseRows(const Tile& tile, int k, int n,
       }
     } else if (live) {
       tile.template operator()<kNTiles>(k, row0, x, tokens, group_begin,
-                                        group_end, d[0]);
+                                        group_end, d[0], source);
     }
-    float* part = partials + block * kBlockRows * kPartStride;
+    float* part = partials + block * kBlockRows * kStride;
     for (int s = 0; s < kSlices; ++s) {
       if (live && slice == s) {
         if (s == 0) {
-          StoreFragments<false, 1, kNTiles>(d, part);
+          StoreFragments<false, 1, kNTiles, kStride>(d, part);
         } else {
-          StoreFragments<true, 1, kNTiles>(d, part);
+          StoreFragments<true, 1, kNTiles, kStride>(d, part);
         }
       }
       __syncthreads();
@@ -328,14 +367,26 @@ __device__ void FixedDenseRows(const Tile& tile, int k, int n,
       const int row = i % lines * kEmit;
       const int out = begin + first * kBlockRows + row;
       if constexpr (kEmit == 1) {
-        store(out, j, partials[row * kPartStride + j]);
+        store(out, j, partials[row * kStride + j]);
       } else {
-        store(out, j, partials[row * kPartStride + j],
-              partials[(row + 1) * kPartStride + j]);
+        store(out, j, partials[row * kStride + j],
+              partials[(row + 1) * kStride + j]);
       }
     }
     __syncthreads();
   }
+}
+
+// FixedDenseRange over this CTA's rows DenseBegin(n) of W's n rows.
+template <int kNTiles, int kSlices, typename Emit, typename Tile,
+          typename Store, typename XSource = GlobalX>
+__device__ void FixedDenseRows(const Tile& tile, int k, int n,
+                               const __nv_bfloat16* x, int tokens,
+                               float* smem, const Store& store,
+                               const XSource& source = {}) {
+  FixedDenseRange<kNTiles, kSlices, Emit>(
+      tile, k, DenseBegin(n, blockIdx.x), DenseBegin(n, blockIdx.x + 1), x,
+      tokens, smem, store, source);
 }
 
 // Runs rows<kNTiles>() with n-tiles enough for `tokens`.

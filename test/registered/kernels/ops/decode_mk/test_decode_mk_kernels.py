@@ -5,7 +5,8 @@
 them, on random Qwen3.8 weights over the first 8 layers (two periods of three
 linear layers and a full one): a decode step's layers and logits against an
 fp32 PyTorch model on the dequantized weights, bounded by the same model in
-bf16; the verify step against decode steps, bit for bit; and the prefill's
+bf16; the verify step of n tokens against n verify steps of one, bit for
+bit; and the prefill's
 logits against the fp32 model. decode-mk's own tier-0 tests hold the kernels
 at all 64 layers and more shapes; these hold the vendored copy and its
 build."""
@@ -105,9 +106,10 @@ def test_decode_steps_within_bf16_budget(weights, cos_sin):
 
 
 @pytest.mark.parametrize("n", range(1, MAX_TOKENS + 1))
-def test_verify_step_is_decode_steps(weights, cos_sin, n):
+def test_verify_step_is_steps_of_one(weights, cos_sin, n):
     """The verify step speculative decoding rests on: n tokens in one launch
-    give each token's logits and states exactly as n decode steps do."""
+    give each token's logits and states exactly as n verify steps of one
+    token do, so a token's choice does not depend on the drafts after it."""
     start = 5
     prefix = _tokens(weights.vocab, start, seed=2)
     tokens = _tokens(weights.vocab, n, seed=3)
@@ -116,12 +118,14 @@ def test_verify_step_is_decode_steps(weights, cos_sin, n):
     decoder = Qwen38Decoder(weights, state, cos_sin)
     for pos, token in enumerate(prefix):
         decoder.step(token, pos)
-    slotted = SlottedState.of(state.clone(), MAX_TOKENS + 1)
-    expected, states = [], []
-    for t, token in enumerate(tokens):
-        expected.append(decoder.step(token, start + t).clone())
-        states.append([s.clone() for s in state.linear])
+    stepped = SlottedState.of(state.clone(), MAX_TOKENS + 1)
+    verifier = Qwen38Verifier(weights, stepped, cos_sin)
+    expected = [
+        verifier.step([token], start + t, t)[0].clone()
+        for t, token in enumerate(tokens)
+    ]
 
+    slotted = SlottedState.of(state.clone(), MAX_TOKENS + 1)
     verifier = Qwen38Verifier(weights, slotted, cos_sin)
     scalar = lambda v: torch.tensor([v], dtype=torch.int32, device="cuda")
     verifier.launch(
@@ -129,10 +133,10 @@ def test_verify_step_is_decode_steps(weights, cos_sin, n):
     )
     torch.cuda.synchronize()
     assert torch.equal(verifier.logits[:n], torch.stack(expected))
-    for t in range(n):
-        for j, s in enumerate(states[t]):
-            assert torch.equal(slotted.conv[j][t + 1], s.conv)
-            assert torch.equal(slotted.recurrent[j][t + 1], s.recurrent)
+    for t in range(1, n + 1):
+        for j in range(len(slotted.conv)):
+            assert torch.equal(slotted.conv[j][t], stepped.conv[j][t])
+            assert torch.equal(slotted.recurrent[j][t], stepped.recurrent[j][t])
 
 
 def test_prefill_within_bf16_budget(weights, cos_sin):

@@ -11,11 +11,14 @@ the MTP head's hidden state after drafting d₀:
   3. The drafts are accepted while dᵢ = aᵢ: n of them. The cycle emits
      d₀ … d_(n - 1) and a_n, and x becomes a_n at position p + n + 1.
   4. The head runs over positions p … p + n from the model's hidden states
-     there, rewriting its cache where drafting left its own guesses (SGLang's
-     draft extend). Its last step drafts the next cycle's d₀.
-The tokens are the model's own greedy choices, the verify step's logits being
-bitwise those of decoding one token at a time, so the text is plain greedy
-decoding's.
+     there in one launch, rewriting its cache where drafting left its own
+     guesses (SGLang's draft extend). Its last token drafts the next cycle's
+     d₀.
+The tokens are the verify step's own greedy choices. A token's logits are the
+same bits whatever drafts follow it in the step, so the text is the same at
+every draft count and on every run: the greedy text of verify steps of one
+token. It leaves plain decoding's only where the two steps' sums, in different
+orders, break a near tie differently.
 
 Each cycle replays two CUDA graphs: the drafts with the verify step, then the
 extend for the n accepted; the host reads the 2K + 1 tokens between them.
@@ -93,7 +96,7 @@ class Qwen38Generator:
     `max_positions` positions a sequence, prompt and reply.
 
     The prompt runs through verify steps of MAX_TOKENS tokens, whose states
-    are bitwise those of feeding it one token at a time. Without MTP weights
+    are bitwise those of verify steps of one token. Without MTP weights
     the reply is plain decoding, one decode step a token (s2mk/qwen38_decode.py);
     with them, speculative decoding with `drafts` drafts a cycle."""
 
@@ -200,12 +203,11 @@ class Qwen38Generator:
         """The head over positions p … p + n after accepting n drafts, then
         the next cycle's x and d₀, position and slot."""
         m = self.mtp
-        following = torch.cat([self._tokens[1:n + 1], self._answers[n:n + 1].int()])
-        for j in range(n + 1):
-            m.token.copy_(following[j:j + 1])
-            m.hidden_in.copy_(self.verifier.final_hidden[j])
-            torch.add(self._pos, j, out=m.pos)
-            m.launch(with_logits=j == n)
+        m.extend_tokens[:n].copy_(self._tokens[1:n + 1])
+        m.extend_tokens[n:n + 1].copy_(self._answers[n:n + 1])
+        m.extend_hidden[:n + 1].copy_(self.verifier.final_hidden[:n + 1])
+        m.pos.copy_(self._pos)
+        m.launch_extend(n + 1)
         self._tokens[0:1].copy_(self._answers[n:n + 1])
         self._tokens[1:2].copy_(m.logits.argmax(dim=-1, keepdim=True))
         self._pos.add_(n + 1)
@@ -235,11 +237,7 @@ class Qwen38Generator:
             slot = (slot + n) % self.state.slots
         first = int(self.verifier.logits[n - 1].argmax())
         if self.mtp is not None:
-            for i, token in enumerate(prompt[1:]):
-                self.mtp.token.fill_(token)
-                self.mtp.pos.fill_(i)
-                self.mtp.hidden_in.copy_(hidden[i])
-                self.mtp.launch(with_logits=False)
+            self.mtp.prompt(tokens[1:], hidden[:-1], 0)
         self.start(hidden[-1], first, len(prompt), slot)
         torch.cuda.synchronize()
         return first

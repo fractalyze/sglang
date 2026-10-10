@@ -65,6 +65,16 @@ def decode_mk_errors(cfg: Any) -> list[str]:
         errors.append(
             "no --disaggregation-mode: one process holds the request's states"
         )
+    if (
+        prefill
+        and cfg.chunked_prefill_size is not None
+        and cfg.chunked_prefill_size > 0
+    ):
+        errors.append(
+            "--chunked-prefill-size -1 with SGLANG_DECODE_MK_PREFILL=1: the prefill "
+            "kernel takes the whole prompt and splits it into launches itself, got "
+            f"{cfg.chunked_prefill_size}"
+        )
     if mtp and cfg.speculative_algorithm != MTP_ALGORITHM:
         errors.append(
             f"--speculative-algorithm {MTP_ALGORITHM} with SGLANG_DECODE_MK_MTP=1, "

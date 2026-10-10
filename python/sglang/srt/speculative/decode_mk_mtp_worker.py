@@ -8,7 +8,9 @@ A prompt runs on the target model, whose runner also runs the MTP head over
 it. Each decode step of a greedy request is then one speculative cycle: the
 head drafts K tokens, one verify launch checks them with the token before
 them, and the step emits the accepted drafts and the model's own next token,
-1 to K + 1 tokens, all of them plain greedy decoding's. A request that
+1 to K + 1 tokens: the verify step's greedy choices, the same at every K,
+which leave plain decoding's only where the two kernels' sums break a near
+tie differently. A request that
 samples, constrains its grammar or asks for logprobs decodes one token a step
 on the decode kernel instead.
 
