@@ -20,7 +20,7 @@ Qwen3.8 model unchanged.
 |---|---|
 | `SGLANG_DECODE_MK_DECODE=1` | Builds `Qwen3_5DecodeMkForConditionalGeneration` (`sglang/srt/models/qwen3_5_decode_mk.py`) in place of the stock model. The kernels read the checkpoint themselves and hold one request's states. Each decode step is one launch, and the prompt runs one token a launch. |
 | `SGLANG_DECODE_MK_PREFILL=1` | With DECODE: the prompt runs on the prefill kernel, layer by layer over the whole prompt, in the launches of at most 8,192 tokens that decode-mk's own `Qwen38Prefiller.run` makes of it. Needs `--chunked-prefill-size -1`, so SGLang hands over the whole prompt. |
-| `SGLANG_DECODE_MK_MTP=1` | With DECODE: greedy requests decode speculatively under `--speculative-algorithm DECODE_MK_MTP` (`sglang/srt/speculative/decode_mk_mtp_worker.py`). The MTP head drafts `--speculative-num-steps` tokens a cycle, 1 to 3 (default 1), and one verify launch checks them. Every emitted token is the verify step's greedy choice, the same at every draft count; it leaves plain decoding's only where the two kernels' sums break a near tie differently. Requests that sample, use a grammar or ask for logprobs decode one token a step instead. |
+| `SGLANG_DECODE_MK_MTP=1` | With DECODE: greedy requests decode speculatively under `--speculative-algorithm DECODE_MK_MTP` (`sglang/srt/speculative/decode_mk_mtp_worker.py`). The MTP head drafts `--speculative-num-steps` tokens a cycle, 1 to 4 (default 1), and one verify launch checks them. The decode, verify and MTP steps share the LM head quantized to int4, as decode-mk's own speculative decoding runs it (`Qwen38Weights.with_int4_lm_head`). Every emitted token is the verify step's greedy choice, the same at every draft count; it leaves plain decoding's only where the two kernels' sums break a near tie differently. Requests that sample, use a grammar or ask for logprobs decode one token a step instead. |
 
 ## Batch 1 only
 
@@ -57,6 +57,9 @@ python -m sglang.launch_server --model-path cyankiwi/Qwen3.8-27B-AWQ-INT4 \
   --context-length 16384 --chunked-prefill-size -1 --mem-fraction-static 0.92 \
   --speculative-algorithm DECODE_MK_MTP --disable-overlap-schedule
 ```
+
+`--model-path` is the hub id, downloaded at `--revision` into the Hugging Face
+cache (or `--download-dir`), or a local copy of the checkpoint.
 
 The first start JIT-compiles the kernels into `$SGLANG_CACHE_DIR/decode_mk/`.
 `_ext.py` compiles them with the CUDA toolkit torch was built against: the one

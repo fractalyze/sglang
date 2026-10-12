@@ -20,6 +20,7 @@ import unittest
 from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from sglang.srt.arg_groups.decode_mk_hook import decode_mk_errors
 from sglang.srt.environ import envs
@@ -154,12 +155,12 @@ class TestMtpAlgorithm(CustomTestCase):
         self.assertEqual(args.speculative_eagle_topk, 1)
         self.assertEqual(args.speculative_num_draft_tokens, 2)
 
-    def test_verifies_up_to_four_tokens(self):
-        args = SimpleNamespace(speculative_num_steps=3)
+    def test_verifies_up_to_five_tokens(self):
+        args = SimpleNamespace(speculative_num_steps=4)
         self.algo.handle_server_args(args)
-        self.assertEqual(args.speculative_num_draft_tokens, 4)
-        with self.assertRaisesRegex(ValueError, "1 to 3"):
-            self.algo.handle_server_args(SimpleNamespace(speculative_num_steps=4))
+        self.assertEqual(args.speculative_num_draft_tokens, 5)
+        with self.assertRaisesRegex(ValueError, "1 to 4"):
+            self.algo.handle_server_args(SimpleNamespace(speculative_num_steps=5))
 
     def test_answers_the_enum_interface(self):
         from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
@@ -227,6 +228,73 @@ class TestArchitecture(CustomTestCase):
         with _switches(decode=True):
             with self.assertRaisesRegex(ValueError, "Qwen3.8-27B"):
                 self._resolve(["Qwen3ForCausalLM"])
+
+
+class TestLoadWeights(CustomTestCase):
+    """What load_weights hands SGLang's checkpoint resolution, decode-mk's
+    loader and the runner, with all three stubbed out."""
+
+    _MODULE = "sglang.srt.models.qwen3_5_decode_mk"
+
+    def _load(self, mtp: bool):
+        from sglang.srt.models import qwen3_5_decode_mk
+
+        weights = mock.Mock(name="weights")
+        with ExitStack() as stack:
+            stack.enter_context(_switches(decode=True, mtp=mtp))
+
+            def patch(name, **kwargs):
+                return stack.enter_context(
+                    mock.patch(f"{self._MODULE}.{name}", **kwargs)
+                )
+
+            patch(
+                "get_model",
+                return_value=SimpleNamespace(
+                    model_path="cyankiwi/Qwen3.8-27B-AWQ-INT4",
+                    revision="6e134ba",
+                    download_dir="/models",
+                    context_length=4096,
+                ),
+            )
+            patch("get_spec", return_value=SimpleNamespace(speculative_num_steps=4))
+            loader = patch("DefaultModelLoader")
+            loader.return_value._prepare_weights.return_value = ("/snapshot", [], True)
+            checkpoint = patch("qwen38_checkpoint")
+            checkpoint.load.return_value = weights
+            runner = patch("DecodeMkRunner")
+            qwen3_5_decode_mk.Qwen3_5DecodeMkForConditionalGeneration(
+                config=None
+            ).load_weights(iter(()))
+        return weights, loader, checkpoint, runner
+
+    def test_resolves_the_model_path_as_sglang_does(self):
+        from sglang.srt.configs.load_config import LoadFormat
+
+        _, loader, checkpoint, _ = self._load(mtp=True)
+        (load_config,), _ = loader.call_args
+        self.assertEqual(load_config.load_format, LoadFormat.SAFETENSORS)
+        self.assertEqual(load_config.download_dir, "/models")
+        loader.return_value._prepare_weights.assert_called_once_with(
+            "cyankiwi/Qwen3.8-27B-AWQ-INT4",
+            "6e134ba",
+            fall_back_to_pt=False,
+            allow_patterns_overrides=["*.safetensors", "*.json"],
+        )
+        checkpoint.load.assert_called_once_with("/snapshot")
+        checkpoint.load_mtp.assert_called_once_with("/snapshot")
+
+    def test_mtp_runs_on_an_int4_lm_head(self):
+        weights, _, checkpoint, runner = self._load(mtp=True)
+        (kernel_weights, _, _, mtp, drafts), _ = runner.call_args
+        self.assertIs(kernel_weights, weights.with_int4_lm_head.return_value)
+        self.assertIs(mtp, checkpoint.load_mtp.return_value)
+        self.assertEqual(drafts, 4)
+
+    def test_plain_decoding_keeps_the_bf16_lm_head(self):
+        weights, _, _, runner = self._load(mtp=False)
+        weights.with_int4_lm_head.assert_not_called()
+        self.assertIs(runner.call_args[0][0], weights)
 
 
 def _sync_script():

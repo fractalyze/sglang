@@ -9,10 +9,11 @@ Each switch set's greedy replies, token for token and the same on every ask,
 against decode-mk's own API on the same weights: Qwen38Generator for the
 prompt fed token by token; Qwen38Prefiller over the whole prompt and decode
 steps for SGLANG_DECODE_MK_PREFILL=1; and under SGLANG_DECODE_MK_MTP=1, whose
-speculation must accept drafts, the verify step fed one token a step after
-either prompt, the text decode-mk's speculative decoding emits. Also: a
-sampled request under MTP, an image refused, and a server that would batch
-refused at startup."""
+speculation must accept drafts, on the int4 LM head it serves:
+Qwen38Generator's speculative decoding at four drafts, and after the prefill
+kernel the verify step fed one token a step, the text decode-mk's speculative
+decoding emits at any draft count. Also: a sampled request under MTP, an image
+refused, and a server that would batch refused at startup."""
 
 import gc
 import os
@@ -85,7 +86,9 @@ def _references(prompts: list[list[int]]) -> dict[str, list[list[int]]]:
     """decode-mk's greedy replies, on the GPU the servers take after: the
     prompt token by token (as verify steps, which decode-mk holds bitwise
     equal) or on the prefill kernel, then decode steps or verify steps of one
-    token."""
+    token; and Qwen38Generator's speculative decoding. The verify steps and
+    the speculation run on the int4 LM head, as SGLANG_DECODE_MK_MTP=1
+    serves them."""
     from sglang.kernels.decode_mk import qwen38_checkpoint
     from sglang.kernels.decode_mk.qwen38_decode import (
         LAYERS,
@@ -94,7 +97,7 @@ def _references(prompts: list[list[int]]) -> dict[str, list[list[int]]]:
     )
     from sglang.kernels.decode_mk.qwen38_layer import cos_sin_table
     from sglang.kernels.decode_mk.qwen38_prefill import Qwen38Prefiller
-    from sglang.kernels.decode_mk.qwen38_spec import Qwen38Generator
+    from sglang.kernels.decode_mk.qwen38_spec import MAX_DRAFTS, Qwen38Generator
     from sglang.kernels.decode_mk.qwen38_verify import MAX_TOKENS as VERIFY_TOKENS
     from sglang.kernels.decode_mk.qwen38_verify import Qwen38Verifier, SlottedState
 
@@ -127,14 +130,16 @@ def _references(prompts: list[list[int]]) -> dict[str, list[list[int]]]:
     generator = Qwen38Generator(weights, CONTEXT)
     references = {"tokens": [generator.generate(p, REPLY).tokens for p in prompts]}
     del generator
-    for name, prefill, verify in [
-        ("prefill", True, False),
-        ("verified", False, True),
-        ("prefill verified", True, True),
-    ]:
-        references[name] = [reply(weights, p, prefill, verify) for p in prompts]
-        gc.collect()
-        torch.cuda.empty_cache()
+    references["prefill"] = [reply(weights, p, True, False) for p in prompts]
+    weights = weights.with_int4_lm_head()
+    generator = Qwen38Generator(
+        weights, CONTEXT, qwen38_checkpoint.load_mtp(CHECKPOINT), MAX_DRAFTS
+    )
+    references["speculative"] = [generator.generate(p, REPLY).tokens for p in prompts]
+    del generator
+    gc.collect()
+    torch.cuda.empty_cache()
+    references["prefill verified"] = [reply(weights, p, True, True) for p in prompts]
     del weights
     gc.collect()
     torch.cuda.empty_cache()
@@ -224,9 +229,10 @@ class TestQwen38DecodeMk(CustomTestCase):
 
     def test_mtp(self):
         self._serve(
-            {"SGLANG_DECODE_MK_DECODE": "1", "SGLANG_DECODE_MK_MTP": "1"}, MTP_ARGS
+            {"SGLANG_DECODE_MK_DECODE": "1", "SGLANG_DECODE_MK_MTP": "1"},
+            [*MTP_ARGS, "--speculative-num-steps", "4"],
         )
-        replies = self._assert_replies("verified")
+        replies = self._assert_replies("speculative")
         for reply in replies:
             self.assertGreater(reply["meta_info"]["spec_accept_length"], 1.2)
         sampled = self._generate(self.prompts[0], temperature=1.0, top_p=0.95)
