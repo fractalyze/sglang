@@ -446,12 +446,16 @@ def main() -> None:
         for name in args.arms:
             with Server(ARMS[name], args.out_dir / f"{name}.log"):
                 result = time_arm(args.repeats)
-            (args.out_dir / f"{name}.json").write_text(json.dumps(result, indent=1))
+            (args.out_dir / f"{name}.json").write_text(
+                json.dumps(result, indent=1) + "\n"
+            )
     else:
         out = args.out_dir / f"{args.arm}-{args.benchmark}"
         with Server(ARMS[args.arm], args.out_dir / f"{args.arm}-{args.benchmark}.log"):
             eval_arm(args.benchmark, args.num_examples, out)
-            (out / "server.json").write_text(json.dumps(server_state(), indent=1))
+            (out / "server.json").write_text(
+                json.dumps(server_state(), indent=1) + "\n"
+            )
 
 
 if __name__ == "__main__":
