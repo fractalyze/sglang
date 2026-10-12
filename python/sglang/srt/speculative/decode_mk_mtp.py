@@ -11,13 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from sglang.kernels.decode_mk.qwen38_spec import MAX_DRAFTS
 from sglang.srt.arg_groups.decode_mk_hook import MTP_ALGORITHM
 from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
 from sglang.srt.speculative.spec_registry import CustomSpecAlgo
-
-# Drafts a cycle the verify step checks with the token before them
-# (kQwen38MaxVerifyTokens - 1).
-MAX_DRAFTS = 3
 
 
 class DecodeMkMtpAlgo(CustomSpecAlgo):

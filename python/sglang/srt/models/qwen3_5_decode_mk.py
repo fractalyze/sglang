@@ -40,9 +40,11 @@ from sglang.kernels.decode_mk.qwen38_mtp import MtpWeights
 from sglang.kernels.decode_mk.qwen38_prefill import Qwen38Prefiller
 from sglang.kernels.decode_mk.qwen38_spec import Qwen38Generator
 from sglang.kernels.decode_mk.qwen38_verify import MAX_TOKENS as VERIFY_TOKENS
+from sglang.srt.configs.load_config import LoadConfig, LoadFormat
 from sglang.srt.environ import envs
 from sglang.srt.layers.logits_processor import LogitsProcessorOutput
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
+from sglang.srt.model_loader.loader import DefaultModelLoader
 from sglang.srt.model_loader.utils import set_default_torch_dtype
 from sglang.srt.runtime_context import get_model, get_spec
 
@@ -61,6 +63,27 @@ def decode_mk_architectures(architectures: list[str]) -> list[str]:
             f"not {architectures}"
         )
     return [Qwen3_5DecodeMkForConditionalGeneration.__name__]
+
+
+def checkpoint_dir(model_path: str, revision: Optional[str]) -> str:
+    """The local directory of the checkpoint `--model-path` names, which
+    decode-mk's loader reads: SGLang's own loader resolves it as for the stock
+    model, though the weight iterator it hands load_weights is never read. A
+    hub id's safetensors, their index and config.json are downloaded at
+    `revision` into --download-dir, and --model-checksum is verified. The
+    ignore patterns are LoadConfig's default, as in the model runner's."""
+    loader = DefaultModelLoader(
+        LoadConfig(
+            load_format=LoadFormat.SAFETENSORS, download_dir=get_model().download_dir
+        )
+    )
+    folder, _, _ = loader._prepare_weights(
+        model_path,
+        revision,
+        fall_back_to_pt=False,
+        allow_patterns_overrides=["*.safetensors", "*.json"],
+    )
+    return folder
 
 
 class DecodeMkRunner:
@@ -224,18 +247,25 @@ class Qwen3_5DecodeMkForConditionalGeneration(nn.Module):
         # The kernels read the checkpoint with decode-mk's own loader, in the
         # layout they run on; SGLang's weight iterator is left unread.
         model = get_model()
+        path = checkpoint_dir(model.model_path, model.revision)
         positions = model.context_length
+        speculative = envs.SGLANG_DECODE_MK_MTP.get()
         mtp, drafts = None, 1
-        if envs.SGLANG_DECODE_MK_MTP.get():
-            mtp = qwen38_checkpoint.load_mtp(model.model_path)
+        if speculative:
             drafts = get_spec().speculative_num_steps
             # A cycle near the end of the context writes its drafts past it.
             positions += VERIFY_TOKENS
         # SGLang loads under the model's dtype; decode-mk allocates its fp32
         # states and workspaces under torch's own default.
         with set_default_torch_dtype(torch.float32):
+            kernel_weights = qwen38_checkpoint.load(path)
+            if speculative:
+                mtp = qwen38_checkpoint.load_mtp(path)
+                # Speculative decoding as decode-mk runs it: the decode,
+                # verify and MTP steps share an int4 LM head.
+                kernel_weights = kernel_weights.with_int4_lm_head()
             self.runner = DecodeMkRunner(
-                qwen38_checkpoint.load(model.model_path),
+                kernel_weights,
                 positions,
                 envs.SGLANG_DECODE_MK_PREFILL.get(),
                 mtp,
@@ -246,7 +276,11 @@ class Qwen3_5DecodeMkForConditionalGeneration(nn.Module):
             "kernel %s, MTP %s",
             positions,
             "on" if self.runner.prefiller is not None else "off",
-            f"{drafts} drafts a cycle" if mtp is not None else "off",
+            (
+                f"{drafts} drafts a cycle on an int4 LM head"
+                if mtp is not None
+                else "off"
+            ),
         )
 
     def forward(
