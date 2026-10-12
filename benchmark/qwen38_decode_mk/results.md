@@ -59,8 +59,11 @@ and 7–10% slower at 30 and 8,509, and prefills 23% slower at 8,509.
   drafts.** decode-mk's own MTP benchmark
   (`harness/results/qwen38-mtp.md`) passes NVFP4 + MTP only with its int4 LM
   head (`Qwen38Weights.with_int4_lm_head`), at three drafts or four; with the
-  bf16 head its best is about ours here. This branch has no switch for that head, and `DECODE_MK_MTP` refuses a
-  fourth draft though the verify step checks five tokens.
+  bf16 head its best is about ours here. This branch has no switch for that
+  head, and `DECODE_MK_MTP` refuses a fourth draft though the verify step
+  checks five tokens. Both are
+  [fractalyze/decode-mk#105](https://github.com/fractalyze/decode-mk/issues/105),
+  along with the hub-id launch below.
 - **Our prefill is slower than stock int4's** at 1,053 and 8,509 tokens, as
   decode-mk's own prefill benchmark also measures it.
 
@@ -69,3 +72,28 @@ and 7–10% slower at 30 and 8,509, and prefills 23% slower at 8,509.
 Pending: GSM8K (all 1,319) and a 1,000-question MMLU sample (sgl-eval's seed
 0) for ours (MTP, three drafts) and stock int4, greedy with thinking off,
 under `ab.py eval`.
+
+There is no bf16 row: the bf16 checkpoint does not fit the card, and serving
+it with `--cpu-offload-gb` on this host ran out of host memory while loading
+its weights.
+
+## Running
+
+`ab.py` serves every arm from the checkpoint's directory in the Hugging Face
+cache, which must already hold it: this branch's switches read
+`--model-path` as a directory, so a hub id does not serve them
+([fractalyze/decode-mk#105](https://github.com/fractalyze/decode-mk/issues/105)).
+
+```bash
+# A venv with stock SGLang 1d59ce7, from decode-mk's control/qwen38/setup.sh,
+# and sgl-eval 0.1.2 in any other.
+PYTHON=<venv>/bin/python
+$PYTHON ab.py time int4 int4-mtp nvfp4 nvfp4-mtp ours ours-mtp1 ours-mtp2 ours-mtp3 \
+  --out-dir results
+SGL_EVAL=<sgl-eval venv>/bin/sgl-eval $PYTHON ab.py eval ours-mtp3 gsm8k --out-dir results/eval
+SGL_EVAL=<sgl-eval venv>/bin/sgl-eval $PYTHON ab.py eval ours-mtp3 mmlu --num-examples 1000 \
+  --out-dir results/eval
+```
+
+Each arm needs the GPU to itself; `ab.py` waits for it to be idle before
+serving one.

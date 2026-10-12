@@ -20,7 +20,8 @@ protocol, prompts included, is fractalyze/decode-mk control/qwen38/bench.py
 at bc571b0, so its numbers compare with that baseline's.
 
 `eval` serves one arm and scores it with sgl-eval, which it runs from
-$SGL_EVAL (default: `sgl-eval` on PATH), greedy, thinking off.
+$SGL_EVAL (default: `sgl-eval` on PATH), one request at a time, greedy, thinking
+off.
 """
 
 from __future__ import annotations
@@ -48,7 +49,6 @@ _REPO = Path(__file__).resolve().parents[2]
 
 INT4 = ("cyankiwi/Qwen3.8-27B-AWQ-INT4", "6e134bae811fb5adac50ee042ae5f029ac6779aa")
 NVFP4 = ("nvidia/Qwen3.8-27B-NVFP4", "482ca0f3832238542f8f5295dde86b5f22711d80")
-BF16 = ("Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0")
 
 # SGLang's cookbook RTX 5090 recipe for Qwen3.8-27B with its panel defaults,
 # as control/qwen38/serve.sh runs it: without MTP the static memory fraction
@@ -131,24 +131,6 @@ ARMS = {
         )
         for k in (1, 2, 3)
     },
-    # Evaluation only: bf16's 54 GB of weights exceed the card, so most of them
-    # stay in host memory and stream over PCIe each step, many requests a step.
-    "bf16": Arm(
-        BF16,
-        [
-            "--cpu-offload-gb",
-            "34",
-            "--mem-fraction-static",
-            "0.85",
-            "--max-running-requests",
-            "64",
-            "--context-length",
-            "8192",
-            "--mamba-ssm-dtype",
-            "float32",
-            "--disable-cuda-graph",
-        ],
-    ),
 }
 
 
@@ -419,9 +401,7 @@ def time_arm(repeats: int) -> dict:
     return result
 
 
-def eval_arm(
-    benchmark: str, num_examples: int | None, threads: int, out_dir: Path
-) -> None:
+def eval_arm(benchmark: str, num_examples: int | None, out_dir: Path) -> None:
     cmd = [
         os.environ.get("SGL_EVAL", "sgl-eval"),
         "run",
@@ -437,7 +417,7 @@ def eval_arm(
         "--max-tokens",
         "2048",
         "--num-threads",
-        str(threads),
+        "1",
         "--no-thinking",
         "--chat-template-kwarg",
         "enable_thinking=false",
@@ -459,7 +439,6 @@ def main() -> None:
     e.add_argument("benchmark")
     e.add_argument("--out-dir", type=Path, required=True)
     e.add_argument("--num-examples", type=int)
-    e.add_argument("--num-threads", type=int, default=1)
     args = ap.parse_args()
 
     if args.command == "time":
@@ -471,7 +450,7 @@ def main() -> None:
     else:
         out = args.out_dir / f"{args.arm}-{args.benchmark}"
         with Server(ARMS[args.arm], args.out_dir / f"{args.arm}-{args.benchmark}.log"):
-            eval_arm(args.benchmark, args.num_examples, args.num_threads, out)
+            eval_arm(args.benchmark, args.num_examples, out)
             (out / "server.json").write_text(json.dumps(server_state(), indent=1))
 
 

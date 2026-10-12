@@ -82,11 +82,9 @@ class TestArms(CustomTestCase):
             self.assertEqual(args.speculative_num_steps, k)
         self.assertIsNone(_parsed(ab.ARMS["ours"]).speculative_algorithm)
 
-    def test_stock_arms_serve_one_request_except_bf16(self):
-        for name in _STOCK:
-            args = _parsed(ab.ARMS[name])
-            expected = 64 if name == "bf16" else 1
-            self.assertEqual(args.max_running_requests, expected, name)
+    def test_every_arm_serves_one_request(self):
+        for name, arm in ab.ARMS.items():
+            self.assertEqual(_parsed(arm).max_running_requests, 1, name)
 
 
 class TestLaunchEnv(CustomTestCase):
