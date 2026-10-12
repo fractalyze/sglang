@@ -1,1 +1,3 @@
 *.log
+# Per-question predictions: too large to keep; metrics.json holds each score.
+output-rs*.jsonl

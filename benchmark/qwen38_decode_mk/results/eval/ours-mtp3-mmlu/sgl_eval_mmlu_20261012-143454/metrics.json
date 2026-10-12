@@ -1,0 +1,50 @@
+{
+  "aggregate": {
+    "error_rate": 0.0,
+    "score": 0.875,
+    "stop_rate": 0.965,
+    "truncated_rate": 0.035
+  },
+  "base_url": "http://127.0.0.1:30000/v1",
+  "gen": {
+    "chat_template_kwargs": {
+      "enable_thinking": false,
+      "thinking": false
+    },
+    "extra_body": null,
+    "max_tokens": 2048,
+    "min_p": 0.0,
+    "reasoning_effort": null,
+    "repetition_penalty": 1.0,
+    "seed": null,
+    "system_message": null,
+    "temperature": 0.0,
+    "top_p": 1.0
+  },
+  "latency_seconds": 4265.786458112998,
+  "model": "/home/baz/hf/hub/models--cyankiwi--Qwen3.8-27B-AWQ-INT4/snapshots/6e134bae811fb5adac50ee042ae5f029ac6779aa",
+  "n_repeats": 1,
+  "name": "mmlu",
+  "ns_commit_sha": "645cf567ff08c0ae9cc3fc8e1edbb975b3067816",
+  "num_examples": 1000,
+  "num_threads": 1,
+  "output_throughput_tps": 138.12833947169696,
+  "sgl_eval_version": "0.1.2",
+  "timestamp": "20261012-143454",
+  "token_usage": {
+    "completion_tokens": {
+      "count": 1000,
+      "mean": 589.226
+    },
+    "prompt_tokens": {
+      "count": 1000,
+      "mean": 160.462
+    },
+    "reasoning_tokens": {
+      "count": 1000,
+      "mean": 0.0
+    }
+  },
+  "total_completion_tokens": 589226,
+  "total_prompt_tokens": 160462
+}

@@ -69,9 +69,22 @@ and 7–10% slower at 30 and 8,509, and prefills 23% slower at 8,509.
 
 ## Quality
 
-Pending: GSM8K (all 1,319) and a 1,000-question MMLU sample (sgl-eval's seed
-0) for ours (MTP, three drafts) and stock int4, greedy with thinking off,
-under `ab.py eval`.
+Ours (MTP, three drafts) against stock int4, on the same int4 checkpoint and
+the same questions: all 1,319 of GSM8K, and the 1,000 MMLU questions sgl-eval
+samples at its seed 0. Every reply is greedy with thinking off, capped at 2,048
+tokens, one request at a time, under `ab.py eval` with sgl-eval 0.1.2.
+
+| Benchmark | ours + MTP, 3 drafts | int4 | Ours − int4, 95% CI | Right in ours only / int4 only | Truncated, ours / int4 |
+|---|---:|---:|---:|---:|---:|
+| GSM8K (1,319) | 96.44% | 96.13% | +0.30 pts (−0.17, +0.77) | 7 / 3 | 0.99% / 1.29% |
+| MMLU (1,000) | 87.50% | 88.20% | −0.70 pts (−1.76, +0.36) | 11 / 18 | 3.5% / 3.6% |
+
+**Neither difference is significant.** The interval is the normal
+approximation on the per-question paired difference, and both intervals hold
+zero. One arm is right and the other wrong on 0.8% of GSM8K and 2.9% of MMLU.
+No request errored.
+`results/eval/<arm>-<benchmark>/` holds sgl-eval's `metrics.json` and the
+server's launch command; the per-question predictions are not committed.
 
 There is no bf16 row: the bf16 checkpoint does not fit the card, and serving
 it with `--cpu-offload-gb` on this host ran out of host memory while loading
