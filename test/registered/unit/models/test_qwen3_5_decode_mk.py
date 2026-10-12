@@ -44,6 +44,7 @@ def _args(**overrides) -> SimpleNamespace:
         disable_radix_cache=True,
         disable_cuda_graph=True,
         context_length=16384,
+        chunked_prefill_size=-1,
         tp_size=1,
         pp_size=1,
         dp_size=1,
@@ -100,6 +101,14 @@ class TestSwitches(CustomTestCase):
             with _switches(decode=True):
                 errors = decode_mk_errors(_args(**{parallel: 2}))
             self.assertEqual(len(errors), 1)
+
+    def test_prefill_refuses_a_chunked_prompt(self):
+        with _switches(decode=True, prefill=True):
+            errors = decode_mk_errors(_args(chunked_prefill_size=8192))
+        self.assertEqual(len(errors), 1)
+        self.assertIn("--chunked-prefill-size -1", errors[0])
+        with _switches(decode=True):
+            self.assertEqual(decode_mk_errors(_args(chunked_prefill_size=8192)), [])
 
     def test_prefill_and_mtp_need_decode(self):
         for kind in ("prefill", "mtp"):

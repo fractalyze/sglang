@@ -379,16 +379,15 @@ __device__ inline void Attend(const P& p, const BlockStep& step,
 
 // Merges every item's partial into the attention output, as bf16 in `out`,
 // for attention shape D; with D's output gate, each output dim is first
-// multiplied by sigmoid of its gate.
+// multiplied by sigmoid of its gate. `m` and `l` are shared memory of an
+// item's float each, for the items' weights and sums.
 template <typename D, typename P>
-__device__ inline void Merge(const P& p, AttentionShared<D>& sh,
+__device__ inline void Merge(const P& p, float* m, float* l,
                              __nv_bfloat16* out) {
   constexpr int kHd = D::kHead;
   constexpr int kQH = D::kQHeads;
   const int splits = p.splits;
   const int items = kQH * splits;
-  float* m = sh.merge_weight;
-  float* l = sh.merge_sum;
   for (int i = threadIdx.x; i < items; i += kThreads) {
     const float2 ml = __ldcg(reinterpret_cast<const float2*>(p.partial_ml) + i);
     m[i] = ml.x;
@@ -435,6 +434,12 @@ __device__ inline void Merge(const P& p, AttentionShared<D>& sh,
     }
     StoreBf16x4(out + i * 4, acc);
   }
+}
+
+template <typename D, typename P>
+__device__ inline void Merge(const P& p, AttentionShared<D>& sh,
+                             __nv_bfloat16* out) {
+  Merge<D>(p, sh.merge_weight, sh.merge_sum, out);
 }
 
 // The attention block on every CTA, calling sync() for its two barriers.

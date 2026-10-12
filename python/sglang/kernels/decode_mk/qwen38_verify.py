@@ -3,9 +3,12 @@
 megakernel's layers in one launch (s2mk/csrc/qwen38_verify.cu), as
 speculative decoding verifies a token and its drafts.
 
-Each token's logits and states are bitwise those of decoding the tokens one
-step at a time (s2mk/qwen38_decode.py) at the same CTA count and attention
-chunks. Each linear layer keeps its states in slots: a step reads one slot and
+Each token's logits and states are those of decoding the tokens one step at a
+time (s2mk/qwen38_decode.py) within bf16's error: the projections run on
+tensor cores, summing in another order than the decode step's, but in one
+order on every launch and at every CTA count with the same attention chunks;
+and a token's results do not depend on the tokens after it in the step. Each
+linear layer keeps its states in slots: a step reads one slot and
 leaves token t's states in the next slot but t, so accepting a prefix of the
 tokens only moves the slot it continues from.
 """
@@ -25,7 +28,7 @@ from sglang.kernels.decode_mk.qwen38_decode import (FULL_INTERVAL, Qwen38State, 
 from sglang.kernels.decode_mk.qwen38_layer import (DIM, FFN, HEAD_DIM, Q_HEADS, QKV_ROWS, Qwen38Layer, mlp_params)
 from sglang.kernels.decode_mk.thinker_attention import PagedCache
 
-MAX_TOKENS = 4  # kQwen38MaxVerifyTokens
+MAX_TOKENS = 5  # kQwen38MaxVerifyTokens
 
 
 @dataclass
@@ -67,6 +70,9 @@ class Qwen38Verifier:
                  timeout_ns: int = DEFAULT_TIMEOUT_NS, ctas: int | None = None,
                  splits: int | None = None) -> None:
         require_int4(weights)
+        if weights.vocab % 16:
+            raise ValueError(f"the verify step's vocabulary must be a multiple of 16, "
+                             f"got {weights.vocab}")
         if state.slots <= MAX_TOKENS:
             raise ValueError(f"a verify step needs more than {MAX_TOKENS} slots, "
                              f"got {state.slots}")

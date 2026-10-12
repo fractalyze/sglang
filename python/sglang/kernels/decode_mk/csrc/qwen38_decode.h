@@ -87,15 +87,17 @@ struct Qwen38DecodeParams {
 cudaError_t LaunchQwen38Decode(const Qwen38DecodeParams& params, int num_ctas,
                                cudaStream_t stream);
 
-// The most tokens one verify step takes: shared memory holds that many
-// tokens' attention outputs beside the attention block's own buffers.
-constexpr int kQwen38MaxVerifyTokens = 4;
+// The most tokens one verify step takes: a token and four drafts. Shared
+// memory holds that many tokens' attention outputs beside the attention
+// block's own buffers.
+constexpr int kQwen38MaxVerifyTokens = 5;
 
 // num_tokens consecutive text tokens through the decode step's layers in one
 // launch, as speculative decoding verifies a token and its drafts: every
-// projection streams its weights once for all of them, and each token's
-// logits, residual and states are bitwise those of decoding the tokens one
-// step at a time.
+// projection streams its weights once for all of them, on tensor cores. Each
+// token's logits, residual and states are those of decoding the tokens one
+// step at a time within bf16's error, and the same bits on every launch,
+// whatever tokens follow it, and at every CTA count with the same splits.
 //
 // `step` carries the layers, the embedding, the final norm, the LM head and
 // the barrier as a decode step takes them, with these differences:
@@ -103,7 +105,8 @@ constexpr int kQwen38MaxVerifyTokens = 4;
 //     *step.pos + t, at M-RoPE positions all *step.pos + t; step.positions
 //     and step.hidden are unused.
 //   - step.residual is [num_tokens, kQwen38Dim] and step.logits
-//     [num_tokens, vocab].
+//     [num_tokens, vocab], vocab a multiple of 16: the LM head runs in whole
+//     16-row blocks.
 //   - Each linear layer keeps num_slots copies of its states, one after
 //     another from GdnParams::conv_state and GdnParams::state. The step reads
 //     slot *slot and writes token t's states to slot

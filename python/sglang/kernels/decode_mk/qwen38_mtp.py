@@ -8,6 +8,14 @@ predicts the token at pos + 2. The hidden state is the model's final-normed
 residual for the first draft and the head's own output after that. The head
 is one full-attention layer with the dense MLP, all bf16 as the checkpoint
 keeps it, with its own KV cache; it shares the model's embedding and LM head.
+
+The extend runs the head over up to MAX_TOKENS consecutive positions in one
+launch, each from the model's own hidden state there, as speculative
+decoding's draft extend does over a cycle's accepted tokens.
+
+The prompt pass runs the head over a prompt's positions, PROMPT_TOKENS a
+launch, and writes only what the prompt keeps of it: each position's key and
+value in the head's cache.
 """
 
 from __future__ import annotations
@@ -21,9 +29,11 @@ from sglang.kernels.decode_mk import _ext, int4
 from sglang.kernels.decode_mk.barrier import DEFAULT_TIMEOUT_NS, ErrorRecord, sync_words
 from sglang.kernels.decode_mk.gemv import num_ctas
 from sglang.kernels.decode_mk.qwen38_decode import Qwen38Weights
-from sglang.kernels.decode_mk.qwen38_layer import (DIM, FFN, HEAD_DIM, KV_DIM, Q_DIM, LayerWeights, MlpWeights,
-                               Qwen38Layer, rms_norm)
+from sglang.kernels.decode_mk.qwen38_layer import (DIM, FFN, HEAD_DIM, KV_DIM, Q_DIM, Q_HEADS, QKV_ROWS,
+                               LayerWeights, MlpWeights, Qwen38Layer, rms_norm)
 from sglang.kernels.decode_mk.qwen38_layer import reference as layer_reference
+from sglang.kernels.decode_mk.qwen38_prefill import CHUNK as PROMPT_TOKENS
+from sglang.kernels.decode_mk.qwen38_verify import MAX_TOKENS
 from sglang.kernels.decode_mk.thinker_attention import PagedCache
 
 
@@ -87,7 +97,9 @@ class Qwen38Mtp:
 
     A step reads `token`, `pos` and `hidden_in` and writes `hidden_out` and,
     unless asked not to, `logits`, all device tensors the head owns, so a
-    CUDA graph can capture its launches."""
+    CUDA graph can capture its launches. An extend of n tokens reads the first
+    n of `extend_tokens` and `extend_hidden` from position `pos` on, and
+    writes the last token's `hidden_out` and `logits`."""
 
     def __init__(self, weights: MtpWeights, model: Qwen38Weights, cache: PagedCache,
                  cos_sin: torch.Tensor, timeout_ns: int = DEFAULT_TIMEOUT_NS,
@@ -108,10 +120,41 @@ class Qwen38Mtp:
         self._error = ErrorRecord()
         # The layer's residual, hidden, pos and positions fields are unused.
         placeholder = torch.zeros(DIM, dtype=torch.float32, device=device)
-        layer = self._layer.params(placeholder, placeholder, placeholder, cache, 0,
-                                   torch.zeros(3, dtype=torch.int32, device=device))
-        self._params = {with_logits: self._params_of(layer, timeout_ns, with_logits)
-                        for with_logits in (True, False)}
+        self._layer_params = self._layer.params(
+            placeholder, placeholder, placeholder, cache, 0,
+            torch.zeros(3, dtype=torch.int32, device=device))
+        self._params = {
+            with_logits: self._params_of(self._layer_params, timeout_ns, with_logits)
+            for with_logits in (True, False)}
+
+        self.extend_tokens = torch.zeros(MAX_TOKENS, dtype=torch.int32, device=device)
+        self.extend_hidden = torch.zeros(MAX_TOKENS, DIM, dtype=torch.bfloat16, device=device)
+        items = Q_HEADS * self._layer.splits
+
+        def workspace(*shape, dtype=torch.float32):
+            return torch.zeros(MAX_TOKENS, *shape, dtype=dtype, device=device)
+
+        self._extend_workspace = dict(
+            fc_in=workspace(2 * DIM, dtype=torch.bfloat16), residual=workspace(DIM),
+            qkv=workspace(QKV_ROWS), partial_ml=workspace(items, 2),
+            partial_o=workspace(items, HEAD_DIM), act=workspace(FFN, dtype=torch.bfloat16))
+        self._extend_params = [
+            _ext.load().qwen38_mtp_extend_params(
+                head=self._params[True], tokens=self.extend_tokens[:n],
+                hidden_in=self.extend_hidden[:n],
+                **{k: v[:n] for k, v in self._extend_workspace.items()})
+            for n in range(1, MAX_TOKENS + 1)]
+
+        # The prompt pass's workspace and its chunk's first position.
+        self._timeout_ns = timeout_ns
+        self._prompt_residual = torch.zeros(PROMPT_TOKENS, DIM, dtype=torch.float32,
+                                            device=device)
+        self._prompt_h = torch.zeros(PROMPT_TOKENS, DIM, dtype=torch.bfloat16, device=device)
+        self._prompt_proj = torch.zeros(PROMPT_TOKENS, QKV_ROWS, dtype=torch.float32,
+                                        device=device)
+        self._prompt_fc_in = torch.zeros(PROMPT_TOKENS, 2 * DIM, dtype=torch.bfloat16,
+                                         device=device)
+        self._prompt_pos0 = torch.zeros(1, dtype=torch.int32, device=device)
 
     def _params_of(self, layer: torch.Tensor, timeout_ns: int,
                    with_logits: bool) -> torch.Tensor:
@@ -130,6 +173,59 @@ class Qwen38Mtp:
         stops after the final norm: it only writes the cache and
         `hidden_out`."""
         _ext.load().run_qwen38_mtp(params=self._params[with_logits], num_ctas=self.num_ctas)
+
+    def launch_extend(self, n: int) -> None:
+        """Queues an extend of n tokens, n in [1, MAX_TOKENS], without waiting
+        for it."""
+        _ext.load().run_qwen38_mtp_extend(params=self._extend_params[n - 1],
+                                          num_ctas=self.num_ctas)
+
+    def extend(self, tokens: list[int], hidden: torch.Tensor,
+               pos: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """(hidden_out, logits) of the last of `tokens` after the head ran
+        token t from hidden[t] (bf16 [len(tokens), DIM]) at position pos + t,
+        writing each position's key and value. Waits for it."""
+        if not 0 < len(tokens) <= MAX_TOKENS:
+            raise ValueError(f"an extend takes 1 to {MAX_TOKENS} tokens, got {len(tokens)}")
+        if not all(0 <= t < self.model.vocab for t in tokens):
+            raise ValueError(f"tokens {tokens} leave the vocabulary of {self.model.vocab}")
+        n = len(tokens)
+        self.extend_tokens[:n].copy_(torch.tensor(tokens, dtype=torch.int32))
+        self.extend_hidden[:n].copy_(hidden)
+        self.pos.fill_(pos)
+        self.launch_extend(n)
+        self._error.synchronize()
+        return self.hidden_out, self.logits
+
+    def prompt(self, tokens: torch.Tensor, hidden: torch.Tensor, pos0: int) -> None:
+        """Queues, without waiting, the head's cache entries at prompt
+        positions pos0 … pos0 + n - 1, PROMPT_TOKENS positions a launch: at
+        each, the key and value a step writes from `hidden`'s row there (bf16
+        [n, DIM], the model's final-normed hidden state) and the token after
+        it, `tokens`' (int32 [n], in the vocabulary, which the kernel does not
+        check). Nothing else of a step is written: `hidden_out` and `logits`
+        stay as they are."""
+        n = tokens.numel()
+        if hidden.shape != (n, DIM):
+            raise ValueError(f"hidden must be [{n}, {DIM}], got {list(hidden.shape)}")
+        capacity = self.cache.block_table.numel() * self.cache.key.shape[1]
+        if pos0 < 0 or pos0 + n > capacity:
+            raise ValueError(f"positions {pos0} … {pos0 + n - 1} are outside the cache's "
+                             f"{capacity}")
+        w = self.weights
+        for begin in range(0, n, PROMPT_TOKENS):
+            end = min(begin + PROMPT_TOKENS, n)
+            self._prompt_pos0.fill_(pos0 + begin)
+            positions = torch.arange(pos0 + begin, pos0 + end, dtype=torch.int32,
+                                     device=tokens.device).expand(3, end - begin)
+            _ext.load().run_qwen38_mtp_prompt(
+                tokens=tokens[begin:end], hidden=hidden[begin:end], embed=self.model.embed,
+                embed_norm=w.embed_norm, hidden_norm=w.hidden_norm, fc=w.fc,
+                layer=self._layer_params, eps=w.eps, timeout_ns=self._timeout_ns,
+                pos0=self._prompt_pos0, positions=positions.contiguous(),
+                residual=self._prompt_residual, h=self._prompt_h, proj=self._prompt_proj,
+                fc_in=self._prompt_fc_in, sync=self._sync, error=self._error.tensor,
+                num_ctas=self.num_ctas)
 
     def step(self, token: int, hidden: torch.Tensor, pos: int) -> tuple[torch.Tensor, torch.Tensor]:
         """(hidden_out, logits) drafting from `hidden` (bf16 [DIM]) and

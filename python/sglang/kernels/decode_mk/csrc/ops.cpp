@@ -571,28 +571,35 @@ void RunGdn(const torch::Tensor& params, int64_t num_ctas) {
 
 
 torch::Tensor RunQwen38Projection(const std::vector<torch::Tensor>& weight,
-                                  const torch::Tensor& x, bool whole_k,
-                                  int64_t num_ctas) {
-  TORCH_CHECK(x.dim() == 2 && 0 < x.size(0) &&
-                  x.size(0) <= kQwen38PrefillMaxTokens,
-              "x must be [tokens ≤ ", kQwen38PrefillMaxTokens, ", k]");
+                                  const torch::Tensor& x, int64_t num_ctas) {
+  TORCH_CHECK(x.dim() == 2 && 0 < x.size(0), "x must be [tokens, k]");
   const int64_t k = x.size(1);
   TORCH_CHECK(k == kQwen38Dim || k == kQwen38QDim || k == kQwen38Ffn,
               "k must be one of the prefill's projection widths, got ", k);
   TORCH_CHECK(weight.size() == 3, "weight must be (packed, scales, zeros)");
   const int64_t n = weight[0].size(0);
-  TORCH_CHECK(n > 0 && n % 16 == 0, "W's rows must be a multiple of 16");
+  TORCH_CHECK(n > 0 && n % kQwen38GemmTileRows == 0,
+              "W's rows must be a multiple of ", kQwen38GemmTileRows);
   const Weight w = Int4ZpWeightOf(weight, n, k, "weight");
   const int sms = SmCount(at::cuda::current_device());
-  TORCH_CHECK(0 < num_ctas && num_ctas <= sms, "num_ctas ", num_ctas,
-              " must be in [1, ", sms, "]");
-  torch::Tensor y =
-      torch::empty({x.size(0), n}, x.options().dtype(torch::kFloat32));
+  // A split tile takes a CTA a split, all at once.
+  const int splits = Qwen38GemmSplits(static_cast<int>(n), static_cast<int>(k));
+  TORCH_CHECK(splits <= num_ctas && num_ctas <= sms, "num_ctas ", num_ctas,
+              " must be in [", splits, ", ", sms, "]");
+  const auto f32 = x.options().dtype(torch::kFloat32);
+  torch::Tensor y = torch::empty({x.size(0), n}, f32);
+  torch::Tensor partials = torch::empty(
+      {Qwen38GemmPartialFloats(static_cast<int>(n), static_cast<int>(k))},
+      f32);
+  torch::Tensor counters = torch::zeros(
+      {Qwen38GemmCounters(static_cast<int>(n))}, x.options().dtype(torch::kInt32));
   const c10::cuda::CUDAGuard guard(x.device());
   CheckOk(LaunchQwen38Projection(
               w, static_cast<int>(n), static_cast<int>(k),
               Ptr<const __nv_bfloat16>(x, torch::kBFloat16, "x"),
-              static_cast<int>(x.size(0)), whole_k, y.data_ptr<float>(),
+              static_cast<int>(x.size(0)), y.data_ptr<float>(),
+              partials.data_ptr<float>(),
+              reinterpret_cast<unsigned*>(counters.data_ptr<int32_t>()),
               static_cast<int>(num_ctas), at::cuda::getCurrentCUDAStream()),
           "Qwen3.8 projection launch");
   return y;
@@ -609,11 +616,16 @@ void RunQwen38Prefill(
     const torch::Tensor& key, const torch::Tensor& value,
     const torch::Tensor& core, const torch::Tensor& attn,
     const torch::Tensor& act, const torch::Tensor& partial_ml,
-    const torch::Tensor& partial_o, const std::optional<torch::Tensor>& logits,
+    const torch::Tensor& partial_o, const torch::Tensor& gemm_partials,
+    const torch::Tensor& gemm_counters,
+    const std::optional<torch::Tensor>& logits,
     const std::optional<torch::Tensor>& hidden,
+    const std::optional<torch::Tensor>& last_hidden,
     const std::optional<torch::Tensor>& profile, const torch::Tensor& sync,
     const torch::Tensor& error, int64_t num_ctas) {
-  constexpr int64_t kD = kQwen38Dim, kMax = kQwen38PrefillMaxTokens;
+  constexpr int64_t kD = kQwen38Dim;
+  // The workspace's tokens: as many as the residual holds.
+  const int64_t capacity = residual.numel() / kD;
   const int64_t num_layers = linear.size(0) + full.size(0);
   TORCH_CHECK(full.size(0) == num_layers / kQwen38FullInterval,
               "every ", kQwen38FullInterval, "th of ", num_layers,
@@ -624,28 +636,36 @@ void RunQwen38Prefill(
   TORCH_CHECK(kQwen38PrefillMinCtas <= num_ctas && num_ctas <= sms,
               "num_ctas ", num_ctas, " must be in [", kQwen38PrefillMinCtas,
               ", ", sms, "]");
-  TORCH_CHECK(0 < tokens && tokens <= kMax, "tokens ", tokens, " out of [1, ",
-              kMax, "]");
+  TORCH_CHECK(0 < tokens && tokens <= capacity, "tokens ", tokens, " out of [1, ",
+              capacity, "], the workspace's");
   CheckNumel(pos0, 1, "pos0");
   CheckNumel(positions, 3 * tokens, "positions");
   CheckNumel(final_norm, kD, "final_norm");
-  // The workspace holds a whole chunk, whatever this one's tokens.
-  CheckNumel(residual, kMax * kD, "residual");
-  CheckNumel(h, kMax * kD, "h");
-  CheckNumel(proj, kMax * kGdnInt4Rows, "proj");
-  CheckNumel(beta, kMax * kGdnVHeads, "beta");
-  CheckNumel(gate, kMax * kGdnVHeads, "gate");
-  CheckNumel(query, kMax * kGdnKeyDim, "query");
-  CheckNumel(key, kMax * kGdnKeyDim, "key");
-  CheckNumel(value, kMax * kGdnValueDim, "value");
-  CheckNumel(core, kMax * kGdnValueDim, "core");
-  CheckNumel(attn, kMax * kQwen38QDim, "attn");
-  CheckNumel(act, kMax * kQwen38Ffn, "act");
-  const int64_t max_spans = partial_ml.numel() / (kMax * kQwen38QHeads * 2);
-  CheckNumel(partial_ml, kMax * kQwen38QHeads * max_spans * 2, "partial_ml");
-  CheckNumel(partial_o, kMax * kQwen38QHeads * max_spans * kQwen38HeadDim,
-             "partial_o");
-  TORCH_CHECK(max_spans > 0, "partial_ml holds no span");
+  // The workspace holds capacity tokens, whatever this launch's.
+  CheckNumel(residual, capacity * kD, "residual");
+  CheckNumel(h, capacity * kD, "h");
+  CheckNumel(proj, capacity * kGdnInt4Rows, "proj");
+  CheckNumel(beta, capacity * kGdnVHeads, "beta");
+  CheckNumel(gate, capacity * kGdnVHeads, "gate");
+  CheckNumel(query, capacity * kGdnKeyDim, "query");
+  CheckNumel(key, capacity * kGdnKeyDim, "key");
+  CheckNumel(value, capacity * kGdnValueDim, "value");
+  CheckNumel(core, capacity * kGdnValueDim, "core");
+  CheckNumel(attn, capacity * kQwen38QDim, "attn");
+  CheckNumel(act,
+             std::max(capacity * kQwen38Ffn,
+                      2 * Qwen38PrefillDeltaFloats(static_cast<int>(capacity))),
+             "act");
+  // Every (token, query head) partial the launch can write: a chunk's spans
+  // reach as far as the caches do, which the caller sizes it for, and several
+  // chunks' take one span each.
+  const int64_t partials = partial_ml.numel() / 2;
+  TORCH_CHECK(partials >= tokens * kQwen38QHeads,
+              "partial_ml holds fewer than a span a token");
+  CheckNumel(partial_ml, partials * 2, "partial_ml");
+  CheckNumel(partial_o, partials * kQwen38HeadDim, "partial_o");
+  CheckNumel(gemm_partials, kQwen38PrefillGemmPartialFloats, "gemm_partials");
+  CheckNumel(gemm_counters, kQwen38PrefillGemmCounters, "gemm_counters");
   Qwen38PrefillParams p{};
   p.linear = StackedParams<GdnParams>(linear, "linear");
   p.linear_mlp = StackedParams<Qwen38MlpParams>(linear_mlp, "linear_mlp");
@@ -674,7 +694,8 @@ void RunQwen38Prefill(
   p.act = Ptr<__nv_bfloat16>(act, kBf16, "act");
   p.partial_ml = Ptr<float>(partial_ml, kF32, "partial_ml");
   p.partial_o = Ptr<float>(partial_o, kF32, "partial_o");
-  p.max_spans = static_cast<int>(max_spans);
+  p.gemm_partials = Ptr<float>(gemm_partials, kF32, "gemm_partials");
+  p.gemm_counters = Ptr<unsigned>(gemm_counters, torch::kInt32, "gemm_counters");
   if (logits.has_value()) {
     CheckNumel(*logits, p.vocab, "logits");
     p.logits = Ptr<float>(*logits, kF32, "logits");
@@ -682,6 +703,10 @@ void RunQwen38Prefill(
   if (hidden.has_value()) {
     CheckNumel(*hidden, (num_layers + 1) * tokens * kD, "hidden");
     p.hidden = Ptr<float>(*hidden, kF32, "hidden");
+  }
+  if (last_hidden.has_value()) {
+    CheckNumel(*last_hidden, tokens * kD, "last_hidden");
+    p.last_hidden = Ptr<float>(*last_hidden, kF32, "last_hidden");
   }
   if (profile.has_value()) {
     CheckNumel(*profile,
@@ -792,6 +817,8 @@ void RunQwen38Verify(
   CheckNumel(pos, 1, "pos");
   CheckNumel(slot, 1, "slot");
   CheckNumel(residual, n * kD, "residual");
+  TORCH_CHECK(v.step.vocab % 16 == 0, "the verify step's vocabulary must be a ",
+              "multiple of 16, got ", v.step.vocab);
   CheckNumel(logits, n * v.step.vocab, "logits");
   CheckNumel(final_hidden, n * kD, "final_hidden");
   CheckNumel(mixed, n * kGdnConvDim, "mixed");
@@ -887,6 +914,105 @@ void RunQwen38Mtp(const torch::Tensor& params, int64_t num_ctas) {
           "Qwen3.8 MTP launch");
 }
 
+torch::Tensor Qwen38MtpExtendParamsOf(
+    const torch::Tensor& head, const torch::Tensor& tokens,
+    const torch::Tensor& hidden_in, const torch::Tensor& fc_in,
+    const torch::Tensor& residual, const torch::Tensor& qkv,
+    const torch::Tensor& partial_ml, const torch::Tensor& partial_o,
+    const torch::Tensor& act) {
+  constexpr int64_t kD = kQwen38Dim, kHd = kQwen38HeadDim;
+  const auto kBf16 = torch::kBFloat16;
+  const int64_t n = tokens.numel();
+  TORCH_CHECK(0 < n && n <= kQwen38MaxVerifyTokens, "an extend takes 1 to ",
+              kQwen38MaxVerifyTokens, " tokens, got ", n);
+  Qwen38MtpExtendParams e{};
+  e.head = StructFrom<Qwen38MtpParams>(head, "head");
+  const int64_t items = kQwen38QHeads * int64_t{e.head.layer.splits};
+  CheckNumel(hidden_in, n * kD, "hidden_in");
+  CheckNumel(fc_in, n * 2 * kD, "fc_in");
+  CheckNumel(residual, n * kD, "residual");
+  CheckNumel(qkv, n * kQwen38QkvRows, "qkv");
+  CheckNumel(partial_ml, n * items * 2, "partial_ml");
+  CheckNumel(partial_o, n * items * kHd, "partial_o");
+  CheckNumel(act, n * kQwen38Ffn, "act");
+  e.num_tokens = static_cast<int>(n);
+  e.tokens = Ptr<const int32_t>(tokens, torch::kInt32, "tokens");
+  e.hidden_in = Ptr<const __nv_bfloat16>(hidden_in, kBf16, "hidden_in");
+  e.fc_in = Ptr<__nv_bfloat16>(fc_in, kBf16, "fc_in");
+  e.residual = Ptr<float>(residual, torch::kFloat32, "residual");
+  e.qkv = Ptr<float>(qkv, torch::kFloat32, "qkv");
+  e.partial_ml = Ptr<float>(partial_ml, torch::kFloat32, "partial_ml");
+  e.partial_o = Ptr<float>(partial_o, torch::kFloat32, "partial_o");
+  e.act = Ptr<__nv_bfloat16>(act, kBf16, "act");
+  return StructBytes(e);
+}
+
+void RunQwen38MtpExtend(const torch::Tensor& params, int64_t num_ctas) {
+  CheckGdnGrid(num_ctas);
+  CheckQwen38Grid(num_ctas);
+  CheckOk(LaunchQwen38MtpExtend(
+              StructFrom<Qwen38MtpExtendParams>(params, "params"),
+              static_cast<int>(num_ctas), at::cuda::getCurrentCUDAStream()),
+          "Qwen3.8 MTP extend launch");
+}
+
+void RunQwen38MtpPrompt(
+    const torch::Tensor& tokens, const torch::Tensor& hidden,
+    const torch::Tensor& embed, const torch::Tensor& embed_norm,
+    const torch::Tensor& hidden_norm, const torch::Tensor& fc,
+    const torch::Tensor& layer, double eps, int64_t timeout_ns,
+    const torch::Tensor& pos0, const torch::Tensor& positions,
+    const torch::Tensor& residual, const torch::Tensor& h,
+    const torch::Tensor& proj, const torch::Tensor& fc_in,
+    const torch::Tensor& sync, const torch::Tensor& error, int64_t num_ctas) {
+  constexpr int64_t kD = kQwen38Dim, kMax = kQwen38PrefillChunk;
+  const auto kBf16 = torch::kBFloat16;
+  const auto kF32 = torch::kFloat32;
+  const int sms = SmCount(at::cuda::current_device());
+  TORCH_CHECK(0 < num_ctas && num_ctas <= sms, "num_ctas ", num_ctas,
+              " must be in [1, ", sms, "]");
+  const int64_t n = tokens.numel();
+  TORCH_CHECK(0 < n && n <= kMax, "tokens ", n, " out of [1, ", kMax, "]");
+  CheckNumel(hidden, n * kD, "hidden");
+  TORCH_CHECK(embed.dim() == 2 && embed.size(1) == kD, "embed must be [vocab, ",
+              kD, "]");
+  CheckNumel(embed_norm, kD, "embed_norm");
+  CheckNumel(hidden_norm, kD, "hidden_norm");
+  CheckNumel(fc, kD * 2 * kD, "fc");
+  CheckNumel(pos0, 1, "pos0");
+  CheckNumel(positions, 3 * n, "positions");
+  CheckNumel(residual, kMax * kD, "residual");
+  CheckNumel(h, kMax * kD, "h");
+  CheckNumel(proj, kMax * kQwen38QkvRows, "proj");
+  CheckNumel(fc_in, kMax * 2 * kD, "fc_in");
+  Qwen38MtpPromptParams p{};
+  p.tokens = Ptr<const int32_t>(tokens, torch::kInt32, "tokens");
+  p.hidden = Ptr<const __nv_bfloat16>(hidden, kBf16, "hidden");
+  p.embed = Ptr<const __nv_bfloat16>(embed, kBf16, "embed");
+  p.embed_norm = Ptr<const __nv_bfloat16>(embed_norm, kBf16, "embed_norm");
+  p.hidden_norm = Ptr<const __nv_bfloat16>(hidden_norm, kBf16, "hidden_norm");
+  p.fc = Bf16WeightOf(fc, 2 * kD, "fc");
+  p.layer = StructFrom<Qwen38LayerParams>(layer, "layer");
+  TORCH_CHECK(p.layer.wqkv.format == WeightFormat::kBf16,
+              "the MTP head reads its layer's projections as bf16");
+  p.eps = static_cast<float>(eps);
+  p.fc_in = Ptr<__nv_bfloat16>(fc_in, kBf16, "fc_in");
+  Qwen38PrefillParams& c = p.chunk;
+  c.tokens = static_cast<int>(n);
+  c.pos0 = Ptr<const int32_t>(pos0, torch::kInt32, "pos0");
+  c.positions = Ptr<const int32_t>(positions, torch::kInt32, "positions");
+  c.timeout_ns = timeout_ns;
+  c.residual = Ptr<float>(residual, kF32, "residual");
+  c.h = Ptr<__nv_bfloat16>(h, kBf16, "h");
+  c.proj = Ptr<float>(proj, kF32, "proj");
+  c.sync = Ptr<unsigned>(sync, torch::kInt32, "sync");
+  c.error = MappedRecord(error);
+  const c10::cuda::CUDAGuard guard(residual.device());
+  CheckOk(LaunchQwen38MtpPrompt(p, static_cast<int>(num_ctas),
+                                at::cuda::getCurrentCUDAStream()),
+          "Qwen3.8 MTP prompt launch");
+}
+
 }  // namespace
 }  // namespace s2mk
 
@@ -961,7 +1087,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("logits"), py::arg("hidden"), py::arg("sync"),
         py::arg("error"), py::arg("num_ctas"));
   m.def("run_qwen38_prefill", &s2mk::RunQwen38Prefill,
-        "One prefill chunk of Qwen3.8-27B's language model, one launch.",
+        "A prompt through Qwen3.8-27B's language model, layer by layer, one "
+        "launch.",
         py::arg("linear"), py::arg("linear_mlp"), py::arg("full"),
         py::arg("tokens"), py::arg("pos0"), py::arg("positions"),
         py::arg("final_norm"), py::arg("lm_head"), py::arg("eps"),
@@ -969,18 +1096,22 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("proj"), py::arg("beta"), py::arg("gate"), py::arg("query"),
         py::arg("key"), py::arg("value"), py::arg("core"), py::arg("attn"),
         py::arg("act"), py::arg("partial_ml"), py::arg("partial_o"),
-        py::arg("logits"), py::arg("hidden"),
+        py::arg("gemm_partials"), py::arg("gemm_counters"),
+        py::arg("logits"), py::arg("hidden"), py::arg("last_hidden"),
         py::arg("profile"), py::arg("sync"), py::arg("error"),
         py::arg("num_ctas"));
   m.def("run_qwen38_projection", &s2mk::RunQwen38Projection,
         "y = X W^T for an int4 W with zero points, on the Qwen3.8 prefill's "
         "dense phase.",
-        py::arg("weight"), py::arg("x"), py::arg("whole_k"),
-        py::arg("num_ctas"));
+        py::arg("weight"), py::arg("x"), py::arg("num_ctas"));
   m.def("qwen38_prefill_barriers", &s2mk::Qwen38PrefillBarriers,
         "Grid barriers a Qwen3.8 prefill launch over `num_layers` layers "
         "takes.",
         py::arg("num_layers"));
+  m.def("qwen38_prefill_delta_floats", &s2mk::Qwen38PrefillDeltaFloats,
+        "Floats of the delta rule's intra-chunk matrices a Qwen3.8 prefill "
+        "launch of `tokens` tokens keeps in act.",
+        py::arg("tokens"));
   m.def("run_qwen38_verify", &s2mk::RunQwen38Verify,
         "Up to QWEN38_MAX_VERIFY_TOKENS consecutive Qwen3.8-27B tokens, one "
         "launch.",
@@ -1004,7 +1135,29 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_qwen38_mtp", &s2mk::RunQwen38Mtp,
         "One step of Qwen3.8-27B's MTP head, one launch.", py::arg("params"),
         py::arg("num_ctas"));
+  m.def("run_qwen38_mtp_prompt", &s2mk::RunQwen38MtpPrompt,
+        "Qwen3.8-27B's MTP head's cache over a chunk of prompt positions, one "
+        "launch.",
+        py::arg("tokens"), py::arg("hidden"), py::arg("embed"),
+        py::arg("embed_norm"), py::arg("hidden_norm"), py::arg("fc"),
+        py::arg("layer"), py::arg("eps"), py::arg("timeout_ns"),
+        py::arg("pos0"), py::arg("positions"), py::arg("residual"),
+        py::arg("h"), py::arg("proj"), py::arg("fc_in"), py::arg("sync"),
+        py::arg("error"), py::arg("num_ctas"));
+  m.def("qwen38_mtp_extend_params", &s2mk::Qwen38MtpExtendParamsOf,
+        "The Qwen3.8 MTP head's extend params over a step's params, as CPU "
+        "bytes.",
+        py::arg("head"), py::arg("tokens"), py::arg("hidden_in"),
+        py::arg("fc_in"), py::arg("residual"), py::arg("qkv"),
+        py::arg("partial_ml"), py::arg("partial_o"), py::arg("act"));
+  m.def("run_qwen38_mtp_extend", &s2mk::RunQwen38MtpExtend,
+        "Qwen3.8-27B's MTP head over consecutive tokens, one launch.",
+        py::arg("params"), py::arg("num_ctas"));
   m.attr("QWEN38_MAX_VERIFY_TOKENS") = py::int_(s2mk::kQwen38MaxVerifyTokens);
+  m.attr("QWEN38_PREFILL_GEMM_PARTIAL_FLOATS") =
+      py::int_(s2mk::kQwen38PrefillGemmPartialFloats);
+  m.attr("QWEN38_PREFILL_GEMM_COUNTERS") =
+      py::int_(s2mk::kQwen38PrefillGemmCounters);
   m.attr("ERROR_RECORD_WORDS") =
       py::int_(sizeof(s2mk::ErrorRecord) / sizeof(int32_t));
   m.attr("SYNC_WORDS") = py::int_(s2mk::kSyncWords);

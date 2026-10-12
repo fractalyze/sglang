@@ -3,19 +3,31 @@
 # Copyright 2026 Fractalyze Inc. All rights reserved.
 """DecodeMkRunner (sglang/srt/models/qwen3_5_decode_mk.py), the request
 state SGLang drives the kernels through, on random Qwen3.8 weights over the
-first 8 layers: its greedy replies against decode-mk's own Qwen38Generator, a
-prompt in chunks against the prompt whole, a request after another, and
-speculative decoding against plain decoding, token for token."""
+first 8 layers, token for token against decode-mk's own API: its greedy
+replies against Qwen38Generator's, and on the prefill kernel against
+Qwen38Prefiller's over the whole prompt, past one launch's tokens too; a
+prompt in chunks against the prompt whole; a request after another; and
+speculative decoding against the verify step fed one token a step from the
+prompt's states, which is the text decode-mk's start/cycle emits."""
 
 import dataclasses
 
 import pytest
 import torch
 
-from sglang.kernels.decode_mk.qwen38_decode import Qwen38Weights
+from sglang.kernels.decode_mk.qwen38_decode import (
+    Qwen38Decoder,
+    Qwen38State,
+    Qwen38Weights,
+)
+from sglang.kernels.decode_mk.qwen38_layer import cos_sin_table
 from sglang.kernels.decode_mk.qwen38_mtp import MtpWeights
+from sglang.kernels.decode_mk.qwen38_prefill import CHUNK
 from sglang.kernels.decode_mk.qwen38_prefill import MAX_TOKENS as PREFILL_TOKENS
+from sglang.kernels.decode_mk.qwen38_prefill import Qwen38Prefiller
 from sglang.kernels.decode_mk.qwen38_spec import MAX_DRAFTS, Qwen38Generator
+from sglang.kernels.decode_mk.qwen38_verify import MAX_TOKENS as VERIFY_TOKENS
+from sglang.kernels.decode_mk.qwen38_verify import Qwen38Verifier, SlottedState
 from sglang.srt.models.qwen3_5_decode_mk import DecodeMkRunner
 from sglang.test.ci.ci_register import register_cuda_ci
 
@@ -29,6 +41,9 @@ register_cuda_ci(
 LAYERS = 8
 MAX_POSITIONS = 512
 REPLY = 24
+# A prompt past one prefill launch's tokens, which runs as two launches.
+LONG_PROMPT = PREFILL_TOKENS + 2 * CHUNK + 9
+LONG_POSITIONS = LONG_PROMPT + REPLY + VERIFY_TOKENS
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available() or torch.cuda.get_device_capability() != (12, 0),
@@ -82,9 +97,49 @@ def _speculative(runner: DecodeMkRunner, prompt: list[int], chunks=None) -> list
     return reply[:REPLY]
 
 
+def _prefilled_reply(weights, prompt: list[int], positions: int) -> list[int]:
+    """decode-mk's greedy reply on the prefill kernel: Qwen38Prefiller.run
+    over the whole prompt, then one decode step a token."""
+    decoder = Qwen38Decoder(
+        weights, Qwen38State.zeros(LAYERS, positions), cos_sin_table(positions)
+    )
+    reply = [int(Qwen38Prefiller(decoder).run(prompt).argmax())]
+    while len(reply) < REPLY:
+        pos = len(prompt) + len(reply) - 1
+        reply.append(int(decoder.step(reply[-1], pos).argmax()))
+    return reply
+
+
+def _verified_reply(weights, prompt: list[int], prefill: bool) -> list[int]:
+    """decode-mk's greedy reply from the verify step fed one token a step,
+    after the prompt on slot 0's states: on the prefill kernel, or one decode
+    step a token. Speculative decoding's text is this one at every draft
+    count, a token's logits being the same bits whatever drafts follow it."""
+    slotted = SlottedState.of(
+        Qwen38State.zeros(LAYERS, MAX_POSITIONS), VERIFY_TOKENS + 1
+    )
+    cos_sin = cos_sin_table(MAX_POSITIONS)
+    verifier = Qwen38Verifier(weights, slotted, cos_sin)
+    state = Qwen38State(
+        [slotted.linear(j, 0) for j in range(len(slotted.conv))], slotted.caches
+    )
+    decoder = Qwen38Decoder(weights, state, cos_sin)
+    if prefill:
+        logits = Qwen38Prefiller(decoder).run(prompt)
+    else:
+        for pos, token in enumerate(prompt):
+            logits = decoder.step(token, pos)
+    reply = [int(logits.argmax())]
+    while len(reply) < REPLY:
+        i = len(reply) - 1
+        logits = verifier.step([reply[-1]], len(prompt) + i, i % slotted.slots)
+        reply.append(int(logits[0].argmax()))
+    return reply
+
+
 @pytest.fixture(scope="module")
 def prompt(weights):
-    return _prompt(weights.vocab, 2 * PREFILL_TOKENS + 9, seed=1)
+    return _prompt(weights.vocab, 2 * CHUNK + 9, seed=1)
 
 
 @pytest.fixture(scope="module")
@@ -105,36 +160,46 @@ def test_reply_is_decode_mks(weights, plain, prompt):
     assert _plain(plain, prompt) == expected
 
 
-@pytest.mark.parametrize("runner", ["plain", "prefilled"])
-def test_chunked_prompt_is_the_whole_prompt(request, runner, prompt):
+@pytest.mark.parametrize("length", [2 * CHUNK + 9, LONG_PROMPT])
+def test_prefilled_reply_is_decode_mks(weights, length):
+    """The prefill kernel runs the whole prompt in the launches decode-mk's
+    own prefill makes of it, so the states, and the reply, are its bits."""
+    prompt = _prompt(weights.vocab, length, seed=4)
+    runner = DecodeMkRunner(weights, LONG_POSITIONS, prefill=True)
+    assert _plain(runner, prompt) == _prefilled_reply(weights, prompt, LONG_POSITIONS)
+
+
+def test_chunked_prompt_is_the_whole_prompt(plain, prompt):
     """SGLang's chunked prefill hands the prompt over in pieces, each from
-    the position the last one ended at; at the prefill kernel's own chunk
-    boundaries that is the same launches."""
+    the position the last one ended at; one decode step a token, that is the
+    same steps. The prefill kernel takes the whole prompt, which
+    decode_mk_hook.py makes SGLang hand over."""
+    whole = _plain(plain, prompt)
+    assert _plain(plain, prompt, chunks=[CHUNK, 2 * CHUNK]) == whole
+
+
+@pytest.mark.parametrize("runner", ["plain", "prefilled"])
+def test_a_request_starts_afresh(weights, runner, prompt, request):
     runner = request.getfixturevalue(runner)
-    whole = _plain(runner, prompt)
-    assert _plain(runner, prompt, chunks=[PREFILL_TOKENS, 2 * PREFILL_TOKENS]) == whole
-
-
-def test_a_request_starts_afresh(weights, plain, prompt):
-    first = _plain(plain, prompt)
-    _plain(plain, _prompt(weights.vocab, 40, seed=2))
-    assert _plain(plain, prompt) == first
+    first = _plain(runner, prompt)
+    _plain(runner, _prompt(weights.vocab, 40, seed=2))
+    assert _plain(runner, prompt) == first
 
 
 @pytest.mark.parametrize("drafts", range(1, MAX_DRAFTS + 1))
 @pytest.mark.parametrize("prefill", [False, True])
-def test_speculation_is_plain_decoding(weights, mtp, prompt, drafts, prefill, request):
-    """Each cycle emits the accepted drafts and the model's own next token,
-    all of them what plain decoding from the same prompt states emits."""
-    plain = request.getfixturevalue("prefilled" if prefill else "plain")
-    expected = _plain(plain, prompt)
+def test_speculation_is_decode_mks(weights, mtp, prompt, drafts, prefill):
+    """Each cycle emits the accepted drafts and the verify step's own next
+    token, the text decode-mk's verify step emits fed one token a step."""
+    expected = _verified_reply(weights, prompt, prefill)
     runner = DecodeMkRunner(weights, MAX_POSITIONS, prefill, mtp, drafts)
     assert _speculative(runner, prompt) == expected
-    assert _speculative(runner, prompt, chunks=[PREFILL_TOKENS]) == expected
+    if not prefill:
+        assert _speculative(runner, prompt, chunks=[CHUNK]) == expected
 
 
-def test_speculation_after_another_request(weights, mtp, plain, prompt):
-    expected = _plain(plain, prompt)
+def test_speculation_after_another_request(weights, mtp, prompt):
+    expected = _verified_reply(weights, prompt, prefill=False)
     runner = DecodeMkRunner(weights, MAX_POSITIONS, False, mtp, MAX_DRAFTS)
     _speculative(runner, _prompt(weights.vocab, 40, seed=2))
     assert _speculative(runner, prompt) == expected

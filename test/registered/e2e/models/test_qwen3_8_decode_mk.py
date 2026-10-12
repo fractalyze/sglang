@@ -5,12 +5,14 @@
 switches, on the int4 checkpoint cyankiwi/Qwen3.8-27B-AWQ-INT4 (6e134ba) named
 by SGLANG_DECODE_MK_QWEN38_CHECKPOINT, on one RTX 5090.
 
-Each switch set's greedy replies, token for token, against decode-mk's own
-API on the same weights: Qwen38Generator for the prompt fed token by token,
-the prefill kernel and decode steps for SGLANG_DECODE_MK_PREFILL=1, and the
-same with SGLANG_DECODE_MK_MTP=1, whose speculation must accept drafts and
-change no token. Also: a sampled request under MTP, an image refused, and a
-server that would batch refused at startup."""
+Each switch set's greedy replies, token for token and the same on every ask,
+against decode-mk's own API on the same weights: Qwen38Generator for the
+prompt fed token by token; Qwen38Prefiller over the whole prompt and decode
+steps for SGLANG_DECODE_MK_PREFILL=1; and under SGLANG_DECODE_MK_MTP=1, whose
+speculation must accept drafts, the verify step fed one token a step after
+either prompt, the text decode-mk's speculative decoding emits. Also: a
+sampled request under MTP, an image refused, and a server that would batch
+refused at startup."""
 
 import gc
 import os
@@ -57,6 +59,9 @@ SERVER_ARGS = [
     "--context-length",
     str(CONTEXT),
 ]
+# The prefill kernel takes the whole prompt. Unchunked, SGLang would reserve
+# activation memory for --max-prefill-tokens, which the kernels do not use.
+PREFILL_ARGS = ["--chunked-prefill-size", "-1", "--mem-fraction-static", "0.92"]
 MTP_ARGS = ["--speculative-algorithm", "DECODE_MK_MTP", "--disable-overlap-schedule"]
 
 
@@ -79,7 +84,8 @@ def _prompt_ids() -> list[list[int]]:
 def _references(prompts: list[list[int]]) -> dict[str, list[list[int]]]:
     """decode-mk's greedy replies, on the GPU the servers take after: the
     prompt token by token (as verify steps, which decode-mk holds bitwise
-    equal), and on the prefill kernel."""
+    equal) or on the prefill kernel, then decode steps or verify steps of one
+    token."""
     from sglang.kernels.decode_mk import qwen38_checkpoint
     from sglang.kernels.decode_mk.qwen38_decode import (
         LAYERS,
@@ -89,26 +95,50 @@ def _references(prompts: list[list[int]]) -> dict[str, list[list[int]]]:
     from sglang.kernels.decode_mk.qwen38_layer import cos_sin_table
     from sglang.kernels.decode_mk.qwen38_prefill import Qwen38Prefiller
     from sglang.kernels.decode_mk.qwen38_spec import Qwen38Generator
+    from sglang.kernels.decode_mk.qwen38_verify import MAX_TOKENS as VERIFY_TOKENS
+    from sglang.kernels.decode_mk.qwen38_verify import Qwen38Verifier, SlottedState
 
     weights = qwen38_checkpoint.load(CHECKPOINT)
-    generator = Qwen38Generator(weights, CONTEXT)
-    tokens = [generator.generate(p, REPLY).tokens for p in prompts]
-    del generator
-    prefilled = []
-    for prompt in prompts:
-        decoder = Qwen38Decoder(
-            weights, Qwen38State.zeros(LAYERS, CONTEXT), cos_sin_table(CONTEXT)
+    cos_sin = cos_sin_table(CONTEXT)
+
+    def reply(weights, prompt: list[int], prefill: bool, verify: bool) -> list[int]:
+        slotted = SlottedState.of(Qwen38State.zeros(LAYERS, CONTEXT), VERIFY_TOKENS + 1)
+        state = Qwen38State(
+            [slotted.linear(j, 0) for j in range(len(slotted.conv))], slotted.caches
         )
-        reply = [int(Qwen38Prefiller(decoder).run(prompt).argmax())]
-        while len(reply) < REPLY:
-            pos = len(prompt) + len(reply) - 1
-            reply.append(int(decoder.step(reply[-1], pos).argmax()))
-        prefilled.append(reply)
-        del decoder
+        decoder = Qwen38Decoder(weights, state, cos_sin)
+        if prefill:
+            logits = Qwen38Prefiller(decoder).run(prompt)
+        else:
+            for pos, token in enumerate(prompt):
+                logits = decoder.step(token, pos)
+        verifier = Qwen38Verifier(weights, slotted, cos_sin) if verify else None
+        tokens = [int(logits.argmax())]
+        while len(tokens) < REPLY:
+            i = len(tokens) - 1
+            pos = len(prompt) + i
+            if verifier is None:
+                logits = decoder.step(tokens[-1], pos)
+            else:
+                logits = verifier.step([tokens[-1]], pos, i % slotted.slots)[0]
+            tokens.append(int(logits.argmax()))
+        return tokens
+
+    generator = Qwen38Generator(weights, CONTEXT)
+    references = {"tokens": [generator.generate(p, REPLY).tokens for p in prompts]}
+    del generator
+    for name, prefill, verify in [
+        ("prefill", True, False),
+        ("verified", False, True),
+        ("prefill verified", True, True),
+    ]:
+        references[name] = [reply(weights, p, prefill, verify) for p in prompts]
+        gc.collect()
+        torch.cuda.empty_cache()
     del weights
     gc.collect()
     torch.cuda.empty_cache()
-    return {"tokens": tokens, "prefill": prefilled}
+    return references
 
 
 @unittest.skipUnless(
@@ -153,8 +183,11 @@ class TestQwen38DecodeMk(CustomTestCase):
 
     def _assert_replies(self, reference: str):
         replies = [self._generate(p) for p in self.prompts]
-        for reply, expected in zip(replies, self.references[reference]):
+        for prompt, reply, expected in zip(
+            self.prompts, replies, self.references[reference]
+        ):
             self.assertEqual(reply["output_ids"], expected)
+            self.assertEqual(self._generate(prompt)["output_ids"], expected)
         return replies
 
     def test_decode(self):
@@ -183,14 +216,17 @@ class TestQwen38DecodeMk(CustomTestCase):
         self.assertEqual(image.status_code, 400)
 
     def test_decode_with_prefill(self):
-        self._serve({"SGLANG_DECODE_MK_DECODE": "1", "SGLANG_DECODE_MK_PREFILL": "1"})
+        self._serve(
+            {"SGLANG_DECODE_MK_DECODE": "1", "SGLANG_DECODE_MK_PREFILL": "1"},
+            PREFILL_ARGS,
+        )
         self._assert_replies("prefill")
 
     def test_mtp(self):
         self._serve(
             {"SGLANG_DECODE_MK_DECODE": "1", "SGLANG_DECODE_MK_MTP": "1"}, MTP_ARGS
         )
-        replies = self._assert_replies("tokens")
+        replies = self._assert_replies("verified")
         for reply in replies:
             self.assertGreater(reply["meta_info"]["spec_accept_length"], 1.2)
         sampled = self._generate(self.prompts[0], temperature=1.0, top_p=0.95)
@@ -203,9 +239,9 @@ class TestQwen38DecodeMk(CustomTestCase):
                 "SGLANG_DECODE_MK_PREFILL": "1",
                 "SGLANG_DECODE_MK_MTP": "1",
             },
-            [*MTP_ARGS, "--speculative-num-steps", "3"],
+            [*MTP_ARGS, *PREFILL_ARGS, "--speculative-num-steps", "3"],
         )
-        self._assert_replies("prefill")
+        self._assert_replies("prefill verified")
 
     def test_batching_is_refused(self):
         launch = subprocess.run(

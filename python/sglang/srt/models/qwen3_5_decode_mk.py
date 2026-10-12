@@ -13,9 +13,10 @@ scheduler, sampling from the kernels' logits, streaming and the API.
 arg_groups/decode_mk_hook.py refuses a server with more than one running
 request, a radix cache, or anything else these states cannot serve.
 
-A request's prompt runs from position 0 into zeroed states, in 64-token
-chunks on the prefill kernel with SGLANG_DECODE_MK_PREFILL=1, else one decode
-step a token. Each decode step is one launch of the decode kernel. Under
+A request's prompt runs from position 0 into zeroed states: with
+SGLANG_DECODE_MK_PREFILL=1 on the prefill kernel, layer by layer over the
+whole prompt in the launches decode-mk's own prefill makes of it, else one
+decode step a token. Each decode step is one launch of the decode kernel. Under
 SGLANG_DECODE_MK_MTP=1, speculative/decode_mk_mtp_worker.py drives the
 verify step and the MTP head through the same runner.
 """
@@ -36,7 +37,6 @@ from sglang.kernels.decode_mk.qwen38_decode import (
 )
 from sglang.kernels.decode_mk.qwen38_layer import DIM, cos_sin_table, rms_norm
 from sglang.kernels.decode_mk.qwen38_mtp import MtpWeights
-from sglang.kernels.decode_mk.qwen38_prefill import MAX_TOKENS as PREFILL_TOKENS
 from sglang.kernels.decode_mk.qwen38_prefill import Qwen38Prefiller
 from sglang.kernels.decode_mk.qwen38_spec import Qwen38Generator
 from sglang.kernels.decode_mk.qwen38_verify import MAX_TOKENS as VERIFY_TOKENS
@@ -121,68 +121,76 @@ class DecodeMkRunner:
             )
         if pos0 == 0:
             self._reset()
-        chunk = PREFILL_TOKENS if self.prefiller is not None else 1
-        for start in range(0, n, chunk):
-            part = ids[start : start + chunk]
-            tokens = part.numel()
+        # Under MTP, the last layer's output per token, which the head reads.
+        residual = None
+        if self.generator is not None:
+            residual = torch.empty(n, DIM, device=ids.device)
+        if self.prefiller is not None:
+            logits = self._prefill(ids, pos0, residual)
+        else:
+            logits = self._step_through(ids, pos0, residual)
+        if residual is not None:
+            self._head_over_prompt(ids, pos0, residual)
+        return logits
+
+    def _prefill(
+        self, ids: torch.Tensor, pos0: int, residual: Optional[torch.Tensor]
+    ) -> torch.Tensor:
+        """The prompt on the prefill kernel, layer by layer over as many
+        tokens a launch as decode-mk's own Qwen38Prefiller.run takes."""
+        for start, tokens in self.prefiller.launches(ids.numel()):
+            end = start + tokens
             self._pos.fill_(pos0 + start)
             positions = torch.arange(
-                pos0 + start,
-                pos0 + start + tokens,
-                dtype=torch.int32,
-                device=ids.device,
+                pos0 + start, pos0 + end, dtype=torch.int32, device=ids.device
             ).expand(3, tokens)
-            # Under MTP, every layer's residual per token, of which the head
-            # reads the last layer's.
-            hidden = None
-            if self.generator is not None:
-                layers = len(self.weights.layers)
-                hidden = torch.empty(layers + 1, tokens, DIM, device=ids.device)
-            if self.prefiller is not None:
-                last = start + tokens == n
-                self.prefiller.launch(
-                    part, self._pos, positions.contiguous(), last, hidden
-                )
-            else:
-                self._positions.copy_(positions[:, 0])
-                self.decoder.launch(
-                    part.int(),
-                    self._pos,
-                    self._positions,
-                    None if hidden is None else hidden[:, 0],
-                )
-            if hidden is not None:
-                self._head_over_prompt(part, pos0 + start, hidden[-1])
-        if self.prefiller is not None:
-            return self.prefiller.logits
+            self.prefiller.launch(
+                ids[start:end],
+                self._pos,
+                positions.contiguous(),
+                logits=end == ids.numel(),
+                last_hidden=None if residual is None else residual[start:end],
+            )
+        return self.prefiller.logits
+
+    def _step_through(
+        self, ids: torch.Tensor, pos0: int, residual: Optional[torch.Tensor]
+    ) -> torch.Tensor:
+        """The prompt one decode step a token."""
+        hidden = None
+        if residual is not None:
+            hidden = torch.empty(len(self.weights.layers) + 1, DIM, device=ids.device)
+        for i in range(ids.numel()):
+            self._pos.fill_(pos0 + i)
+            self._positions.fill_(pos0 + i)
+            self.decoder.launch(
+                ids[i : i + 1].int(), self._pos, self._positions, hidden
+            )
+            if residual is not None:
+                residual[i].copy_(hidden[-1])
         return self.decoder.logits
 
     def _head_over_prompt(
         self, ids: torch.Tensor, pos0: int, residual: torch.Tensor
     ) -> None:
-        """The head over prompt positions pos0 - 1 … pos0 + n - 2, each with the
-        token after it, from the last layer's output `residual` (fp32 [n, DIM])
-        at pos0 on; the last position waits for the next token.
+        """The head's cache at prompt positions pos0 - 1 … pos0 + n - 2, each
+        from the final-normed hidden state there and the token after it, from
+        the last layer's output `residual` (fp32 [n, DIM]) at pos0 on; the last
+        position waits for the next token.
 
-        The head reads the model's final-normed hidden state, which the
-        prefill kernel does not write, so it is normed here; a draft from a
-        state that differs in its last bits is only a weaker guess."""
+        The kernels write the last layer's output, not the final-normed hidden
+        state the head reads, so it is normed here; a draft from a state that
+        differs in its last bits is only a weaker guess."""
         w = self.weights
         hidden = rms_norm(residual, w.final_norm, w.eps, torch.bfloat16)
-        steps = [(pos0 - 1, self._pending)] if self._pending is not None else []
-        steps += [(pos0 + i, hidden[i]) for i in range(ids.numel() - 1)]
-        following = ids if self._pending is not None else ids[1:]
-        for (pos, state), token in zip(steps, following):
-            self._head(token.view(1), state, pos)
+        if self._pending is not None:
+            rows = torch.cat([self._pending.unsqueeze(0), hidden[:-1]])
+            following, first = ids, pos0 - 1
+        else:
+            rows, following, first = hidden[:-1], ids[1:], pos0
+        if following.numel():
+            self.generator.mtp.prompt(following.int(), rows, first)
         self._pending = hidden[-1].clone()
-
-    def _head(self, token: torch.Tensor, hidden: torch.Tensor, pos: int) -> None:
-        """The head's step at prompt position `pos`, writing its cache there."""
-        m = self.generator.mtp
-        m.token.copy_(token)
-        m.hidden_in.copy_(hidden)
-        m.pos.fill_(pos)
-        m.launch(with_logits=False)
 
     def decode(self, token: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
         """The logits (fp32 [vocab]) after `token` (int [1]) at position

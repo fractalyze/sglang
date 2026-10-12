@@ -2,18 +2,16 @@
 //
 // The verify step of Qwen3.8-27B (qwen38_decode.h): kT tokens through the
 // decode step's phases in one persistent launch, with the same grid barriers.
-// Each phase is the decode step's with every token's input staged side by
-// side, so a GEMV loads a weight row once and multiplies it into each token
-// (Int4ZpGemvRows' kM inputs, Bf16WarpRowsM). A token's arithmetic, and the
-// order of every sum, is the one its own decode step performs:
-//   - The conv and the delta rule run the tokens in order on the same thread
-//     or warp, each token's states going to its own slot.
-//   - Attention runs each token over its own chunks of [0, pos + t]. The
-//     earlier tokens' keys and values come from shared memory, rounded to
-//     bf16 as the decode step reads them back from the cache.
-//   - The down projection takes the tokens two at a time, since four tokens'
-//     FFN activations do not fit in shared memory. Its second pass reads the
-//     CTA's rows again, mostly from L2.
+// The full-attention and MLP blocks are qwen38_tokens.cuh's, over the
+// layers' kInt4Zp projections; the linear-attention block projects on tensor
+// cores the same way. Every token's input is staged side by side in shared
+// memory first, except down's, which the gate-up phase left in global memory.
+// A token's results are the same bits on every run, at any CTA count with the
+// same attention chunks, and whatever tokens follow it in the step. They are
+// not in the decode step's order: a token's logits match its decode step's
+// within bf16's error, not bitwise. The rest is the decode step's arithmetic:
+// the conv and the delta rule run the tokens in order on the same thread or
+// warp, each token's states going to its own slot.
 
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
@@ -26,10 +24,12 @@
 #include "gdn_block.cuh"
 #include "gemv_core.cuh"
 #include "int4_gemv_core.cuh"
+#include "int4_mma_core.cuh"
+#include "prefill_dense.cuh"
 #include "qwen38_decode.h"
 #include "qwen38_layer.cuh"
-#include "qwen38_lm_head.cuh"
 #include "qwen38_prefetch.cuh"
+#include "qwen38_tokens.cuh"
 #include "thinker_layer.cuh"
 
 namespace s2mk {
@@ -38,48 +38,42 @@ namespace {
 using qwen38::PrefetchNext;
 
 constexpr int kDim = kQwen38Dim;
-constexpr int kHd = kQwen38HeadDim;
-constexpr int kQkvRows = kQwen38QkvRows;
-constexpr int kFfn = kQwen38Ffn;
-using AttentionDims = Qwen38AttentionDims;
+using qwen38::tokens::AddToResidual;
+using qwen38::tokens::AttentionBlock;
+using qwen38::tokens::AttentionShared;
+using qwen38::tokens::Bf16Of;
+using qwen38::tokens::Int4Of;
+using qwen38::tokens::Int4Projections;
+using qwen38::tokens::MlpBlock;
+using qwen38::tokens::MlpShared;
+using qwen38::tokens::Project;
+using qwen38::tokens::StagedProjection;
+using qwen38::tokens::Workspace;
+using prefill::DenseBegin;
 
-// Tokens the down projection takes at once.
-constexpr int kDownTokens = 2;
-// The most (gate, up) pairs and down rows a CTA owns, at kGdnMinCtas CTAs.
-constexpr int kMaxPairsPerCta = (kFfn + kGdnMinCtas - 1) / kGdnMinCtas;
-constexpr int kMaxDownRowsPerCta = (kDim + kGdnMinCtas - 1) / kGdnMinCtas;
+// The most rows a CTA owns of an n-row projection: whole 16-row blocks
+// (DenseBegin), at kGdnMinCtas CTAs.
+constexpr int MaxDenseRows(int n) {
+  return (n / prefill::kBlockRows + kGdnMinCtas - 1) / kGdnMinCtas *
+         prefill::kBlockRows;
+}
 
+// Each phase's shared memory overlays the others', so that a step of
+// kQwen38MaxVerifyTokens tokens fits kSharedBudget (below).
 template <int kT>
 struct GdnShared {
-  uint4 xs[kT * kGdnValueDim / kVecElems];  // either GEMV's inputs, bf16
-  float ys[kT * gdn::kMaxRowsPerCta];
-  float red[kWarps];
-  // [token][head][0]: the query, normalized and scaled; [1]: the key.
-  float4 qk[kT][gdn::kMaxHeadsPerCta][2][gdn::kHeadDim / 4];
-};
-
-template <int kT>
-struct AttentionShared {
-  // One token's head at a time, and the merge's per-item weights.
-  qwen38::AttentionShared head;
-  // Every token's key and value for the item's KV group, rounded to bf16.
-  float key[kT][kHd];
-  float value[kT][kHd];
-  // The normalized residuals, then the gated attention outputs, bf16.
-  uint4 xs[kT * kQwen38QDim / kVecElems];
-  float ys[kT * kMaxRowsPerCta];
-};
-
-template <int kT>
-struct MlpShared {
   union {
-    uint4 x[kT * kDim / kVecElems];  // the normalized residuals, bf16
-    uint4 act[kDownTokens * kFfn / kVecElems];  // SiLU(gate) × up, bf16
+    struct {
+      StagedProjection<kT, kDim> x;
+      // The rows below the gates, for routing.
+      float ys[kT * MaxDenseRows(kGdnInt4Rows)];
+    } in;
+    // [token][head][0]: the query, normalized and scaled; [1]: the key.
+    float4 qk[kT][gdn::kMaxHeadsPerCta][2][gdn::kHeadDim / 4];
+    StagedProjection<kT, kGdnValueDim> out;
   };
-  float ys[kT * 2 * kMaxPairsPerCta];
   float red[kWarps];
 };
-static_assert(kDownTokens * kMaxDownRowsPerCta <= 2 * kMaxPairsPerCta);
 
 template <int kT>
 union Shared {
@@ -87,8 +81,18 @@ union Shared {
   AttentionShared<kT> attention;
   MlpShared<kT> mlp;
 };
-// SM120's opt-in limit of dynamic shared memory per CTA.
-static_assert(sizeof(Shared<kQwen38MaxVerifyTokens>) <= 99 * 1024);
+// SM120 splits one array between L1 and shared memory, the shared part in
+// the steps the CUDA programming guide lists for compute capability 12.0,
+// each less what the system reserves a CTA. Within the step that leaves L1
+// half the array, the tiles' per-row scale and zero-point loads keep the L1
+// they count on to hold each sector for the next groups; the next step up
+// leaves them less than half of that.
+constexpr int kCarveoutStep = 64 * 1024;
+constexpr int kReservedPerCta = 1024;
+constexpr int kSharedBudget = kCarveoutStep - kReservedPerCta;
+static_assert(sizeof(Shared<kQwen38MaxVerifyTokens>) <= kSharedBudget);
+static_assert(kQwen38MaxVerifyTokens <= kMmaTokens,
+              "a step's tokens are one n-tile");
 
 // The slot token t writes its states to (Qwen38VerifyParams).
 __device__ __forceinline__ int SlotOut(const Qwen38VerifyParams& v, int t) {
@@ -186,22 +190,26 @@ template <int kT>
 __device__ inline void GdnInProjection(const GdnParams& p,
                                        const Qwen38VerifyParams& v,
                                        GdnShared<kT>& sh) {
-  __nv_bfloat16* xs = reinterpret_cast<__nv_bfloat16*>(sh.xs);
+  StagedProjection<kT, kDim>& in = sh.in.x;
+  __nv_bfloat16* xs = reinterpret_cast<__nv_bfloat16*>(in.xs);
   for (int t = 0; t < kT; ++t) {
     GdnInputNorm(p, v.step.residual + t * kDim, xs + t * kDim, sh.red);
   }
-  const int begin = RowBegin(kInt4Rows, blockIdx.x);
-  const int rows = RowBegin(kInt4Rows, blockIdx.x + 1) - begin;
-  Int4ZpGemvRows<kT, 32, kDim / (32 * kInt4Group)>(
-      static_cast<const uint4*>(p.in_proj.data), p.in_proj.scales,
-      p.in_proj.zeros, begin, rows, sh.xs, sh.ys);
+  __syncthreads();
+  const SharedX x{in.xs, kDim};
+  const int begin = DenseBegin(kInt4Rows, blockIdx.x);
+  const int rows = DenseBegin(kInt4Rows, blockIdx.x + 1) - begin;
+  Project<kT, kDim>(Int4Of(p.in_proj), kInt4Rows, x, in.partials,
+                    [&](int row, int t, float y) {
+                      sh.in.ys[t * rows + row - begin] = y;
+                    });
   for (int i = threadIdx.x; i < rows; i += kThreads) {
-    GdnRoute<kT>(p, v, begin + i, sh.ys, rows, i);
+    GdnRoute<kT>(p, v, begin + i, sh.in.ys, rows, i);
   }
-  Bf16Rows<kDim, kT>(
-      static_cast<const __nv_bfloat16*>(p.gates.data),
-      RowBegin(kGateRows, blockIdx.x), RowBegin(kGateRows, blockIdx.x + 1),
-      sh.xs, [&](int row, int t, float x) { GdnRouteGate(p, v, t, row, x); });
+  Project<kT, kDim>(Bf16Of(p.gates), kGateRows, x, in.partials,
+                    [&](int row, int t, float y) {
+                      GdnRouteGate(p, v, t, row, y);
+                    });
 }
 
 // gdn::DeltaRule for each token in turn on this CTA's state columns, held in
@@ -285,7 +293,8 @@ __device__ inline void GdnOutProjection(const GdnParams& p,
                                         GdnShared<kT>& sh) {
   const int warp = threadIdx.x / 32;
   const int lane = threadIdx.x % 32;
-  __nv_bfloat16* xs = reinterpret_cast<__nv_bfloat16*>(sh.xs);
+  StagedProjection<kT, kValueDim>& out = sh.out;
+  __nv_bfloat16* xs = reinterpret_cast<__nv_bfloat16*>(out.xs);
   const float4 w = make_float4(__bfloat162float(p.out_norm[4 * lane]),
                                __bfloat162float(p.out_norm[4 * lane + 1]),
                                __bfloat162float(p.out_norm[4 * lane + 2]),
@@ -304,25 +313,14 @@ __device__ inline void GdnOutProjection(const GdnParams& p,
     x[2] = __float2bfloat16(o.z * inv * w.z * gdn::Silu(z.z));
     x[3] = __float2bfloat16(o.w * inv * w.w * gdn::Silu(z.w));
   }
-  float* residual = v.step.residual;
-  const int begin = RowBegin(kDim, blockIdx.x);
-  const int rows = RowBegin(kDim, blockIdx.x + 1) - begin;
+  __syncthreads();
+  const SharedX x{out.xs, kValueDim};
   if (p.out_proj.format == WeightFormat::kBf16) {
-    __syncthreads();
-    Bf16Rows<kValueDim, kT>(
-        static_cast<const __nv_bfloat16*>(p.out_proj.data), begin,
-        begin + rows, sh.xs, [&](int row, int t, float y) {
-          float* r = residual + t * kDim + row;
-          *r = __ldcg(r) + y;
-        });
-    return;
-  }
-  Int4ZpGemvRows<kT, 32, kValueDim / (32 * kInt4Group)>(
-      static_cast<const uint4*>(p.out_proj.data), p.out_proj.scales,
-      p.out_proj.zeros, begin, rows, sh.xs, sh.ys);
-  for (int i = threadIdx.x; i < kT * rows; i += kThreads) {
-    float* r = residual + i / rows * kDim + begin + i % rows;
-    *r = __ldcg(r) + sh.ys[i];
+    Project<kT, kValueDim>(Bf16Of(p.out_proj), kDim, x, out.partials,
+                           AddToResidual(v.step.residual));
+  } else {
+    Project<kT, kValueDim>(Int4Of(p.out_proj), kDim, x, out.partials,
+                           AddToResidual(v.step.residual));
   }
 }
 
@@ -334,294 +332,6 @@ __device__ void GdnBlock(const GdnParams& p, const Qwen38VerifyParams& v,
   GdnDeltaRule<kT>(p, v, sh);
   sync();
   GdnOutProjection<kT>(p, v, sh);
-}
-
-// --------------------------------------------------------- full attention
-
-// The fields of Qwen38LayerParams thinker::LoadHead and thinker::Merge read,
-// at one token's rows of the verify workspace.
-struct TokenView {
-  const float* qkv;
-  const float* partial_ml;
-  const float* partial_o;
-  int splits;
-  float eps;
-  const __nv_bfloat16* q_norm;
-  const __nv_bfloat16* k_norm;
-  const __nv_bfloat16* cos_sin;
-};
-
-__device__ inline TokenView ViewOf(const Qwen38LayerParams& p,
-                                   const Qwen38VerifyParams& v, int t) {
-  const int items = kQwen38QHeads * p.splits;
-  return {v.qkv + t * kQkvRows,
-          v.partial_ml + int64_t{t} * items * 2,
-          v.partial_o + int64_t{t} * items * kHd,
-          p.splits,
-          p.eps,
-          p.q_norm,
-          p.k_norm,
-          p.cos_sin};
-}
-
-// thinker::Attend for token t of the step, whose positions [pos0, pos0 + t]
-// are the step's tokens, read from sh.key and sh.value.
-template <int kT>
-__device__ inline void AttendToken(const Qwen38LayerParams& p,
-                                   const Qwen38VerifyParams& v, int pos0,
-                                   int t, AttentionShared<kT>& sh) {
-  constexpr int kPerLane = kHd / 32;
-  constexpr int kRuns = kPerLane / 4;
-  const int items = kQwen38QHeads * p.splits;
-  const int item = blockIdx.x;
-  const int h = item / p.splits;
-  const int s = item % p.splits;
-  const int g = h / (kQwen38QHeads / kQwen38KvHeads);
-  const int warp = threadIdx.x / 32;
-  const int lane = threadIdx.x % 32;
-  const PagedKv& kv = p.kv;
-  const qwen38::AttentionShared& hs = sh.head;
-
-  const int len = pos0 + t + 1;
-  const int begin = s * len / p.splits;
-  const int end = (s + 1) * len / p.splits;
-  const float scale = rsqrtf(static_cast<float>(kHd));
-  const int dim0 = lane * kPerLane;
-  float4 q[kRuns];
-#pragma unroll
-  for (int r = 0; r < kRuns; ++r) {
-    const int d = dim0 + 4 * r;
-    q[r] = make_float4(hs.q[d], hs.q[d + 1], hs.q[d + 2], hs.q[d + 3]);
-  }
-
-  float m = -INFINITY;
-  float l = 0.f;
-  float o[kPerLane] = {};
-  for (int base = begin + warp * kPosUnroll; base < end;
-       base += kWarps * kPosUnroll) {
-    uint2 kr[kPosUnroll][kRuns];
-    uint2 vr[kPosUnroll][kRuns];
-#pragma unroll
-    for (int u = 0; u < kPosUnroll; ++u) {
-      const int at = base + u;
-      if (at < end && at < pos0) {
-        const uint2* key =
-            reinterpret_cast<const uint2*>(
-                thinker::KvAt(kv, kv.key, g, at)) +
-            lane * kRuns;
-        const uint2* value =
-            reinterpret_cast<const uint2*>(
-                thinker::KvAt(kv, kv.value, g, at)) +
-            lane * kRuns;
-#pragma unroll
-        for (int r = 0; r < kRuns; ++r) {
-          kr[u][r] = __ldcg(key + r);
-          vr[u][r] = __ldcg(value + r);
-        }
-      }
-    }
-#pragma unroll
-    for (int u = 0; u < kPosUnroll; ++u) {
-      const int at = base + u;
-      if (at >= end) break;
-      float4 k[kRuns];
-      float4 vv[kRuns];
-#pragma unroll
-      for (int r = 0; r < kRuns; ++r) {
-        if (at >= pos0) {
-          const int d = dim0 + 4 * r;
-          const float* key = sh.key[at - pos0];
-          const float* value = sh.value[at - pos0];
-          k[r] = make_float4(key[d], key[d + 1], key[d + 2], key[d + 3]);
-          vv[r] = make_float4(value[d], value[d + 1], value[d + 2],
-                              value[d + 3]);
-        } else {
-          k[r] = Bf16x4(kr[u][r]);
-          vv[r] = Bf16x4(vr[u][r]);
-        }
-      }
-      float dot = Dot(q[0], k[0]);
-#pragma unroll
-      for (int r = 1; r < kRuns; ++r) dot += Dot(q[r], k[r]);
-      const float score = WarpSum(dot) * scale;
-      const float m_new = fmaxf(m, score);
-      const float correction = expf(m - m_new);
-      const float weight = expf(score - m_new);
-      l = l * correction + weight;
-#pragma unroll
-      for (int r = 0; r < kRuns; ++r) {
-        o[4 * r] = fmaf(o[4 * r], correction, weight * vv[r].x);
-        o[4 * r + 1] = fmaf(o[4 * r + 1], correction, weight * vv[r].y);
-        o[4 * r + 2] = fmaf(o[4 * r + 2], correction, weight * vv[r].z);
-        o[4 * r + 3] = fmaf(o[4 * r + 3], correction, weight * vv[r].w);
-      }
-      m = m_new;
-    }
-  }
-
-  qwen38::AttentionShared& w = sh.head;
-  if (lane == 0) {
-    w.warp_m[warp] = m;
-    w.warp_l[warp] = l;
-  }
-#pragma unroll
-  for (int j = 0; j < kPerLane; ++j) w.warp_o[warp][dim0 + j] = o[j];
-  __syncthreads();
-  if (threadIdx.x < kHd) {
-    // A warp that saw no position has l = 0 and m = -inf; skip it.
-    float m_all = -INFINITY;
-    for (int wi = 0; wi < kWarps; ++wi) {
-      if (w.warp_l[wi] > 0.f) m_all = fmaxf(m_all, w.warp_m[wi]);
-    }
-    float l_all = 0.f;
-    float o_all = 0.f;
-    for (int wi = 0; wi < kWarps; ++wi) {
-      if (w.warp_l[wi] == 0.f) continue;
-      const float f = expf(w.warp_m[wi] - m_all);
-      l_all += w.warp_l[wi] * f;
-      o_all += w.warp_o[wi][threadIdx.x] * f;
-    }
-    const int64_t at = int64_t{t} * items + item;
-    v.partial_o[at * kHd + threadIdx.x] = o_all;
-    if (threadIdx.x == 0) {
-      v.partial_ml[at * 2] = m_all;
-      v.partial_ml[at * 2 + 1] = l_all;
-    }
-  }
-  __syncthreads();
-}
-
-template <int kT, typename Sync>
-__device__ void AttentionBlock(const Qwen38LayerParams& p,
-                               const Qwen38VerifyParams& v, int pos0,
-                               Sync& sync, AttentionShared<kT>& sh) {
-  const int cta = blockIdx.x;
-  __nv_bfloat16* xs = reinterpret_cast<__nv_bfloat16*>(sh.xs);
-  float* residual = v.step.residual;
-  const int o_begin = RowBegin(kDim, cta);
-  const int o_rows = RowBegin(kDim, cta + 1) - o_begin;
-
-  // 1. Each token's RMSNorm, then this CTA's q, k, v and gate rows.
-  for (int t = 0; t < kT; ++t) {
-    RmsNorm<qwen38::NormDims>(residual + t * kDim, nullptr, p.input_norm,
-                              p.eps, xs + t * kDim, nullptr, sh.head.red);
-  }
-  {
-    const int begin = RowBegin(kQkvRows, cta);
-    const int rows = RowBegin(kQkvRows, cta + 1) - begin;
-    Int4ZpGemvRows<kT, 32, qwen38::kDimGroupsPerLane>(
-        static_cast<const uint4*>(p.wqkv.data), p.wqkv.scales, p.wqkv.zeros,
-        begin, rows, sh.xs, sh.ys);
-    for (int i = threadIdx.x; i < kT * rows; i += kThreads) {
-      v.qkv[i / rows * kQkvRows + begin + i % rows] = sh.ys[i];
-    }
-  }
-  if (threadIdx.x == 0) {
-    qwen38::PrefetchRows(p.wo, kQwen38QDim, o_begin, o_rows);
-  }
-  sync();
-
-  // 2. This CTA's (head, chunk) item, for each token in turn.
-  if (cta < kQwen38QHeads * p.splits) {
-    const int h = cta / p.splits;
-    const int s = cta % p.splits;
-    const int g = h / (kQwen38QHeads / kQwen38KvHeads);
-    const bool writes = h % (kQwen38QHeads / kQwen38KvHeads) == 0 && s == 0;
-    for (int t = 0; t < kT; ++t) {
-      const int pos = pos0 + t;
-      const thinker::BlockStep step{
-          pos, -1, {pos, pos, pos}, residual, residual};
-      thinker::LoadHead(ViewOf(p, v, t), step, h, sh.head);
-      if (threadIdx.x < kHd) {
-        sh.key[t][threadIdx.x] = sh.head.k[threadIdx.x];
-        sh.value[t][threadIdx.x] = sh.head.v[threadIdx.x];
-        if (writes) {
-          const int64_t slot = thinker::SlotOf(p.kv, pos);
-          thinker::SlotAt(p.kv, p.kv.key, g, slot)[threadIdx.x] =
-              __float2bfloat16(sh.head.k[threadIdx.x]);
-          thinker::SlotAt(p.kv, p.kv.value, g, slot)[threadIdx.x] =
-              __float2bfloat16(sh.head.v[threadIdx.x]);
-        }
-      }
-      __syncthreads();
-      AttendToken<kT>(p, v, pos0, t, sh);
-    }
-  }
-  sync();
-
-  // 3. Each token's merged, gated attention output, then this CTA's O rows.
-  for (int t = 0; t < kT; ++t) {
-    thinker::Merge(ViewOf(p, v, t), sh.head, xs + t * kQwen38QDim);
-    __syncthreads();
-  }
-  Int4ZpGemvRows<kT, 32, qwen38::kQGroupsPerLane>(
-      static_cast<const uint4*>(p.wo.data), p.wo.scales, p.wo.zeros, o_begin,
-      o_rows, sh.xs, sh.ys);
-  for (int i = threadIdx.x; i < kT * o_rows; i += kThreads) {
-    float* r = residual + i / o_rows * kDim + o_begin + i % o_rows;
-    *r = __ldcg(r) + sh.ys[i];
-  }
-}
-
-// ---------------------------------------------------------------------- MLP
-
-// The down rows of tokens [t0, t0 + kN), their activations staged first.
-template <int kT, int kN>
-__device__ inline void DownRows(const Qwen38MlpParams& p,
-                                const Qwen38VerifyParams& v, int t0,
-                                MlpShared<kT>& sh) {
-  const uint4* act = reinterpret_cast<const uint4*>(v.act + t0 * kFfn);
-  for (int i = threadIdx.x; i < kN * kFfn / kVecElems; i += kThreads) {
-    sh.act[i] = __ldcg(act + i);
-  }
-  const int begin = RowBegin(kDim, blockIdx.x);
-  const int rows = RowBegin(kDim, blockIdx.x + 1) - begin;
-  Int4ZpGemvRows<kN, 32, qwen38::kFfnGroupsPerLane>(
-      static_cast<const uint4*>(p.w2.data), p.w2.scales, p.w2.zeros, begin,
-      rows, sh.act, sh.ys);
-  float* residual = v.step.residual;
-  for (int i = threadIdx.x; i < kN * rows; i += kThreads) {
-    float* r = residual + (t0 + i / rows) * kDim + begin + i % rows;
-    *r = __ldcg(r) + sh.ys[i];
-  }
-}
-
-template <int kT, typename Sync>
-__device__ void MlpBlock(const Qwen38MlpParams& p,
-                         const Qwen38VerifyParams& v, Sync& sync,
-                         MlpShared<kT>& sh) {
-  const int cta = blockIdx.x;
-  __nv_bfloat16* x = reinterpret_cast<__nv_bfloat16*>(sh.x);
-  float* residual = v.step.residual;
-
-  // 1. Each token's RMSNorm, then this CTA's (gate, up) pairs.
-  for (int t = 0; t < kT; ++t) {
-    RmsNorm<qwen38::NormDims>(residual + t * kDim, nullptr, p.post_norm, p.eps,
-                              x + t * kDim, nullptr, sh.red);
-  }
-  {
-    const int begin = RowBegin(kFfn, cta);
-    const int pairs = RowBegin(kFfn, cta + 1) - begin;
-    Int4ZpGemvRows<kT, 32, qwen38::kDimGroupsPerLane>(
-        static_cast<const uint4*>(p.w13.data), p.w13.scales, p.w13.zeros,
-        2 * begin, 2 * pairs, sh.x, sh.ys);
-    for (int i = threadIdx.x; i < kT * pairs; i += kThreads) {
-      const int t = i / pairs;
-      const int j = i % pairs;
-      const float* y = sh.ys + t * 2 * pairs + 2 * j;
-      v.act[t * kFfn + begin + j] = __float2bfloat16(Silu(y[0]) * y[1]);
-    }
-  }
-  sync();
-
-  // 2. The down rows, kDownTokens tokens at a time.
-#pragma unroll
-  for (int t0 = 0; t0 + kDownTokens <= kT; t0 += kDownTokens) {
-    DownRows<kT, kDownTokens>(p, v, t0, sh);
-  }
-  if constexpr (kT % kDownTokens != 0) {
-    DownRows<kT, kT % kDownTokens>(p, v, kT - kT % kDownTokens, sh);
-  }
 }
 
 // ------------------------------------------------------------------ the step
@@ -638,6 +348,7 @@ __global__ void __launch_bounds__(kThreads, 1)
     barrier.Sync();
   };
   const int pos0 = *p.pos;
+  const Workspace ws{p.residual, v.qkv, v.partial_ml, v.partial_o, v.act};
 
   // Every token's embedding: this CTA's rows of each.
   const int end = RowBegin(kDim, blockIdx.x + 1);
@@ -653,28 +364,37 @@ __global__ void __launch_bounds__(kThreads, 1)
     const Qwen38MlpParams* mlp;
     if (Qwen38IsFull(layer)) {
       const Qwen38LayerParams& full = p.full[Qwen38FullIndex(layer)];
-      AttentionBlock<kT>(full, v, pos0, sync, sh.attention);
+      AttentionBlock<kT, Int4Projections>(full, ws, pos0, sync, sh.attention);
       mlp = &full.mlp;
     } else {
       GdnBlock<kT>(p.linear[Qwen38LinearIndex(layer)], v, sync, sh.gdn);
       mlp = &p.linear_mlp[Qwen38LinearIndex(layer)];
     }
     sync();
-    MlpBlock<kT>(*mlp, v, sync, sh.mlp);
+    MlpBlock<kT, Int4Projections>(*mlp, ws, sync, sh.mlp);
     sync();
   }
 
-  __nv_bfloat16* xs = reinterpret_cast<__nv_bfloat16*>(sh.gdn.xs);
+  StagedProjection<kT, kDim>& in = sh.gdn.in.x;
+  __nv_bfloat16* xs = reinterpret_cast<__nv_bfloat16*>(in.xs);
   for (int t = 0; t < kT; ++t) {
     RmsNorm<qwen38::NormDims>(
         p.residual + t * kDim, nullptr, p.final_norm, p.eps, xs + t * kDim,
         blockIdx.x == 0 ? v.final_hidden + t * kDim : nullptr, sh.gdn.red);
   }
   __syncthreads();
-  qwen38::LmHeadRows<kT>(p.lm_head, p.vocab, sh.gdn.xs,
-                         [&](int row, int t, float logit) {
-                           p.logits[int64_t{t} * p.vocab + row] = logit;
-                         });
+  const SharedX x{in.xs, kDim};
+  const auto logit = [&](int row, int t, float y) {
+    p.logits[int64_t{t} * p.vocab + row] = y;
+  };
+  switch (p.lm_head.format) {
+    case WeightFormat::kBf16:
+      Project<kT, kDim>(Bf16Of(p.lm_head), p.vocab, x, in.partials, logit);
+      return;
+    case WeightFormat::kInt4Zp:
+      Project<kT, kDim>(Int4Of(p.lm_head), p.vocab, x, in.partials, logit);
+      return;
+  }
 }
 
 template <int kT>
@@ -696,7 +416,7 @@ cudaError_t LaunchQwen38Verify(const Qwen38VerifyParams& params, int num_ctas,
   cudaError_t err = cudaMemsetAsync(params.step.sync, 0,
                                     kSyncWords * sizeof(unsigned), stream);
   if (err != cudaSuccess) return err;
-  static_assert(kQwen38MaxVerifyTokens == 4);
+  static_assert(kQwen38MaxVerifyTokens == 5);
   switch (params.num_tokens) {
     case 1:
       return Launch<1>(params, num_ctas, stream);
@@ -706,6 +426,8 @@ cudaError_t LaunchQwen38Verify(const Qwen38VerifyParams& params, int num_ctas,
       return Launch<3>(params, num_ctas, stream);
     case 4:
       return Launch<4>(params, num_ctas, stream);
+    case 5:
+      return Launch<5>(params, num_ctas, stream);
     default:
       return cudaErrorInvalidValue;
   }
