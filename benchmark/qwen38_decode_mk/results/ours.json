@@ -1,0 +1,150 @@
+{
+ "model": "/home/baz/hf/hub/models--cyankiwi--Qwen3.8-27B-AWQ-INT4/snapshots/6e134bae811fb5adac50ee042ae5f029ac6779aa",
+ "max_tokens": 512,
+ "prompts": {
+  "short": {
+   "replies": [
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.027837489964440465,
+     "decode_tok_s": 77.02898077857483
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.027736959978938103,
+     "decode_tok_s": 76.99640595618605
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.027728204964660108,
+     "decode_tok_s": 76.9782938134488
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.027860866975970566,
+     "decode_tok_s": 77.00609275980675
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.02877430501393974,
+     "decode_tok_s": 76.8782490346476
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.027837489964440465,
+     "min": 0.027728204964660108,
+     "max": 0.02877430501393974
+    },
+    "decode_tok_s": {
+     "median": 76.99640595618605,
+     "min": 76.8782490346476,
+     "max": 77.02898077857483
+    }
+   }
+  },
+  "1k": {
+   "replies": [
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.3248282519634813,
+     "decode_tok_s": 76.11488908775073
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.32845843001268804,
+     "decode_tok_s": 76.11261455330036
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.3243950620526448,
+     "decode_tok_s": 76.09258765656968
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.325333146029152,
+     "decode_tok_s": 76.08583972811583
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.3259463560534641,
+     "decode_tok_s": 76.12279058916361
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.325333146029152,
+     "min": 0.3243950620526448,
+     "max": 0.32845843001268804
+    },
+    "decode_tok_s": {
+     "median": 76.11261455330036,
+     "min": 76.08583972811583,
+     "max": 76.12279058916361
+    }
+   }
+  },
+  "8k": {
+   "replies": [
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.6427799449302256,
+     "decode_tok_s": 70.44328356448302
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.6461559029994532,
+     "decode_tok_s": 70.4451753032632
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.649686332908459,
+     "decode_tok_s": 70.36478542869258
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.64854075293988,
+     "decode_tok_s": 70.44547746464164
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.651022505015135,
+     "decode_tok_s": 70.43108679163238
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 2.64854075293988,
+     "min": 2.6427799449302256,
+     "max": 2.651022505015135
+    },
+    "decode_tok_s": {
+     "median": 70.44328356448302,
+     "min": 70.36478542869258,
+     "max": 70.44547746464164
+    }
+   }
+  }
+ },
+ "gpu": "NVIDIA GeForce RTX 5090, 595.84",
+ "server": {
+  "version": "0.0.0.dev18731+g1d59ce7c9",
+  "launch_command": "--trust-remote-code --model-path /home/baz/hf/hub/models--cyankiwi--Qwen3.8-27B-AWQ-INT4/snapshots/6e134bae811fb5adac50ee042ae5f029ac6779aa --max-running-requests 1 --disable-radix-cache --disable-cuda-graph --context-length 16384 --chunked-prefill-size -1 --mem-fraction-static 0.92 --reasoning-parser qwen3 --host 127.0.0.1 --port 30000",
+  "avg_spec_accept_length": null
+ }
+}

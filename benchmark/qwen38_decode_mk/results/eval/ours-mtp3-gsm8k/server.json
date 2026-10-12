@@ -1,0 +1,5 @@
+{
+ "version": "0.0.0.dev18731+g1d59ce7c9",
+ "launch_command": "--trust-remote-code --model-path /home/baz/hf/hub/models--cyankiwi--Qwen3.8-27B-AWQ-INT4/snapshots/6e134bae811fb5adac50ee042ae5f029ac6779aa --max-running-requests 1 --disable-radix-cache --disable-cuda-graph --context-length 16384 --chunked-prefill-size -1 --mem-fraction-static 0.92 --speculative-algorithm DECODE_MK_MTP --disable-overlap-schedule --speculative-num-steps 3 --reasoning-parser qwen3 --host 127.0.0.1 --port 30000",
+ "avg_spec_accept_length": 3.623988359201774
+}
