@@ -1,0 +1,150 @@
+{
+ "model": "/home/baz/hf/hub/models--nvidia--Qwen3.8-27B-NVFP4/snapshots/482ca0f3832238542f8f5295dde86b5f22711d80",
+ "max_tokens": 512,
+ "prompts": {
+  "short": {
+   "replies": [
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.030353917041793466,
+     "decode_tok_s": 149.1795614310846
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.027933430043049157,
+     "decode_tok_s": 149.23857449674347
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.028474995051510632,
+     "decode_tok_s": 149.23494479466046
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.027983075007796288,
+     "decode_tok_s": 149.19084559832132
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.028056954964995384,
+     "decode_tok_s": 149.19846724797395
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.028056954964995384,
+     "min": 0.027933430043049157,
+     "max": 0.030353917041793466
+    },
+    "decode_tok_s": {
+     "median": 149.19846724797395,
+     "min": 149.1795614310846,
+     "max": 149.23857449674347
+    }
+   }
+  },
+  "1k": {
+   "replies": [
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.10485755291301757,
+     "decode_tok_s": 175.57406568152138
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.10375714302062988,
+     "decode_tok_s": 175.56194438112038
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.111486183013767,
+     "decode_tok_s": 175.60334259641107
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.10402178694494069,
+     "decode_tok_s": 175.57733042881623
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.10403802001383156,
+     "decode_tok_s": 175.54062659542956
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.10403802001383156,
+     "min": 0.10375714302062988,
+     "max": 0.111486183013767
+    },
+    "decode_tok_s": {
+     "median": 175.57406568152138,
+     "min": 175.54062659542956,
+     "max": 175.60334259641107
+    }
+   }
+  },
+  "8k": {
+   "replies": [
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.8038729829713702,
+     "decode_tok_s": 155.31240195393434
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.7997998559148982,
+     "decode_tok_s": 155.53612670013874
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.7991113399621099,
+     "decode_tok_s": 155.51787511429356
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.7998896170174703,
+     "decode_tok_s": 155.49412150824477
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.8000001219334081,
+     "decode_tok_s": 155.48129532257957
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.7998896170174703,
+     "min": 0.7991113399621099,
+     "max": 0.8038729829713702
+    },
+    "decode_tok_s": {
+     "median": 155.49412150824477,
+     "min": 155.31240195393434,
+     "max": 155.53612670013874
+    }
+   }
+  }
+ },
+ "gpu": "NVIDIA GeForce RTX 5090, 595.84",
+ "server": {
+  "version": "0.0.0.dev18731+g1d59ce7c9",
+  "launch_command": "--trust-remote-code --model-path /home/baz/hf/hub/models--nvidia--Qwen3.8-27B-NVFP4/snapshots/482ca0f3832238542f8f5295dde86b5f22711d80 --kv-cache-dtype fp8_e4m3 --attention-backend flashinfer --max-running-requests 1 --cuda-graph-max-bs-decode 1 --mamba-radix-cache-strategy extra_buffer --mamba-ssm-dtype float32 --mamba-full-memory-ratio 4.59 --speculative-algorithm EAGLE --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4 --enable-linear-replayssm-spec --mem-fraction-static 0.94 --reasoning-parser qwen3 --host 127.0.0.1 --port 30000",
+  "avg_spec_accept_length": 2.8125
+ }
+}

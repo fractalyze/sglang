@@ -1,0 +1,150 @@
+{
+ "model": "/home/baz/hf/hub/models--nvidia--Qwen3.8-27B-NVFP4/snapshots/482ca0f3832238542f8f5295dde86b5f22711d80",
+ "max_tokens": 512,
+ "prompts": {
+  "short": {
+   "replies": [
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.030396497924812138,
+     "decode_tok_s": 77.5610879754851
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.023151885019615293,
+     "decode_tok_s": 77.53096373760422
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.023369136964902282,
+     "decode_tok_s": 77.51884587057276
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.02305739896837622,
+     "decode_tok_s": 77.49591821155336
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.023470390937291086,
+     "decode_tok_s": 77.47181241724208
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.023369136964902282,
+     "min": 0.02305739896837622,
+     "max": 0.030396497924812138
+    },
+    "decode_tok_s": {
+     "median": 77.51884587057276,
+     "min": 77.47181241724208,
+     "max": 77.5610879754851
+    }
+   }
+  },
+  "1k": {
+   "replies": [
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.11488661798648536,
+     "decode_tok_s": 77.38520946525432
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.09499403403606266,
+     "decode_tok_s": 77.37650338431469
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.09407626395113766,
+     "decode_tok_s": 77.37765588125848
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.09468095109332353,
+     "decode_tok_s": 77.38042513783027
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.09445885499008,
+     "decode_tok_s": 77.37799490963577
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.09468095109332353,
+     "min": 0.09407626395113766,
+     "max": 0.11488661798648536
+    },
+    "decode_tok_s": {
+     "median": 77.37799490963577,
+     "min": 77.37650338431469,
+     "max": 77.38520946525432
+    }
+   }
+  },
+  "8k": {
+   "replies": [
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.7714095120318234,
+     "decode_tok_s": 76.16307765114946
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.7559557770146057,
+     "decode_tok_s": 76.07173498295849
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.7554239869350567,
+     "decode_tok_s": 76.07023599776973
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.7550400850595906,
+     "decode_tok_s": 76.02470385897801
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 0.7574486340163276,
+     "decode_tok_s": 76.02582188964234
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.7559557770146057,
+     "min": 0.7550400850595906,
+     "max": 0.7714095120318234
+    },
+    "decode_tok_s": {
+     "median": 76.07023599776973,
+     "min": 76.02470385897801,
+     "max": 76.16307765114946
+    }
+   }
+  }
+ },
+ "gpu": "NVIDIA GeForce RTX 5090, 595.84",
+ "server": {
+  "version": "0.0.0.dev18731+g1d59ce7c9",
+  "launch_command": "--trust-remote-code --model-path /home/baz/hf/hub/models--nvidia--Qwen3.8-27B-NVFP4/snapshots/482ca0f3832238542f8f5295dde86b5f22711d80 --kv-cache-dtype fp8_e4m3 --attention-backend flashinfer --max-running-requests 1 --cuda-graph-max-bs-decode 1 --mamba-radix-cache-strategy extra_buffer --mamba-ssm-dtype float32 --mamba-full-memory-ratio 4.59 --mem-fraction-static 0.85 --reasoning-parser qwen3 --host 127.0.0.1 --port 30000",
+  "avg_spec_accept_length": null
+ }
+}

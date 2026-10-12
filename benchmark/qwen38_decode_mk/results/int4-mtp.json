@@ -1,0 +1,150 @@
+{
+ "model": "/home/baz/hf/hub/models--cyankiwi--Qwen3.8-27B-AWQ-INT4/snapshots/6e134bae811fb5adac50ee042ae5f029ac6779aa",
+ "max_tokens": 512,
+ "prompts": {
+  "short": {
+   "replies": [
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.029717297991737723,
+     "decode_tok_s": 130.26935878826222
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.030084062018431723,
+     "decode_tok_s": 130.52941251182608
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.02944757300429046,
+     "decode_tok_s": 130.60085397697998
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.029812553082592785,
+     "decode_tok_s": 130.58052863228843
+    },
+    {
+     "prompt_tokens": 30,
+     "completion_tokens": 512,
+     "ttft": 0.0292141439858824,
+     "decode_tok_s": 130.58558120981246
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.029717297991737723,
+     "min": 0.0292141439858824,
+     "max": 0.030084062018431723
+    },
+    "decode_tok_s": {
+     "median": 130.58052863228843,
+     "min": 130.26935878826222,
+     "max": 130.60085397697998
+    }
+   }
+  },
+  "1k": {
+   "replies": [
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.31884301896207035,
+     "decode_tok_s": 136.98242478593056
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.3175371220568195,
+     "decode_tok_s": 136.94733964414672
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.3177901969756931,
+     "decode_tok_s": 136.9546437125104
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.31791013898327947,
+     "decode_tok_s": 136.88885707362937
+    },
+    {
+     "prompt_tokens": 1053,
+     "completion_tokens": 512,
+     "ttft": 0.31683166907168925,
+     "decode_tok_s": 136.71526620674186
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 0.3177901969756931,
+     "min": 0.31683166907168925,
+     "max": 0.31884301896207035
+    },
+    "decode_tok_s": {
+     "median": 136.94733964414672,
+     "min": 136.71526620674186,
+     "max": 136.98242478593056
+    }
+   }
+  },
+  "8k": {
+   "replies": [
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.1778495110338554,
+     "decode_tok_s": 137.36408508439308
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.176436363020912,
+     "decode_tok_s": 137.34875882674473
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.174389448016882,
+     "decode_tok_s": 137.3889973871425
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.176254373975098,
+     "decode_tok_s": 137.38400188871918
+    },
+    {
+     "prompt_tokens": 8509,
+     "completion_tokens": 512,
+     "ttft": 2.1765951310517266,
+     "decode_tok_s": 137.40608678360297
+    }
+   ],
+   "summary": {
+    "ttft": {
+     "median": 2.176436363020912,
+     "min": 2.174389448016882,
+     "max": 2.1778495110338554
+    },
+    "decode_tok_s": {
+     "median": 137.38400188871918,
+     "min": 137.34875882674473,
+     "max": 137.40608678360297
+    }
+   }
+  }
+ },
+ "gpu": "NVIDIA GeForce RTX 5090, 595.84",
+ "server": {
+  "version": "0.0.0.dev18731+g1d59ce7c9",
+  "launch_command": "--trust-remote-code --model-path /home/baz/hf/hub/models--cyankiwi--Qwen3.8-27B-AWQ-INT4/snapshots/6e134bae811fb5adac50ee042ae5f029ac6779aa --kv-cache-dtype fp8_e4m3 --attention-backend flashinfer --max-running-requests 1 --cuda-graph-max-bs-decode 1 --mamba-radix-cache-strategy extra_buffer --mamba-ssm-dtype float32 --mamba-full-memory-ratio 4.59 --speculative-algorithm EAGLE --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4 --enable-linear-replayssm-spec --mem-fraction-static 0.94 --reasoning-parser qwen3 --host 127.0.0.1 --port 30000",
+  "avg_spec_accept_length": 2.93125
+ }
+}
