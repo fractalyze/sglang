@@ -37,9 +37,11 @@ import subprocess
 import sys
 import sysconfig
 import time
-from dataclasses import dataclass, field
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 
+import msgspec
 import requests
 
 PORT = 30000
@@ -53,7 +55,7 @@ NVFP4 = ("nvidia/Qwen3.8-27B-NVFP4", "482ca0f3832238542f8f5295dde86b5f22711d80")
 # SGLang's cookbook RTX 5090 recipe for Qwen3.8-27B with its panel defaults,
 # as control/qwen38/serve.sh runs it: without MTP the static memory fraction
 # is 0.85, not the cookbook's 0.9, at which this commit runs out of memory.
-_COOKBOOK = [
+_COOKBOOK = (
     "--kv-cache-dtype",
     "fp8_e4m3",
     "--attention-backend",
@@ -68,8 +70,8 @@ _COOKBOOK = [
     "float32",
     "--mamba-full-memory-ratio",
     "4.59",
-]
-_COOKBOOK_MTP = [
+)
+_COOKBOOK_MTP = (
     "--speculative-algorithm",
     "EAGLE",
     "--speculative-num-steps",
@@ -81,9 +83,9 @@ _COOKBOOK_MTP = [
     "--enable-linear-replayssm-spec",
     "--mem-fraction-static",
     "0.94",
-]
+)
 # What python/sglang/kernels/decode_mk/README.md requires of the switches.
-_DECODE_MK = [
+_DECODE_MK = (
     "--max-running-requests",
     "1",
     "--disable-radix-cache",
@@ -94,35 +96,36 @@ _DECODE_MK = [
     "-1",
     "--mem-fraction-static",
     "0.92",
-]
+)
 
 
-def _decode_mk_mtp(drafts: int) -> list[str]:
-    return [
+def _decode_mk_mtp(drafts: int) -> tuple[str, ...]:
+    return (
         "--speculative-algorithm",
         "DECODE_MK_MTP",
         "--disable-overlap-schedule",
         "--speculative-num-steps",
         str(drafts),
-    ]
+    )
 
 
-@dataclass(frozen=True)
-class Arm:
+class Arm(msgspec.Struct, frozen=True):
     checkpoint: tuple[str, str]
-    flags: list[str]
+    flags: tuple[str, ...]
     # Serve this checkout's python/ tree, not the venv's installed SGLang.
     fork: bool = False
-    env: dict[str, str] = field(default_factory=dict)
+    env: Mapping[str, str] = MappingProxyType({})
 
 
-_ON = {"SGLANG_DECODE_MK_DECODE": "1", "SGLANG_DECODE_MK_PREFILL": "1"}
-_ON_MTP = {**_ON, "SGLANG_DECODE_MK_MTP": "1"}
+_ON = MappingProxyType(
+    {"SGLANG_DECODE_MK_DECODE": "1", "SGLANG_DECODE_MK_PREFILL": "1"}
+)
+_ON_MTP = MappingProxyType({**_ON, "SGLANG_DECODE_MK_MTP": "1"})
 
 ARMS = {
-    "int4": Arm(INT4, _COOKBOOK + ["--mem-fraction-static", "0.85"]),
+    "int4": Arm(INT4, _COOKBOOK + ("--mem-fraction-static", "0.85")),
     "int4-mtp": Arm(INT4, _COOKBOOK + _COOKBOOK_MTP),
-    "nvfp4": Arm(NVFP4, _COOKBOOK + ["--mem-fraction-static", "0.85"]),
+    "nvfp4": Arm(NVFP4, _COOKBOOK + ("--mem-fraction-static", "0.85")),
     "nvfp4-mtp": Arm(NVFP4, _COOKBOOK + _COOKBOOK_MTP),
     "ours": Arm(INT4, _DECODE_MK, fork=True, env=_ON),
     **{

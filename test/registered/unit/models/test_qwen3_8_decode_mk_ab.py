@@ -13,7 +13,6 @@ register_cpu_ci(est_time=10, suite="base-a-test-cpu")
 import argparse
 import importlib.util
 import os
-import sys
 import unittest
 from contextlib import ExitStack
 from pathlib import Path
@@ -32,8 +31,6 @@ def _load_ab():
         "qwen38_decode_mk_ab", _REPO / "benchmark/qwen38_decode_mk/ab.py"
     )
     module = importlib.util.module_from_spec(spec)
-    # Its dataclasses look their module up by name.
-    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
