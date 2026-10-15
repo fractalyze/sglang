@@ -279,7 +279,7 @@ class ExecKernel(msgspec.Struct):
     dsa_paged_mqa_logits_backend: A[
         str,
         Arg(
-            help="DSA indexer paged MQA logits kernel backend. Options: 'auto' (default; DeepGEMM on CUDA, aiter on ROCm), 'deepgemm', 'cutedsl' (CuTe DSL kernel, SM 100 (Blackwell) only; wins at low batch size and long context), 'aiter' (ROCm only).",
+            help="DSA indexer paged MQA logits kernel backend. Options: 'auto' (default; CuTe DSL on SM 100 (Blackwell), DeepGEMM on other CUDA GPUs, aiter on ROCm), 'deepgemm', 'cutedsl' (CuTe DSL kernel, SM 100 (Blackwell) only; one launch for any decode batch, where DeepGEMM chunks batches larger than the SM count), 'aiter' (ROCm only).",
             choices=["auto", "deepgemm", "cutedsl", "aiter"],
         ),
     ] = "auto"
