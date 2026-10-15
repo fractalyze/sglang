@@ -30,7 +30,15 @@ class DSAPagedMQALogitsBackend(Enum):
                 )
             return DSAPagedMQALogitsBackend.AITER
 
-        if value == "auto" or value == "deepgemm":
+        if value == "auto":
+            # DeepGEMM caps a paged MQA logits call at num_sms rows, so a larger decode
+            # batch is chunked and the chunks' full-context-width logits are concatenated;
+            # under the decode CUDA graph that width is the model's max context. The CuTe
+            # DSL kernel makes one launch for any batch, so it is the SM100 default.
+            if get_platform().is_sm100:
+                return DSAPagedMQALogitsBackend.CUTEDSL
+            return DSAPagedMQALogitsBackend.DEEPGEMM
+        if value == "deepgemm":
             return DSAPagedMQALogitsBackend.DEEPGEMM
         if value == "aiter":
             raise ValueError("dsa_paged_mqa_logits_backend='aiter' requires ROCm.")
