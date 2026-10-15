@@ -73,6 +73,15 @@ import { DeepSeekV32Deployment } from "/src/snippets/autoregressive/deepseek-v32
     --quantization modelopt_fp4 --moe-runner-backend flashinfer_trtllm \
     --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3
   ```
+- **NVFP4 high-throughput decode on 8×B200 (PD decode instance):** expert parallelism with DP attention, FlashInfer MoE all-to-all, and the CuTe DSL MoE runner. With `--moe-a2a-backend none`, every MoE layer all-gathers the whole node's tokens and reduce-scatters them back; the FlashInfer all-to-all sends each token only to the ranks that own its experts.
+  ```bash
+  python -m sglang.launch_server --model nvidia/DeepSeek-V3.2-NVFP4 \
+    --tp 8 --dp 8 --ep 8 --enable-dp-attention --enable-dp-lm-head \
+    --quantization modelopt_fp4 --kv-cache-dtype fp8_e4m3 \
+    --moe-a2a-backend flashinfer --moe-runner-backend flashinfer_cutedsl \
+    --disaggregation-mode decode --max-running-requests 4096
+  ```
+  On Blackwell, `--dsa-paged-mqa-logits-backend auto` selects the CuTe DSL indexer kernel. DeepGEMM takes at most one decode row per SM per call, so it splits a large decode batch into chunks and concatenates their logits at the full context width. Measured decode-only at 1k input / 2k output and 512 requests per GPU: 79.2k output tok/s per node, against 48.0k with `--moe-a2a-backend none`, the `flashinfer_trtllm` runner, and the DeepGEMM indexer; GSM8K 0.958. If the same flags run on a server that also prefills, set `SGLANG_FLASHINFER_NUM_MAX_DISPATCH_TOKENS_PER_RANK=4096`.
 - **NCCL timeout:** Slow model loading → add `--dist-timeout 3600`.
 
 ## 4. Model Invocation
