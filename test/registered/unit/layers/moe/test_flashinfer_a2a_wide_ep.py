@@ -38,12 +38,15 @@ class TestFlashinferA2AWideEPPlumbing(CustomTestCase):
         self.assertEqual(_max_tokens_per_scattered_source([7, 3, 2, 1], 4), 2)
         self.assertEqual(_max_tokens_per_scattered_source([512] * 16, 1), 512)
 
-    def test_target_and_draft_decode_use_distinct_workspaces(self):
+    def test_decode_and_prefill_of_target_and_draft_use_distinct_workspaces(self):
         sizes = {
-            _workspace_size_for_namespace(4096, speculative=speculative)
+            _workspace_size_for_namespace(
+                4096, speculative=speculative, prefill=prefill
+            )
             for speculative in (False, True)
+            for prefill in (False, True)
         }
-        self.assertEqual(sizes, {4096, 4224})
+        self.assertEqual(sizes, {4096, 4224, 4352, 4480})
 
     def test_prefill_ag_expands_dp_counts_to_physical_source_ranks(self):
         self.assertEqual(
