@@ -37,6 +37,7 @@ from sglang.srt.layers.moe.utils import (
     get_flashinfer_a2a_dispatch_type,
     get_moe_runner_backend,
 )
+from sglang.srt.model_executor.runner_utils.capture_mode import get_is_capture_mode
 from sglang.srt.runtime_context import get_flags, get_parallel, get_schedule, get_spec
 from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
 
@@ -80,8 +81,10 @@ def _scattered_source_token_counts(
     return counts
 
 
-def _workspace_size_for_namespace(workspace_size: int, *, speculative: bool) -> int:
-    slot = int(speculative)
+def _workspace_size_for_namespace(
+    workspace_size: int, *, speculative: bool, prefill: bool = False
+) -> int:
+    slot = int(speculative) + 2 * int(prefill)
     return workspace_size + slot * _WORKSPACE_NAMESPACE_ALIGNMENT
 
 
@@ -225,12 +228,16 @@ class FlashinferDispatcher(BaseDispatcher):
         else:
             total_dispatch_payload_size_per_token = bf16_dispatch_payload_size_per_token
         combine_payload_size_per_token = hidden_size * 2  # bf16 hidden states
-        self.workspace_size = moe_a2a_get_workspace_size_per_rank(
-            ep_size=self.ep_size,
-            max_num_tokens=self.max_num_tokens,
-            total_dispatch_payload_size_per_token=total_dispatch_payload_size_per_token,
-            combine_payload_size_per_token=combine_payload_size_per_token,
-        )
+
+        def workspace_size_for(max_num_tokens: int) -> int:
+            return moe_a2a_get_workspace_size_per_rank(
+                ep_size=self.ep_size,
+                max_num_tokens=max_num_tokens,
+                total_dispatch_payload_size_per_token=total_dispatch_payload_size_per_token,
+                combine_payload_size_per_token=combine_payload_size_per_token,
+            )
+
+        self.workspace_size = workspace_size_for(self.max_num_tokens)
 
         self.mapping = Mapping(
             rank=self.ep_rank,
@@ -244,23 +251,39 @@ class FlashinferDispatcher(BaseDispatcher):
         mnnvl_config = MnnvlConfig(comm_backend=TorchDistributedCommBackend(group))
         is_speculative_model = get_flags().moe.speculative_context
 
-        def make_moe_a2a() -> MoeAlltoAll:
-            # Target and draft decode graphs can coexist; prefill/mixed extend use
-            # AG+RS and do not lease MNNVL A2A workspaces.
+        def make_moe_a2a(max_num_tokens: int, *, prefill: bool) -> MoeAlltoAll:
+            # Target and draft decode graphs can coexist, and eager extend can
+            # overlap another stream, so each path leases its own MNNVL workspace
+            # and never shares A2A signal state with another.
             workspace_size = _workspace_size_for_namespace(
-                self.workspace_size,
+                workspace_size_for(max_num_tokens),
                 speculative=is_speculative_model,
+                prefill=prefill,
             )
             return MoeAlltoAll(
                 mapping=self.mapping,
-                max_num_tokens=self.max_num_tokens,
+                max_num_tokens=max_num_tokens,
                 top_k=self.router_topk,
                 num_experts=self.num_experts,
                 workspace_size_per_rank=workspace_size,
                 mnnvl_config=mnnvl_config,
             )
 
-        self.moe_a2a = make_moe_a2a()
+        self.moe_a2a = make_moe_a2a(self.max_num_tokens, prefill=False)
+
+        # Sized to one rank's prefill chunk; larger or graph-captured extend
+        # batches keep AG+RS.
+        self.prefill_moe_a2a = None
+        self.prefill_max_num_tokens = 0
+        if envs.SGLANG_ENABLE_FLASHINFER_PREFILL_A2A.get():
+            if cps and cps > 0:
+                self.prefill_max_num_tokens = cps
+                self.prefill_moe_a2a = make_moe_a2a(cps, prefill=True)
+            else:
+                logger.warning(
+                    "SGLANG_ENABLE_FLASHINFER_PREFILL_A2A needs chunked prefill "
+                    "to bound its workspace; extend batches keep AG+RS."
+                )
 
     def set_quant_config(self, quant_config: dict) -> None:
         super().set_quant_config(quant_config)
@@ -331,9 +354,76 @@ class FlashinferDispatcher(BaseDispatcher):
     def dispatch(
         self, hidden_states: torch.Tensor, topk_output: TopKOutput
     ) -> FlashinferDispatchOutput | StandardDispatchOutput:
-        if get_is_extend_in_batch():
-            return self._dispatch_prefill_allgather(hidden_states, topk_output)
-        self.active_moe_a2a = self.moe_a2a
+        if not get_is_extend_in_batch():
+            return self._dispatch_a2a(
+                hidden_states,
+                topk_output,
+                moe_a2a=self.moe_a2a,
+                max_num_tokens=self.max_num_tokens,
+            )
+        if self._prefill_a2a_fits(num_local_tokens=hidden_states.shape[0]):
+            return self._dispatch_a2a(
+                hidden_states,
+                topk_output,
+                moe_a2a=self.prefill_moe_a2a,
+                max_num_tokens=self.prefill_max_num_tokens,
+            )
+        return self._dispatch_prefill_allgather(hidden_states, topk_output)
+
+    def _prefill_a2a_fits(self, *, num_local_tokens: int) -> bool:
+        # Every input here is rank-uniform, so all EP ranks pick the same collective.
+        if self.prefill_moe_a2a is None or get_is_capture_mode():
+            return False
+        return (
+            self._runtime_max_tokens_per_rank(num_local_tokens=num_local_tokens)
+            <= self.prefill_max_num_tokens
+        )
+
+    def _runtime_max_tokens_per_rank(self, *, num_local_tokens: int) -> int:
+        # runtime_max_tokens_per_rank selection
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # MoeAlltoAll uses fixed-geometry buffers shaped
+        # [ep_size, runtime_max_tokens_per_rank, ...], so every EP rank must pass
+        # the SAME value. This code (Python) runs during eager forwards and during
+        # CUDA-graph *capture*; on *replay* dispatch() is not re-executed and the
+        # value baked at capture is reused. Two cases, both rank-invariant:
+        #
+        # Each EP source owns ceil(max(dp_global) / attn_tp_size) tokens; the
+        # shared maximum keeps graph geometry rank-uniform (issue #30242).
+        #
+        # Case 2 — x.shape[0]: no per-rank DP list (dp_global absent or scalar).
+        #   This is SP attention feeding EP (tokens are sequence-parallel scattered
+        #   uniformly, so x.shape[0] is already identical on every EP rank), a
+        #   single EP rank, or CUDA-graph capture of those. x.shape[0] is
+        #   rank-invariant here, so it is both correct and right-sized.
+        dp_global = get_dp_global_num_tokens()
+        if dp_global is not None and len(dp_global) > 1:
+            # Case 1
+            attn_tp_size = get_parallel().attn_tp_size
+            return _max_tokens_per_scattered_source(dp_global, attn_tp_size)
+        else:
+            # Case 2. Guard against the #30242 failure mode: DP attention must
+            # never land here with ep_size > 1, because there x.shape[0] differs
+            # across ranks and is NOT a safe fixed geometry. DP attention is
+            # routed to Case 1 via require_mlp_tp_gather=True; reaching here with
+            # DP attention on and ep_size > 1 means the DP all-gather was skipped
+            # (e.g. SGLANG_SCHEDULER_SKIP_ALL_GATHER, unsupported) -> fail fast.
+            assert not is_dp_attention_enabled() or self.ep_size == 1, (
+                "FlashInfer A2A: DP attention reached the x.shape[0] fallback "
+                f"with ep_size={self.ep_size} > 1 (dp_global={dp_global}); "
+                "runtime_max_tokens_per_rank would not be rank-invariant."
+            )
+            return num_local_tokens
+
+    def _dispatch_a2a(
+        self,
+        hidden_states: torch.Tensor,
+        topk_output: TopKOutput,
+        *,
+        moe_a2a: MoeAlltoAll,
+        max_num_tokens: int,
+    ) -> FlashinferDispatchOutput:
+        self.active_moe_a2a = moe_a2a
         # Block-wise FP8 runners quantize before GEMM, so keep dispatch/combine BF16;
         # FP4 retains its packed wire path keyed by input_global_scale.
         runner_backend = get_moe_runner_backend()
@@ -406,49 +496,16 @@ class FlashinferDispatcher(BaseDispatcher):
         payloads.append(topk_ids)
         payloads.append(topk_weights)
 
-        # runtime_max_tokens_per_rank selection
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # MoeAlltoAll uses fixed-geometry buffers shaped
-        # [ep_size, runtime_max_tokens_per_rank, ...], so every EP rank must pass
-        # the SAME value. This code (Python) runs during eager forwards and during
-        # CUDA-graph *capture*; on *replay* dispatch() is not re-executed and the
-        # value baked at capture is reused. Two cases, both rank-invariant:
-        #
-        # Each EP source owns ceil(max(dp_global) / attn_tp_size) tokens; the
-        # shared maximum keeps graph geometry rank-uniform (issue #30242).
-        #
-        # Case 2 — x.shape[0]: no per-rank DP list (dp_global absent or scalar).
-        #   This is SP attention feeding EP (tokens are sequence-parallel scattered
-        #   uniformly, so x.shape[0] is already identical on every EP rank), a
-        #   single EP rank, or CUDA-graph capture of those. x.shape[0] is
-        #   rank-invariant here, so it is both correct and right-sized.
-        dp_global = get_dp_global_num_tokens()
-        if dp_global is not None and len(dp_global) > 1:
-            # Case 1
-            attn_tp_size = get_parallel().attn_tp_size
-            self.runtime_max_tokens_per_rank = _max_tokens_per_scattered_source(
-                dp_global, attn_tp_size
-            )
-        else:
-            # Case 2. Guard against the #30242 failure mode: DP attention must
-            # never land here with ep_size > 1, because there x.shape[0] differs
-            # across ranks and is NOT a safe fixed geometry. DP attention is
-            # routed to Case 1 via require_mlp_tp_gather=True; reaching here with
-            # DP attention on and ep_size > 1 means the DP all-gather was skipped
-            # (e.g. SGLANG_SCHEDULER_SKIP_ALL_GATHER, unsupported) -> fail fast.
-            assert not is_dp_attention_enabled() or self.ep_size == 1, (
-                "FlashInfer A2A: DP attention reached the x.shape[0] fallback "
-                f"with ep_size={self.ep_size} > 1 (dp_global={dp_global}); "
-                "runtime_max_tokens_per_rank would not be rank-invariant."
-            )
-            self.runtime_max_tokens_per_rank = x.shape[0]
+        self.runtime_max_tokens_per_rank = self._runtime_max_tokens_per_rank(
+            num_local_tokens=x.shape[0]
+        )
 
         # MoeAlltoAll does not resize its max_num_tokens workspace; reject larger
         # runtime geometry here before it becomes an illegal memory access.
-        assert self.runtime_max_tokens_per_rank <= self.max_num_tokens, (
+        assert self.runtime_max_tokens_per_rank <= max_num_tokens, (
             "FlashInfer A2A runtime token geometry exceeds its fixed workspace: "
             f"runtime_max_tokens_per_rank={self.runtime_max_tokens_per_rank} > "
-            f"max_num_tokens={self.max_num_tokens}. Increase "
+            f"max_num_tokens={max_num_tokens}. Increase "
             "SGLANG_FLASHINFER_NUM_MAX_DISPATCH_TOKENS_PER_RANK to cover the "
             "largest mixed prefill and speculative-verify batch."
         )

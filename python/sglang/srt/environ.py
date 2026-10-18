@@ -1026,6 +1026,9 @@ class Envs:
     # Per-rank dispatch capacity of the FlashInfer MoE A2A dispatcher. Unset
     # means each call site keeps its own default.
     SGLANG_FLASHINFER_NUM_MAX_DISPATCH_TOKENS_PER_RANK = EnvInt(None)
+    # Route extend batches of the FlashInfer A2A dispatcher through A2A instead of
+    # a BF16 all-gather + reduce-scatter; costs one more workspace per EP rank.
+    SGLANG_ENABLE_FLASHINFER_PREFILL_A2A = EnvBool(False)
     # FlashInfer MegaMOE (generic moe_ep.MoEEpMegaLayer backend). Sizes the
     # per-rank symmetric workspace; must be >= the largest padded per-rank batch
     # (derived from cuda_graph_max_bs / chunked_prefill_size when unset).

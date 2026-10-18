@@ -73,6 +73,16 @@ import { DeepSeekV32Deployment } from "/src/snippets/autoregressive/deepseek-v32
     --quantization modelopt_fp4 --moe-runner-backend flashinfer_trtllm \
     --tool-call-parser deepseekv32 --reasoning-parser deepseek-v3
   ```
+- **NVFP4 high-throughput prefill on 8×B200 (PD prefill instance):** expert parallelism with DP attention, FlashInfer MoE all-to-all, and the CuTe DSL MoE runner. By default the FlashInfer dispatcher sends prefill batches through a BF16 all-gather + reduce-scatter of the whole node's tokens; `SGLANG_ENABLE_FLASHINFER_PREFILL_A2A=1` sends each token only to the ranks that own its experts, through a second all-to-all workspace sized to one rank's prefill chunk.
+  ```bash
+  SGLANG_ENABLE_FLASHINFER_PREFILL_A2A=1 SGLANG_FLASHINFER_NUM_MAX_DISPATCH_TOKENS_PER_RANK=8192 \
+  python -m sglang.launch_server --model nvidia/DeepSeek-V3.2-NVFP4 \
+    --tp 8 --dp 8 --ep 8 --enable-dp-attention --enable-dp-lm-head \
+    --quantization modelopt_fp4 --kv-cache-dtype fp8_e4m3 --enable-flashinfer-allreduce-fusion \
+    --moe-a2a-backend flashinfer --moe-runner-backend flashinfer_cutedsl \
+    --chunked-prefill-size 32768 --disaggregation-mode prefill
+  ```
+  Measured prefill-only (fixed input lengths, 1 output token, 512 requests in flight): 112.6k input tok/s per node at 3k input and 100.7k at 10k, against 94.0k and 86.2k with the all-gather path; GSM8K 0.955. Prefill batches larger than one rank's chunk fall back to the all-gather path.
 - **NCCL timeout:** Slow model loading → add `--dist-timeout 3600`.
 
 ## 4. Model Invocation
