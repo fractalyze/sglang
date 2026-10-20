@@ -143,6 +143,7 @@ def fused_marlin_moe(
     topk_ids: torch.Tensor,
     global_num_experts: int = -1,
     expert_map: Optional[torch.Tensor] = None,
+    skip_invalid_ids: Optional[bool] = None,
     g_idx1: Optional[torch.Tensor] = None,
     g_idx2: Optional[torch.Tensor] = None,
     sort_indices1: Optional[torch.Tensor] = None,
@@ -191,6 +192,11 @@ def fused_marlin_moe(
     - torch.Tensor: The output tensor after applying the MoE layer.
     """
     from sglang.srt.layers.moe.fused_moe_triton import moe_align_block_size
+
+    # -1 topk ids (experts on other ranks) are skipped and add nothing; on by default
+    # with an expert_map, and for callers whose ids are already local.
+    if skip_invalid_ids is None:
+        skip_invalid_ids = expert_map is not None
 
     assert hidden_states.shape[0] == gating_output.shape[0], "Number of tokens mismatch"
     assert hidden_states.shape[1] == w1.shape[1] * 16, "Hidden size mismatch w1"
@@ -246,7 +252,7 @@ def fused_marlin_moe(
     if (
         M == 1
         and topk <= 32
-        and expert_map is None
+        and not skip_invalid_ids
         # The JIT kernel is int32-only; torch-native topk emits int64 -- let
         # that (test-only) shape take the generic path instead of casting.
         and topk_ids.dtype == torch.int32
@@ -320,7 +326,7 @@ def fused_marlin_moe(
         moe_block_size=block_size_m,
         top_k=topk,
         mul_topk_weights=False,
-        is_ep=expert_map is not None,
+        is_ep=skip_invalid_ids,
         b_q_type=scalar_type1,
         size_m=M,
         size_n=gemm1_n,
@@ -362,7 +368,7 @@ def fused_marlin_moe(
     else:
         raise ValueError(f"Unsupported activation: {activation=}, with {is_gated=}")
 
-    if expert_map is not None:
+    if skip_invalid_ids:
         intermediate_cache3.zero_()
 
     intermediate_cache3 = moe_wna16_marlin_gemm(
@@ -383,7 +389,7 @@ def fused_marlin_moe(
         moe_block_size=block_size_m,
         top_k=1,
         mul_topk_weights=True,
-        is_ep=expert_map is not None,
+        is_ep=skip_invalid_ids,
         b_q_type=scalar_type2,
         size_m=M * topk,
         size_n=K,
