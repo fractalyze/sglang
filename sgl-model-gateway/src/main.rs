@@ -170,6 +170,12 @@ struct CliArgs {
     #[arg(long, default_value_t = 67108864, help_heading = "Routing Policy")]
     max_tree_size: usize,
 
+    /// Cache-aware routing by prefill cost: when > 0, a balanced request goes to the worker with the
+    /// least uncached prompt plus estimated queued prefill (prompt chars), the queue draining at this
+    /// many chars per second per worker (its prefill rate). 0 keeps longest-prefix-match routing
+    #[arg(long, default_value_t = 0.0, help_heading = "Routing Policy")]
+    prefill_cost_drain_chars_per_sec: f64,
+
     /// Maximum idle time in seconds before eviction (for manual policy)
     #[arg(long, default_value_t = 14400, help_heading = "Routing Policy")]
     max_idle_secs: u64,
@@ -766,6 +772,7 @@ impl CliArgs {
                 balance_rel_threshold: self.balance_rel_threshold,
                 eviction_interval_secs: self.eviction_interval,
                 max_tree_size: self.max_tree_size,
+                prefill_cost_drain_chars_per_sec: self.prefill_cost_drain_chars_per_sec,
             },
             "power_of_two" => PolicyConfig::PowerOfTwo {
                 load_check_interval_secs: 5,

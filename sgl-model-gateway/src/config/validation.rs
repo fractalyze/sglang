@@ -157,6 +157,7 @@ impl ConfigValidator {
                 balance_rel_threshold,
                 eviction_interval_secs,
                 max_tree_size,
+                prefill_cost_drain_chars_per_sec,
             } => {
                 if !(0.0..=1.0).contains(cache_threshold) {
                     return Err(ConfigError::InvalidValue {
@@ -171,6 +172,16 @@ impl ConfigValidator {
                         field: "balance_rel_threshold".to_string(),
                         value: balance_rel_threshold.to_string(),
                         reason: "Must be >= 1.0".to_string(),
+                    });
+                }
+
+                if !(prefill_cost_drain_chars_per_sec.is_finite()
+                    && *prefill_cost_drain_chars_per_sec >= 0.0)
+                {
+                    return Err(ConfigError::InvalidValue {
+                        field: "prefill_cost_drain_chars_per_sec".to_string(),
+                        value: prefill_cost_drain_chars_per_sec.to_string(),
+                        reason: "Must be a finite number >= 0 (0 disables)".to_string(),
                     });
                 }
 
@@ -729,10 +740,34 @@ mod tests {
                 balance_rel_threshold: 1.1,
                 eviction_interval_secs: 60,
                 max_tree_size: 1000,
+                prefill_cost_drain_chars_per_sec: 0.0,
             },
         );
 
         assert!(ConfigValidator::validate(&config).is_err());
+    }
+
+    #[test]
+    fn test_validate_cache_aware_prefill_cost_drain_rate() {
+        let config_with = |drain: f64| {
+            RouterConfig::new(
+                RoutingMode::Regular {
+                    worker_urls: vec!["http://worker1:8000".to_string()],
+                },
+                PolicyConfig::CacheAware {
+                    cache_threshold: 0.5,
+                    balance_abs_threshold: 32,
+                    balance_rel_threshold: 1.1,
+                    eviction_interval_secs: 60,
+                    max_tree_size: 1000,
+                    prefill_cost_drain_chars_per_sec: drain,
+                },
+            )
+        };
+        assert!(ConfigValidator::validate(&config_with(0.0)).is_ok());
+        assert!(ConfigValidator::validate(&config_with(22000.0)).is_ok());
+        assert!(ConfigValidator::validate(&config_with(-1.0)).is_err());
+        assert!(ConfigValidator::validate(&config_with(f64::NAN)).is_err());
     }
 
     #[test]
@@ -748,6 +783,7 @@ mod tests {
                 balance_rel_threshold: 1.1,
                 eviction_interval_secs: 60,
                 max_tree_size: 1000,
+                prefill_cost_drain_chars_per_sec: 0.0,
             },
         );
 
@@ -802,6 +838,7 @@ mod tests {
                 balance_rel_threshold: 1.1,
                 eviction_interval_secs: 60,
                 max_tree_size: 1000,
+                prefill_cost_drain_chars_per_sec: 0.0,
             },
         );
 
@@ -846,6 +883,7 @@ mod tests {
                     balance_rel_threshold: 1.1,
                     eviction_interval_secs: 60,
                     max_tree_size: 1000,
+                    prefill_cost_drain_chars_per_sec: 0.0,
                 }),
                 decode_policy: Some(PolicyConfig::PowerOfTwo {
                     load_check_interval_secs: 60,

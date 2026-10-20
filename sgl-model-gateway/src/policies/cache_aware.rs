@@ -60,7 +60,7 @@
     during the next eviction cycle.
 */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -100,6 +100,45 @@ fn tree_key_for_worker(worker: &dyn Worker) -> String {
     )
 }
 
+/// Estimated prefill queued on each worker, in prompt chars (the tree's unit):
+/// a routed request adds its uncached chars, and each worker drains at
+/// `drain_chars_per_sec`. Open loop: nothing corrects a mistuned rate.
+#[derive(Debug)]
+struct PrefillBacklog {
+    drain_chars_per_sec: f64,
+    queued: DashMap<String, (f64, Instant)>,
+}
+
+impl PrefillBacklog {
+    fn new(drain_chars_per_sec: f64) -> Self {
+        Self {
+            drain_chars_per_sec,
+            queued: DashMap::new(),
+        }
+    }
+
+    fn get(&self, worker_url: &str, now: Instant) -> f64 {
+        self.queued
+            .get(worker_url)
+            .map(|entry| self.drained(*entry, now))
+            .unwrap_or(0.0)
+    }
+
+    fn add(&self, worker_url: &str, chars: usize, now: Instant) {
+        let mut entry = self
+            .queued
+            .entry(worker_url.to_string())
+            .or_insert((0.0, now));
+        let remaining = self.drained(*entry, now);
+        *entry = (remaining + chars as f64, now);
+    }
+
+    fn drained(&self, (chars, since): (f64, Instant), now: Instant) -> f64 {
+        let elapsed = now.saturating_duration_since(since).as_secs_f64();
+        (chars - elapsed * self.drain_chars_per_sec).max(0.0)
+    }
+}
+
 /// Cache-aware routing policy
 ///
 /// Routes requests based on cache affinity when load is balanced,
@@ -114,6 +153,9 @@ pub struct CacheAwarePolicy {
     trees: Arc<DashMap<String, Arc<Tree>>>,
     mesh_sync: OptionalMeshSyncManager,
     _eviction_task: Option<PeriodicTask>,
+    /// When set, a balanced request goes to the worker with the least
+    /// (uncached prompt + queued prefill) instead of the longest match.
+    prefill_backlog: Option<PrefillBacklog>,
 }
 
 impl CacheAwarePolicy {
@@ -122,6 +164,8 @@ impl CacheAwarePolicy {
     }
 
     pub fn with_config(config: CacheAwareConfig) -> Self {
+        let prefill_backlog = (config.prefill_cost_drain_chars_per_sec > 0.0)
+            .then(|| PrefillBacklog::new(config.prefill_cost_drain_chars_per_sec));
         let trees = Arc::new(DashMap::<String, Arc<Tree>>::new());
 
         // Start background eviction thread if configured
@@ -154,6 +198,47 @@ impl CacheAwarePolicy {
             trees,
             mesh_sync: None,
             _eviction_task: eviction_task,
+            prefill_backlog,
+        }
+    }
+
+    /// The healthy worker with the least uncached prompt plus queued prefill
+    /// (ties: fewest in-flight requests), and the chars it must prefill.
+    fn select_worker_min_prefill_cost(
+        tree: &Tree,
+        backlog: &PrefillBacklog,
+        workers: &[Arc<dyn Worker>],
+        healthy_indices: &[usize],
+        text: &str,
+        now: Instant,
+    ) -> Option<(usize, usize)> {
+        let input_chars = text.chars().count();
+        healthy_indices
+            .iter()
+            .map(|&idx| {
+                let url = workers[idx].url();
+                let matched = tree.prefix_match_tenant_char_count(text, url);
+                let uncached = input_chars.saturating_sub(matched);
+                let cost = uncached as f64 + backlog.get(url, now);
+                (idx, uncached, cost, workers[idx].load())
+            })
+            .min_by(|a, b| a.2.total_cmp(&b.2).then(a.3.cmp(&b.3)))
+            .map(|(idx, uncached, _, _)| (idx, uncached))
+    }
+
+    /// Record `text` as cached on `worker_url`, locally and on the mesh if enabled.
+    fn insert_and_sync(&self, tree: &Tree, tree_key: &str, text: &str, worker_url: &str) {
+        tree.insert(text, worker_url);
+        if let Some(ref mesh_sync) = self.mesh_sync {
+            use smg_mesh::tree_ops::TreeInsertOp;
+            let op = TreeOperation::Insert(TreeInsertOp {
+                text: text.to_string(),
+                tenant: worker_url.to_string(),
+            });
+            let mesh_key = Self::normalize_mesh_model_id(tree_key);
+            if let Err(e) = mesh_sync.sync_tree_operation(mesh_key.to_string(), op) {
+                warn!("Failed to sync tree insert operation to mesh: {}", e);
+            }
         }
     }
 
@@ -349,22 +434,8 @@ impl CacheAwarePolicy {
             let tree = self.trees.get(tree_key).map(|entry| entry.value().clone());
 
             if let Some(tree) = tree {
-                let worker_url = workers[min_load_idx].url();
                 // Now we can work with the tree without holding the HashMap lock
-                tree.insert(text, worker_url);
-
-                // Sync insert operation to mesh if enabled (no-op if mesh is not enabled)
-                if let Some(ref mesh_sync) = self.mesh_sync {
-                    use smg_mesh::tree_ops::TreeInsertOp;
-                    let op = TreeOperation::Insert(TreeInsertOp {
-                        text: text.to_string(),
-                        tenant: worker_url.to_string(),
-                    });
-                    let mesh_key = Self::normalize_mesh_model_id(tree_key);
-                    if let Err(e) = mesh_sync.sync_tree_operation(mesh_key.to_string(), op) {
-                        warn!("Failed to sync tree insert operation to mesh: {}", e);
-                    }
-                }
+                self.insert_and_sync(&tree, tree_key, text, workers[min_load_idx].url());
             } else {
                 warn!(
                     "cache_aware: no tree found for key '{}', skipping cache update — \
@@ -431,6 +502,23 @@ impl LoadBalancingPolicy for CacheAwarePolicy {
         let tree = self.trees.get(&tree_key).map(|entry| entry.value().clone());
 
         if let Some(tree) = tree {
+            if let Some(backlog) = &self.prefill_backlog {
+                let now = Instant::now();
+                let (idx, uncached) = Self::select_worker_min_prefill_cost(
+                    &tree,
+                    backlog,
+                    workers,
+                    &healthy_indices,
+                    text,
+                    now,
+                )?;
+                let url = workers[idx].url();
+                backlog.add(url, uncached, now);
+                self.insert_and_sync(&tree, &tree_key, text, url);
+                workers[idx].increment_processed();
+                return Some(idx);
+            }
+
             // Now we work with the tree without holding the HashMap lock
             // Use prefix_match_with_counts to avoid redundant chars().count() calls
             let result = tree.prefix_match_with_counts(text);
@@ -467,21 +555,7 @@ impl LoadBalancingPolicy for CacheAwarePolicy {
             };
 
             if let Some(idx) = selected_idx {
-                // Update the tree with this request (use worker URL directly, no allocation)
-                tree.insert(text, workers[idx].url());
-
-                // Sync insert operation to mesh if enabled (no-op if mesh is not enabled)
-                if let Some(ref mesh_sync) = self.mesh_sync {
-                    use smg_mesh::tree_ops::TreeInsertOp;
-                    let op = TreeOperation::Insert(TreeInsertOp {
-                        text: text.to_string(),
-                        tenant: workers[idx].url().to_string(),
-                    });
-                    let mesh_key = Self::normalize_mesh_model_id(&tree_key);
-                    if let Err(e) = mesh_sync.sync_tree_operation(mesh_key.to_string(), op) {
-                        warn!("Failed to sync tree insert operation to mesh: {}", e);
-                    }
-                }
+                self.insert_and_sync(&tree, &tree_key, text, workers[idx].url());
 
                 // Increment processed counter
                 workers[idx].increment_processed();
@@ -558,8 +632,97 @@ impl Default for CacheAwarePolicy {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::core::{BasicWorkerBuilder, WorkerType};
+
+    fn regular_workers(urls: &[&str]) -> Vec<Arc<dyn Worker>> {
+        urls.iter()
+            .map(|url| {
+                Arc::new(
+                    BasicWorkerBuilder::new(*url)
+                        .worker_type(WorkerType::Regular)
+                        .build(),
+                ) as Arc<dyn Worker>
+            })
+            .collect()
+    }
+
+    fn prefill_cost_policy(drain_chars_per_sec: f64) -> CacheAwarePolicy {
+        CacheAwarePolicy::with_config(CacheAwareConfig {
+            eviction_interval_secs: 0,
+            prefill_cost_drain_chars_per_sec: drain_chars_per_sec,
+            ..Default::default()
+        })
+    }
+
+    async fn route(policy: &CacheAwarePolicy, workers: &[Arc<dyn Worker>], text: &str) -> usize {
+        policy
+            .select_worker(
+                workers,
+                &SelectWorkerInfo {
+                    request_text: Some(text),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+    }
+
+    #[test]
+    fn test_prefill_backlog_drains_at_its_rate() {
+        let backlog = PrefillBacklog::new(400.0);
+        let t0 = Instant::now();
+        backlog.add("w1", 1000, t0);
+        assert_eq!(backlog.get("w1", t0 + Duration::from_secs(1)), 600.0);
+        assert_eq!(backlog.get("w1", t0 + Duration::from_secs(5)), 0.0);
+        assert_eq!(backlog.get("w2", t0), 0.0);
+        // A later add starts from what is left, not from the original amount.
+        backlog.add("w1", 100, t0 + Duration::from_secs(2));
+        assert_eq!(backlog.get("w1", t0 + Duration::from_secs(2)), 300.0);
+    }
+
+    #[tokio::test]
+    async fn test_prefill_cost_keeps_a_prefix_on_its_worker_while_cheap() {
+        // Draining fast enough that each prompt's prefill is done before the next.
+        let policy = prefill_cost_policy(1e12);
+        let workers = regular_workers(&["http://w1:8000", "http://w2:8000"]);
+        policy.init_workers(&workers);
+        let prefix = "system prompt ".repeat(50);
+        let first = route(&policy, &workers, &format!("{prefix}turn one")).await;
+        let second = route(&policy, &workers, &format!("{prefix}turn two")).await;
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_prefill_cost_moves_a_hot_prefix_off_a_backlogged_worker() {
+        let workers = regular_workers(&["http://w1:8000", "http://w2:8000"]);
+        let tree = Tree::new();
+        let prefix = "character card ".repeat(20); // 300 chars
+        tree.insert(&prefix, workers[0].url());
+        let backlog = PrefillBacklog::new(1.0);
+        let now = Instant::now();
+        let text = format!("{prefix}hello");
+        let pick = |now| {
+            CacheAwarePolicy::select_worker_min_prefill_cost(
+                &tree,
+                &backlog,
+                &workers,
+                &[0, 1],
+                &text,
+                now,
+            )
+        };
+
+        // Idle workers: the prefix's home prefills 5 chars, the other 305.
+        assert_eq!(pick(now), Some((0, 5)));
+        // Home queued with more than re-prefilling the prefix elsewhere costs.
+        backlog.add(workers[0].url(), 1_000, now);
+        assert_eq!(pick(now), Some((1, 305)));
+        // Once the backlog drains below that, the prefix goes home again.
+        assert_eq!(pick(now + Duration::from_secs(800)), Some((0, 5)));
+    }
 
     #[tokio::test]
     async fn test_cache_aware_with_balanced_load() {
@@ -634,6 +797,7 @@ mod tests {
             balance_rel_threshold: 2.0,
             eviction_interval_secs: 0, // Disable eviction thread
             max_tree_size: 10000,
+            prefill_cost_drain_chars_per_sec: 0.0,
         });
 
         let worker1 = BasicWorkerBuilder::new("http://w1:8000")
@@ -673,6 +837,7 @@ mod tests {
             balance_rel_threshold: 2.0,
             eviction_interval_secs: 0,
             max_tree_size: 10000,
+            prefill_cost_drain_chars_per_sec: 0.0,
         });
 
         let num_workers = 5;

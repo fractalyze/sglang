@@ -25,6 +25,7 @@ impl PolicyFactory {
                 balance_rel_threshold,
                 eviction_interval_secs,
                 max_tree_size,
+                prefill_cost_drain_chars_per_sec,
             } => {
                 let config = CacheAwareConfig {
                     cache_threshold: *cache_threshold,
@@ -32,6 +33,7 @@ impl PolicyFactory {
                     balance_rel_threshold: *balance_rel_threshold,
                     eviction_interval_secs: *eviction_interval_secs,
                     max_tree_size: *max_tree_size,
+                    prefill_cost_drain_chars_per_sec: *prefill_cost_drain_chars_per_sec,
                 };
                 Arc::new(CacheAwarePolicy::with_config(config))
             }
@@ -114,6 +116,7 @@ mod tests {
             balance_rel_threshold: 1.5,
             eviction_interval_secs: 30,
             max_tree_size: 1000,
+            prefill_cost_drain_chars_per_sec: 0.0,
         });
         assert_eq!(policy.name(), "cache_aware");
 

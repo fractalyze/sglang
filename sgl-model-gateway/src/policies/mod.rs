@@ -101,6 +101,9 @@ pub struct CacheAwareConfig {
     pub balance_rel_threshold: f32,
     pub eviction_interval_secs: u64,
     pub max_tree_size: usize,
+    /// Drain rate of the per-worker prefill backlog estimate, in prompt chars
+    /// per second; 0 keeps longest-match routing (see `CacheAwarePolicy`).
+    pub prefill_cost_drain_chars_per_sec: f64,
 }
 
 impl Default for CacheAwareConfig {
@@ -111,6 +114,7 @@ impl Default for CacheAwareConfig {
             balance_rel_threshold: 1.1,
             eviction_interval_secs: 30,
             max_tree_size: 10000,
+            prefill_cost_drain_chars_per_sec: 0.0,
         }
     }
 }
