@@ -125,10 +125,14 @@ impl PrefillBacklog {
     }
 
     fn add(&self, worker_url: &str, chars: usize, now: Instant) {
-        let mut entry = self
-            .queued
-            .entry(worker_url.to_string())
-            .or_insert((0.0, now));
+        // get_mut first: the key almost always exists, so skip entry()'s String alloc.
+        let mut entry = match self.queued.get_mut(worker_url) {
+            Some(entry) => entry,
+            None => self
+                .queued
+                .entry(worker_url.to_string())
+                .or_insert((0.0, now)),
+        };
         let remaining = self.drained(*entry, now);
         *entry = (remaining + chars as f64, now);
     }
