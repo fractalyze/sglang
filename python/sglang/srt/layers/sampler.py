@@ -722,6 +722,21 @@ class Sampler(nn.Module):
                 op=dist.ReduceOp.MIN,
                 group=self.tp_sync_group,
             )
+        if (
+            self.cp_sync_group is not None
+            and dist.get_world_size(self.cp_sync_group) > 1
+        ):
+            # The attention-CP replicas of a DP shard sample from logits that
+            # are not bit-identical (with --enable-dp-lm-head each computes its
+            # own), so they can pick different tokens, and a replica that alone
+            # samples EOS finishes the request early and the batches diverge.
+            # Take CP rank 0's tokens: it returns the shard's output, so its
+            # logprobs and sampling-mask weights stay those of the emitted token.
+            torch.distributed.broadcast(
+                batch_next_token_ids,
+                src=dist.get_global_rank(self.cp_sync_group, 0),
+                group=self.cp_sync_group,
+            )
 
     def compute_logprobs_only(
         self,

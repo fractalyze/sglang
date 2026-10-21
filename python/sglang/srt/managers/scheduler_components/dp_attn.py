@@ -11,7 +11,11 @@ from sglang.srt.configs.model_config import ModelConfig
 from sglang.srt.distributed.utils import all_gather_single
 from sglang.srt.environ import envs
 from sglang.srt.layers.cp.utils import get_cp_strategy
-from sglang.srt.layers.dp_attention import dp_gather_width, world_dp_gather_enabled
+from sglang.srt.layers.dp_attention import (
+    dp_gather_width,
+    dp_slot_in,
+    world_dp_gather_enabled,
+)
 from sglang.srt.layers.moe.utils import get_moe_a2a_backend
 from sglang.srt.managers.schedule_batch import ScheduleBatch
 from sglang.srt.managers.scheduler_components.metrics_reporter import (
@@ -655,10 +659,17 @@ def prepare_mlp_sync_batch_raw(
         # Health-check probes run on an otherwise idle engine; recording them
         # would show maximal imbalance where there is no load.
         if need_idle_batch and not mlp_sync_info.any_health_check:
+            # Read this rank's counts from its DP group's gathered row, the
+            # row the global max is taken over. Only each group's first row
+            # is kept, and the attention-CP ranks of a group count the same
+            # tokens only while their batches agree: a CP rank that drifted
+            # would record a negative imbalance, which the Prometheus counter
+            # rejects.
+            slot = dp_slot_in(mlp_sync_info.global_num_tokens)
             local_batch.dp_balance_stats = DPBalanceStats.create(
-                local_tokens=num_tokens,
+                local_tokens=mlp_sync_info.global_num_tokens[slot],
                 global_num_tokens=mlp_sync_info.global_num_tokens,
-                local_attention_pairs=mlp_sync_info.attention_pairs,
+                local_attention_pairs=mlp_sync_info.global_attention_pairs[slot],
                 global_attention_pairs=mlp_sync_info.global_attention_pairs,
                 sync_wait_seconds=sync_wait_seconds,
             )

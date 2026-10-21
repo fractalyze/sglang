@@ -154,6 +154,85 @@ def default_tree_mask_mode() -> TreeMaskMode:
     return TreeMaskMode.QLEN_ONLY if _is_cpu else TreeMaskMode.FULL_MASK
 
 
+def _cp_replicas_need_sync() -> bool:
+    """Whether the attention-CP ranks of a DP shard must share their results.
+
+    Attention CP splits only prefill (extend) forwards. Under attention DP the
+    CP ranks of a DP shard hold the same requests and the same replicated KV,
+    and each one runs the draft, the target verify and decode by itself.
+    Nothing makes these replicas bit-identical (with --enable-dp-lm-head each
+    computes its own logits), so they can draft, accept and sample different
+    tokens.
+    """
+    from sglang.srt.runtime_context import get_parallel
+
+    parallel = get_parallel()
+    return parallel.attn_dp_enabled and parallel.attn_cp_size > 1
+
+
+def _broadcast_from_shard_leader(*tensors: torch.Tensor) -> None:
+    """Overwrite the tensors in place with the DP shard's first rank's copy.
+
+    The shard's ranks are its attention-TP group times, under attention DP,
+    its attention-CP group; no single group spans both, so the attention-TP
+    leaders first share the tensors along CP, then each attention-TP group
+    broadcasts them (the same order as ``attn_cp_tp_broadcast_pyobj``). The
+    tensors must be contiguous.
+    """
+    from sglang.srt.layers.dp_attention import get_dp_tp_group
+    from sglang.srt.runtime_context import get_parallel
+
+    tp_group = get_dp_tp_group()
+    if _cp_replicas_need_sync() and tp_group.rank_in_group == 0:
+        cp_group = get_parallel().attn_cp_group
+        # A draft that owns its attention runs in a scope without CP groups.
+        if cp_group is not None and cp_group.world_size > 1:
+            for t in tensors:
+                cp_group.broadcast(t, src=0)
+    if tp_group.world_size > 1:
+        for t in tensors:
+            tp_group.broadcast(t, src=0)
+
+
+def broadcast_draft_tree(
+    parent_list: torch.Tensor,
+    top_scores_index: torch.Tensor,
+    draft_tokens: torch.Tensor,
+    *,
+    topk: int,
+    num_steps: int,
+    num_draft_tokens: int,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Make every attention-CP rank of a DP shard verify its first rank's drafts.
+
+    Each CP replica drafts from its own hidden states, so the replicas can
+    propose different tokens. Sharing the verify result keeps them in
+    lockstep, but a replica whose draft differed at an accepted position would
+    keep the KV it wrote there for its own token, not the committed one, and a
+    later prefill-CP extend over that prefix (a multi-turn cache hit) would
+    all-gather K/V computed against it. A topk-1 chain that keeps every
+    drafted token has a fixed topology, so only its tokens are shared.
+
+    Drafts that own their attention (EAGLE3 under attention DP) build the
+    tree in a scope without the CP group and are not covered.
+
+    Returns (parent_list, top_scores_index, draft_tokens); a tensor is a copy
+    only when the input was not contiguous.
+    """
+    if not _cp_replicas_need_sync():
+        return parent_list, top_scores_index, draft_tokens
+    # contiguous() is a no-op on a contiguous tensor, so the broadcast below
+    # overwrites the caller's tensors in that (usual) case.
+    draft_tokens = draft_tokens.contiguous()
+    shared = [draft_tokens]
+    if not (topk == 1 and num_draft_tokens == num_steps + 1):
+        parent_list = parent_list.contiguous()
+        top_scores_index = top_scores_index.contiguous()
+        shared += [t for t in (parent_list, top_scores_index) if t.numel() > 0]
+    _broadcast_from_shard_leader(*shared)
+    return parent_list, top_scores_index, draft_tokens
+
+
 def build_tree_kernel_efficient(
     bonus_tokens: torch.Tensor,
     parent_list: List[torch.Tensor],
@@ -752,10 +831,6 @@ def eagle_sample(
     Verify and find accepted tokens based on logits output and batch
     (which contains spec decoding information).
     """
-    from sglang.srt.layers.dp_attention import (
-        is_dp_attention_enabled,
-    )
-    from sglang.srt.runtime_context import get_parallel
     from sglang.srt.sampling.penaltylib.repetition_penalty import (
         apply_scaling_penalties,
     )
@@ -879,20 +954,14 @@ def eagle_sample(
             topk=verify_input.tree_topk,
         )
 
-        if _is_hip:
+        if _is_hip or _cp_replicas_need_sync():
             # On ROCm, the per-rank draft tokens can differ, so ranks accept a
             # different number of drafts, desynchronize the committed seq_lens, and
-            # deadlock the next TP collective. Broadcast from rank 0 to ensure
-            # consistency, the same way the sampling branch below does.
-            tp_group = (
-                get_parallel().attn_tp_group
-                if is_dp_attention_enabled()
-                else get_parallel().tp_group
-            )
-            if tp_group.world_size > 1:
-                tp_group.broadcast(predict, src=0)
-                tp_group.broadcast(accept_index, src=0)
-                tp_group.broadcast(num_correct_drafts, src=0)
+            # deadlock the next TP collective. The attention-CP replicas of a DP
+            # shard verify on logits that are not bit-identical, so their argmax
+            # can differ too. Broadcast from rank 0 to ensure consistency, the
+            # same way the sampling branch below does.
+            _broadcast_from_shard_leader(predict, accept_index, num_correct_drafts)
     elif _can_use_sparse_uno_tree_target_sampling(
         uno_target_max_top_k,
         sampling_info,
@@ -920,15 +989,7 @@ def eagle_sample(
             topk=verify_input.tree_topk,
         )
 
-        tp_group = (
-            get_parallel().attn_tp_group
-            if is_dp_attention_enabled()
-            else get_parallel().tp_group
-        )
-        if tp_group.world_size > 1:
-            tp_group.broadcast(predict, src=0)
-            tp_group.broadcast(accept_index, src=0)
-            tp_group.broadcast(num_correct_drafts, src=0)
+        _broadcast_from_shard_leader(predict, accept_index, num_correct_drafts)
     else:
         if _is_npu:
             from sgl_kernel_npu.sample import (
@@ -1045,19 +1106,12 @@ def eagle_sample(
             coins_for_final_sampling,
         )
 
-        # Sync sampling results across TP ranks: different GPUs may
-        # produce slightly different target_probs due to floating-point
-        # non-determinism in softmax/top_k/top_p, causing different
+        # Sync sampling results across the DP shard's ranks: different GPUs
+        # may produce slightly different target_probs due to floating-point
+        # non-determinism in softmax/top_k/top_p (and attention-CP replicas
+        # verify on logits that are not bit-identical), causing different
         # sampled tokens. Broadcast from rank 0 to ensure consistency.
-        tp_group = (
-            get_parallel().attn_tp_group
-            if is_dp_attention_enabled()
-            else get_parallel().tp_group
-        )
-        if tp_group.world_size > 1:
-            tp_group.broadcast(predict, src=0)
-            tp_group.broadcast(accept_index, src=0)
-            tp_group.broadcast(num_correct_drafts, src=0)
+        _broadcast_from_shard_leader(predict, accept_index, num_correct_drafts)
 
     if SIMULATE_ACC_LEN > 0:
         # Do simulation. The helper builds (and returns) a replacement

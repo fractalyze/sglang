@@ -26,6 +26,7 @@ from sglang.srt.runtime_context import mamba_track_grid
 from sglang.srt.speculative.eagle_info import EagleDraftInput, EagleVerifyInput
 from sglang.srt.speculative.eagle_utils import (
     TreeMaskMode,
+    broadcast_draft_tree,
     build_tree_kernel_efficient,
     eagle_prepare_for_verify,
     eagle_sample,
@@ -420,6 +421,15 @@ def build_eagle_verify_input(
             num_draft_tokens,
             device,
         )
+
+    parent_list, top_scores_index, draft_tokens = broadcast_draft_tree(
+        parent_list,
+        top_scores_index,
+        draft_tokens,
+        topk=topk,
+        num_steps=num_steps,
+        num_draft_tokens=num_draft_tokens,
+    )
 
     # Write straight into the backend's buffer when it owns one and this batch
     # fits; an eager batch past the captured max_bs falls back to allocating.
