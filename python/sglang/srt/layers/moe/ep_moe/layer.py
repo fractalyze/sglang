@@ -62,11 +62,12 @@ def _runs_marlin_moe(quant_method) -> bool:
         ModelOptNvFp4FusedMoEMethod,
     )
 
-    # create_moe_runner (run by FusedMoE.__init__) has resolved the backend.
-    return (
-        isinstance(quant_method, ModelOptNvFp4FusedMoEMethod)
-        and quant_method._moe_runner_backend.is_marlin()
-    )
+    if not isinstance(quant_method, ModelOptNvFp4FusedMoEMethod):
+        return False
+    # create_moe_runner (run by FusedMoE.__init__) has built the runner, or left
+    # it None when FusedMoE.forward is never reached.
+    runner = getattr(quant_method, "runner", None)
+    return runner is not None and runner.runner_backend.is_marlin()
 
 
 logger = logging.getLogger(__name__)

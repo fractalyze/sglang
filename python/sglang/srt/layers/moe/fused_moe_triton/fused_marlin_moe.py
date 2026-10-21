@@ -143,7 +143,7 @@ def fused_marlin_moe(
     topk_ids: torch.Tensor,
     global_num_experts: int = -1,
     expert_map: Optional[torch.Tensor] = None,
-    skip_invalid_ids: Optional[bool] = None,
+    skip_invalid_ids: bool = False,
     g_idx1: Optional[torch.Tensor] = None,
     g_idx2: Optional[torch.Tensor] = None,
     sort_indices1: Optional[torch.Tensor] = None,
@@ -193,10 +193,9 @@ def fused_marlin_moe(
     """
     from sglang.srt.layers.moe.fused_moe_triton import moe_align_block_size
 
-    # -1 topk ids (experts on other ranks) are skipped and add nothing; on by default
-    # with an expert_map, and for callers whose ids are already local.
-    if skip_invalid_ids is None:
-        skip_invalid_ids = expert_map is not None
+    # -1 topk ids (experts on other ranks) are skipped and add nothing: always with an
+    # expert_map, and on request for callers whose ids are already local.
+    skip_invalid_ids = skip_invalid_ids or expert_map is not None
 
     assert hidden_states.shape[0] == gating_output.shape[0], "Number of tokens mismatch"
     assert hidden_states.shape[1] == w1.shape[1] * 16, "Hidden size mismatch w1"

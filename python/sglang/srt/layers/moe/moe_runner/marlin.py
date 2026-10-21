@@ -175,7 +175,7 @@ def _run_marlin(
     expert_map: Optional[torch.Tensor],
     global_num_experts: int,
     routed_scaling_factor: Optional[float],
-    skip_invalid_ids: Optional[bool] = None,
+    skip_invalid_ids: bool = False,
 ) -> torch.Tensor:
     from sglang.srt.layers.moe.fused_moe_triton.fused_marlin_moe import fused_marlin_moe
     from sglang.srt.layers.quantization.marlin_utils import marlin_make_workspace
