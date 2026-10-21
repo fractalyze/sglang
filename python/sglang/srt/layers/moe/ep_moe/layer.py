@@ -57,6 +57,19 @@ _is_fp8_fnuz = is_fp8_fnuz()
 _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 
 
+def _runs_marlin_moe(quant_method) -> bool:
+    from sglang.srt.layers.quantization.modelopt_quant import (
+        ModelOptNvFp4FusedMoEMethod,
+    )
+
+    if not isinstance(quant_method, ModelOptNvFp4FusedMoEMethod):
+        return False
+    # create_moe_runner (run by FusedMoE.__init__) has built the runner, or left
+    # it None when FusedMoE.forward is never reached.
+    runner = getattr(quant_method, "runner", None)
+    return runner is not None and runner.runner_backend.is_marlin()
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -134,6 +147,10 @@ class DeepEPMoE(FusedMoE):
         ):
             # MXFP4 experts (e.g. Kimi K3) on the DeepGEMM fp8_fp4 W4A8 path:
             # route through the modern FusedMoE runner (Mxfp4MoEMethod.apply).
+            self.deprecate_flag = True
+        elif _runs_marlin_moe(self.quant_method):
+            # NVFP4 experts before Blackwell run as Marlin W4A16; the
+            # ("deepep", "marlin") fused func consumes DeepEP's BF16 dispatch.
             self.deprecate_flag = True
         elif (
             quant_config is None

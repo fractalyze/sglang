@@ -61,6 +61,7 @@ class RouterArgs:
     balance_rel_threshold: float = 1.5
     eviction_interval_secs: int = 60
     max_tree_size: int = 2**26
+    prefill_cost_drain_chars_per_sec: float = 0.0
     max_idle_secs: int = 4 * 3600
     assignment_mode: str = "random"  # Mode for manual policy new routing key assignment
     max_payload_size: int = 512 * 1024 * 1024  # 512MB default for large batches
@@ -336,6 +337,15 @@ class RouterArgs:
             type=int,
             default=RouterArgs.max_tree_size,
             help="Maximum size of the approximation tree for cache-aware routing",
+        )
+        routing_group.add_argument(
+            f"--{prefix}prefill-cost-drain-chars-per-sec",
+            type=float,
+            default=RouterArgs.prefill_cost_drain_chars_per_sec,
+            help="Cache-aware routing by prefill cost: when > 0, send a balanced request to the "
+            "worker with the least uncached prompt plus estimated queued prefill (prompt chars), "
+            "the queue draining at this many chars per second per worker. 0 keeps "
+            "longest-prefix-match routing",
         )
         routing_group.add_argument(
             f"--{prefix}max-idle-secs",

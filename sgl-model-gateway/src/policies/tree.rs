@@ -628,11 +628,27 @@ impl Tree {
 
     #[allow(dead_code)]
     pub fn prefix_match_tenant(&self, text: &str, tenant: &str) -> String {
-        // Use slice-based traversal - no Vec<char> allocation
+        let (matched_chars, curr) = self.walk_tenant(text, tenant);
 
-        // Intern tenant ID once for efficient lookups
-        let tenant_id = intern_tenant(tenant);
+        // Only update timestamp if we found a match for the specified tenant.
+        // Update matched node only - ancestor propagation is unnecessary.
+        if curr.tenant_last_access_time.contains_key(tenant) {
+            let epoch = get_epoch();
+            curr.tenant_last_access_time
+                .insert(intern_tenant(tenant), epoch);
+        }
 
+        // Build result from original input using char count
+        take_chars(text, matched_chars)
+    }
+
+    /// Chars of `text` cached for `tenant`; a read-only probe (no access-time
+    /// update, no allocation), for comparing every tenant on each request.
+    pub fn prefix_match_tenant_char_count(&self, text: &str, tenant: &str) -> usize {
+        self.walk_tenant(text, tenant).0
+    }
+
+    fn walk_tenant(&self, text: &str, tenant: &str) -> (usize, NodeRef) {
         let mut remaining = text;
         let mut matched_chars = 0;
         let mut prev = Arc::clone(&self.root);
@@ -644,10 +660,7 @@ impl Tree {
 
             if let Some(matched_node) = child_node {
                 // Only continue matching if this node belongs to the specified tenant
-                if !matched_node
-                    .tenant_last_access_time
-                    .contains_key(tenant_id.as_ref())
-                {
+                if !matched_node.tenant_last_access_time.contains_key(tenant) {
                     break;
                 }
 
@@ -675,21 +688,7 @@ impl Tree {
             }
         }
 
-        let curr = prev;
-
-        // Only update timestamp if we found a match for the specified tenant.
-        // Update matched node only - ancestor propagation is unnecessary.
-        if curr
-            .tenant_last_access_time
-            .contains_key(tenant_id.as_ref())
-        {
-            let epoch = get_epoch();
-            curr.tenant_last_access_time
-                .insert(Arc::clone(&tenant_id), epoch);
-        }
-
-        // Build result from original input using char count
-        take_chars(text, matched_chars)
+        (matched_chars, prev)
     }
 
     /// Return the list of tenants for which this node is a leaf.

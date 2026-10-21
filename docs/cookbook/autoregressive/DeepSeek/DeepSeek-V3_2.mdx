@@ -83,6 +83,21 @@ import { DeepSeekV32Deployment } from "/src/snippets/autoregressive/deepseek-v32
     --chunked-prefill-size 32768 --disaggregation-mode prefill
   ```
   Measured prefill-only (fixed input lengths, 1 output token, 512 requests in flight): 112.6k input tok/s per node at 3k input and 100.7k at 10k, against 94.0k and 86.2k with the all-gather path; GSM8K 0.955. Prefill batches larger than one rank's chunk fall back to the all-gather path.
+- **FP8 chat serving with long prompts on one 8×H200 node (colocated):** the FP8 weights (~640 GB) leave no room for a one-node PD split, and plain TP8 replicates every request's latent KV on all eight GPUs (see [DP attention](../../../docs/advanced_features/dp_dpa_smg_guide)), so a node of 7k-token prompts runs out of KV at about 60 requests. The router's DP-aware cache-aware policy keeps a session's turns on the rank that cached its prefix, and the prefill delayer makes ranks prefill in the same pass instead of stalling each other's decode. In colocated DP-attention mode set the memory fraction explicitly, and note that `--chunked-prefill-size` and `--max-running-requests` are divided across DP ranks (32768 → 4096 per rank, 512 → 64 per rank):
+  ```bash
+  SGLANG_DEEPEP_NUM_MAX_DISPATCH_TOKENS_PER_RANK=512 \
+  python -m sglang.launch_server --model deepseek-ai/DeepSeek-V3.2 --port 30001 \
+    --tp 8 --dp 8 --ep 8 --enable-dp-attention --enable-dp-lm-head --enable-flashinfer-allreduce-fusion \
+    --kv-cache-dtype fp8_e4m3 --dsa-prefill-backend flashmla_sparse_q8 --dsa-decode-backend flashmla_kv \
+    --moe-a2a-backend deepep --deepep-mode auto --enable-prefill-delayer \
+    --chunked-prefill-size 32768 --mem-fraction-static 0.82 --max-running-requests 512 \
+    --speculative-algorithm EAGLE --speculative-num-steps 5 --speculative-eagle-topk 1 \
+    --speculative-num-draft-tokens 6 --cuda-graph-max-bs-decode 64 \
+    --enable-hierarchical-cache --hicache-ratio 4
+  python -m sglang_router.launch_router --worker-urls http://127.0.0.1:30001 \
+    --dp-aware --policy cache_aware --port 30000
+  ```
+  DeepEP's low-latency dispatch cap must cover the decode CUDA graph's largest verify batch (64 requests × 7 tokens here). Keep `--max-running-requests` at 8 × `--cuda-graph-max-bs-decode`: in our runs, more than 64 running requests on a rank sent the MTP draft's decode-side extend outside the CUDA graph, where the DSA indexer's DeepGEMM call asserted (`_batch_size == batch_size`) and every rank exited. Measured with 7.5k-token prompts (4.3k shared per 8-turn session) and 800 output tokens at 2.9 requests/s: the stock TP8 recipe queues (TTFT median 39 s at 2 requests/s); this recipe gives TTFT 2.7 s median and TPOT 19.5 ms (3.3× faster than without MTP; draft acceptance measured on random-token prompts), with GSM8K at 0.944. `--prefill-delayer-max-delay-passes` (default 30) trades TTFT for TPOT: at 10, TTFT median 1.6 s and TPOT 32 ms. HiCache keeps evicted session prefixes in host memory: on a multi-turn load whose history is about twice the GPU KV pool (600 sessions × 6 turns at 2.9 requests/s), it lifts the prefix-cache hit from 30% to 77%, TTFT median from 3.6 s to 1.7 s and TPOT from 37 ms to 19 ms.
 - **NCCL timeout:** Slow model loading → add `--dist-timeout 3600`.
 
 ## 4. Model Invocation
