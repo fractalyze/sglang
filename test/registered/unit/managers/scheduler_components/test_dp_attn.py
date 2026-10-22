@@ -103,7 +103,16 @@ class TestDPBalanceStats(CustomTestCase):
         get_idle_batch=None,
         sync_wait_carry=None,
         wait_seconds=None,
+        cp_peer_tokens: Optional[int] = None,
+        dp_rank: int = 0,
     ):
+        """Gather this rank's batch with one peer DP rank.
+
+        With ``cp_peer_tokens``, each DP rank is two attention-CP ranks and
+        this one is the second CP rank of DP rank ``dp_rank``: the gathered
+        row of its group is its CP leader's, which counts ``cp_peer_tokens``.
+        """
+        attn_cp_size = 1 if cp_peer_tokens is None else 2
         if reqs is None:
             # One-token rows, the shortest a decode row can be.
             reqs = [
@@ -131,7 +140,15 @@ class TestDPBalanceStats(CustomTestCase):
             peer[10] = (
                 peer_tokens if peer_attention_pairs is None else peer_attention_pairs
             )
-            output.copy_(torch.stack([local, peer]).flatten())
+            if cp_peer_tokens is None:
+                rows = [local, peer]
+            else:
+                leader = local.clone()
+                leader[0] = leader[1] = leader[10] = cp_peer_tokens
+                groups = [[peer, peer], [peer, peer]]
+                groups[dp_rank] = [leader, local]
+                rows = groups[0] + groups[1]
+            output.copy_(torch.stack(rows).flatten())
 
         # all_gather reads the clock once before and once after the collective.
         clock = (
@@ -147,18 +164,22 @@ class TestDPBalanceStats(CustomTestCase):
             patch.object(dp_attn, "_ENABLE_METRICS_DP_ATTENTION", True),
             patch.object(dp_attn, "TboDPAttentionPreparer", return_value=tbo_preparer),
             patch.object(dp_attn, "world_dp_gather_enabled", return_value=False),
+            patch.object(dp_attn, "dp_slot_in", return_value=dp_rank),
             patch.object(
                 dp_attn,
                 "get_parallel",
                 return_value=SimpleNamespace(
                     num_dp_ranks=2,
                     attn_tp_size=1,
-                    attn_cp_size=1,
+                    attn_cp_size=attn_cp_size,
+                    attn_dp_rank=dp_rank,
                     tp_group=SimpleNamespace(
                         device_group=object(),
                         device="cpu",
                         cpu_group=object(),
-                        active_ranks_cpu=torch.ones(2, dtype=torch.int64),
+                        active_ranks_cpu=torch.ones(
+                            2 * attn_cp_size, dtype=torch.int64
+                        ),
                     ),
                 ),
             ),
@@ -197,6 +218,39 @@ class TestDPBalanceStats(CustomTestCase):
         self.assertEqual(stats.imbalance_tokens, 4)
         self.assertAlmostEqual(stats.max_over_mean, 8 * 2 / 12)
         self.assertGreater(stats.sync_wait_seconds, 0)
+
+    def test_cp_rank_reads_its_groups_gathered_row(self):
+        """A CP rank counting more tokens than its group's gathered row.
+
+        Only each DP group's first row is read. Recording this rank's own
+        count against that max made the imbalance negative, and the
+        Prometheus counter raised on it.
+        """
+        result = self._prepare_dp2_batch(
+            ForwardMode.DECODE, local_tokens=5, peer_tokens=3, cp_peer_tokens=4
+        )
+
+        self.assertEqual(result.global_num_tokens, [4, 3])
+        stats = result.dp_balance_stats
+        self.assertEqual((stats.local_tokens, stats.max_tokens), (4, 4))
+        self.assertEqual(stats.imbalance_tokens, 0)
+        self.assertEqual(stats.imbalance_attention_pairs, 0)
+
+    def test_cp_rank_of_a_later_group_reads_that_groups_row(self):
+        """From DP rank 1 the group's row is neither row 0 nor the max."""
+        result = self._prepare_dp2_batch(
+            ForwardMode.DECODE,
+            local_tokens=5,
+            peer_tokens=8,
+            cp_peer_tokens=3,
+            dp_rank=1,
+        )
+
+        self.assertEqual(result.global_num_tokens, [8, 3])
+        stats = result.dp_balance_stats
+        self.assertEqual((stats.local_tokens, stats.max_tokens), (3, 8))
+        self.assertEqual(stats.imbalance_tokens, 5)
+        self.assertEqual(stats.imbalance_attention_pairs, 5)
 
     def test_attention_pairs_follow_context_not_rows(self):
         """Fewer rows with longer contexts is the busier rank in pairs.

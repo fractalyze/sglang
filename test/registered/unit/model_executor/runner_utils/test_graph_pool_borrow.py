@@ -219,11 +219,7 @@ class TestGraphPoolBorrow(CustomTestCase):
         with (
             patch.object(pool, "borrow_graph_pool") as borrow_graph_pool,
             patch.object(eagle_utils, "get_spec", return_value=spec_config),
-            patch(
-                "sglang.srt.layers.dp_attention.is_dp_attention_enabled",
-                return_value=False,
-            ),
-            get_parallel().override(tp_group=tp_group),
+            get_parallel().override(tp_group=tp_group, attn_dp_enabled=False),
             patch(
                 "sglang.kernels.ops.speculative.sampling.tree_speculative_sampling_target_only",
                 side_effect=fake_sampling,
